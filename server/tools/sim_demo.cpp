@@ -1,6 +1,6 @@
 // Headless demo: plays a full 8-player match (seat 0 = scripted "human", seats 1-7 = AI bots)
 // with real combat, and prints how it went. The champion roster is read from JSON at start-up.
-// Usage: w2f_demo [seed] [champions.json] [traits.json] [items.json] [pve.json]
+// Usage: w2f_demo [seed] [champions.json] [traits.json] [items.json] [pve.json] [mother_nature.json]
 // The demo also drills crash recovery: at round 10 it throws the running match away and carries on from the automatic snapshot
 // taken when that round's Planning phase began. Set W2F_NO_DRILL=1 to skip the drill; the final state hash must be the same
 // either way (that is the whole point of a safety net). Set W2F_ROSTER_ONLY=1 to sell only the real roster (no generic fillers).
@@ -102,6 +102,13 @@ struct Reporter : IMatchListener {
     int autoSnapshots = 0;
     std::size_t largestSnapshot = 0;
     void OnPveDrop(PlayerId, const PveDrop& drop) override { ++drops[static_cast<int>(drop.type)]; }
+    int gifts[5] = {};   // Mother Nature gifts taken, by GiftType
+    int giftsAutomatic = 0, giftsConverted = 0;
+    void OnGiftPicked(PlayerId, int, const GiftOffer& gift, bool automatic, int goldConverted) override {
+        ++gifts[static_cast<int>(gift.type)];
+        giftsAutomatic += automatic ? 1 : 0;
+        giftsConverted += goldConverted > 0 ? 1 : 0;
+    }
     void OnAutoSnapshot(int, const std::vector<std::uint8_t>& bytes) override {
         ++autoSnapshots;
         if (bytes.size() > largestSnapshot) largestSnapshot = bytes.size();
@@ -181,7 +188,14 @@ int main(int argc, char** argv) {
     cfg.player.startingGold = 10;
     cfg.player.limitBoardToLevel = true;  // TFT rule: fielded units <= level
     const auto makeSimulator = [&]() { return std::make_unique<CombatSimulator>(cfg.combat, traits.get(), items.get()); };
-    auto match = MatchManager::Create(cfg, *db, seed, makeSimulator(), &loadError, items.get(), encounters.get());
+    const std::string naturePath = argc > 6 ? argv[6] : sample::ProductionMotherNaturePath();
+    auto motherNature = w2f::LoadMotherNatureDatabaseFromFile(naturePath, items.get(), &loadError);
+    if (!motherNature) {
+        std::fprintf(stderr, "Cannot start: %s\n", loadError.c_str());
+        return 2;
+    }
+    std::printf("Loaded Mother Nature: %zu tiers, %d options a round, from %s\n", motherNature->Tiers().size(), motherNature->Options(), naturePath.c_str());
+    auto match = MatchManager::Create(cfg, *db, seed, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get());
     if (!match) {
         std::fprintf(stderr, "Cannot start: %s\n", loadError.c_str());
         return 2;
@@ -217,7 +231,7 @@ int main(int argc, char** argv) {
             // "The process crashed during round 10's fight." Rebuild everything from the safety net alone.
             drilled = true;
             const std::vector<std::uint8_t> safetyNet = match->LastPlanningSnapshot();
-            auto recovered = MatchManager::Restore(safetyNet, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get());
+            auto recovered = MatchManager::Restore(safetyNet, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get());
             if (!recovered) {
                 std::fprintf(stderr, "Crash drill FAILED: %s\n", loadError.c_str());
                 return 3;
@@ -235,7 +249,7 @@ int main(int argc, char** argv) {
         // Every 2000 ticks: snapshot the whole match, restore it, and check the copy is the same match down to the byte.
         if (tick % 2000 == 0) {
             const std::vector<std::uint8_t> bytes = match->Snapshot();
-            auto copy = MatchManager::Restore(bytes, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get());
+            auto copy = MatchManager::Restore(bytes, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get());
             snapshotsOk = snapshotsOk && copy != nullptr && copy->StateHash() == match->StateHash() && copy->Snapshot() == bytes;
             ++snapshotsChecked;
         }
@@ -258,6 +272,8 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(match->StateHash()));
     std::printf("Pool integrity: %s, roster layouts: %s\n", match->VerifyPoolIntegrity() ? "ok" : "BROKEN",
                 match->VerifyRosterLayouts() ? "ok" : "BROKEN");
+    std::printf("Mother Nature gifts taken: %d gold, %d xp, %d heal, %d item, %d unit (%d auto-picked, %d units paid as gold)\n", reporter.gifts[0], reporter.gifts[1],
+                reporter.gifts[2], reporter.gifts[3], reporter.gifts[4], reporter.giftsAutomatic, reporter.giftsConverted);
     std::printf("PvE: %d fights, %d won; drops: %d gold, %d champion, %d item.  Automatic snapshots taken: %d (largest %zu bytes)\n",
                 reporter.pveFights, reporter.pveWins, reporter.drops[1], reporter.drops[2], reporter.drops[3], reporter.autoSnapshots, reporter.largestSnapshot);
     std::printf("Snapshot / restore round trips checked during the match: %d, %s\n", snapshotsChecked, snapshotsOk ? "all identical" : "MISMATCH");

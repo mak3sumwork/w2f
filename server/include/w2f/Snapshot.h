@@ -11,10 +11,10 @@
 //
 // Format (binary, little-endian, fixed-width integers only, so the same bytes on every platform and compiler):
 //
-//   header   magic "W2FS", format version, match seed, hashes of the game config / champion / item / PvE data the
+//   header   magic "W2FS", format version, match seed, hashes of the game config / champion / item / PvE / Mother Nature data the
 //            snapshot was taken under, the StateHash at that moment, phase, round, ticks in phase, player count
 //   body     match RNG state, pool counts, every player (economy, units in roster order, item bag, shop offer + shop
-//            RNG), this round's matchups, and every fight's outcome INCLUDING its event log (a viewer that reconnects
+//            RNG, Mother Nature offers), this round's matchups, and every fight's outcome INCLUDING its event log (a viewer that reconnects
 //            mid-round needs the stream it missed, and Resolution needs the results)
 //   trailer  FNV-1a over everything before it
 //
@@ -35,10 +35,11 @@
 
 namespace w2f {
 
-enum class MatchPhase : std::uint8_t { NotStarted, Draft, Planning, Combat, Resolution, MatchOver };
+// MotherNature: the gift phase that opens every 3rd round (see MotherNature.h). It took the place of the old Draft phase.
+enum class MatchPhase : std::uint8_t { NotStarted, MotherNature, Planning, Combat, Resolution, MatchOver };
 
 constexpr std::uint32_t kSnapshotMagic = 0x53463257u;  // bytes 'W' '2' 'F' 'S'
-constexpr std::uint32_t kSnapshotVersion = 2;
+constexpr std::uint32_t kSnapshotVersion = 3;
 
 // What a snapshot says about itself, readable without restoring it.
 struct SnapshotInfo {
@@ -48,6 +49,7 @@ struct SnapshotInfo {
     std::uint64_t championHash = 0;
     std::uint64_t itemHash = 0;   // 0 when the match ran without an item database
     std::uint64_t encounterHash = 0;   // 0 when the match ran without PvE data
+    std::uint64_t motherNatureHash = 0;   // 0 when the match ran without Mother Nature data
     std::uint64_t stateHash = 0;  // MatchManager::StateHash() when it was taken
     std::uint8_t phase = 0;       // a MatchPhase value
     int round = 0;

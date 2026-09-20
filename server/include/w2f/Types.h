@@ -45,6 +45,8 @@ enum class ActionResult : std::uint8_t {
     InvalidUnit,
     ItemsFull,     // the unit already carries kMaxItemsPerUnit items
     InvalidItem,   // unknown item id, or the player does not have it in their item bag
+    ShopClosed,    // Mother Nature's round: there is no shop (buy / reroll)
+    AlreadyPicked, // the player already took their Mother Nature gift this round
 };
 
 constexpr const char* ToString(ActionResult r) {
@@ -62,6 +64,8 @@ constexpr const char* ToString(ActionResult r) {
         case ActionResult::InvalidUnit: return "InvalidUnit";
         case ActionResult::ItemsFull: return "ItemsFull";
         case ActionResult::InvalidItem: return "InvalidItem";
+        case ActionResult::ShopClosed: return "ShopClosed";
+        case ActionResult::AlreadyPicked: return "AlreadyPicked";
     }
     return "Unknown";
 }

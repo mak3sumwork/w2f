@@ -24,8 +24,10 @@ std::string Error(std::string_view code, std::string_view detail, bool hasId = f
 std::string Result(const Command& command, ActionResult result);
 std::string Pong(bool hasId, long long id);
 
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you);
-std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick);
+// `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never).
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery);
+// `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
+std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound);
 
 // One player's full private state (gold, xp, shop, bench, board, bag ...).
 std::string PrivateState(const MatchManager& match, PlayerId player);
@@ -51,6 +53,9 @@ std::string PlayerEliminated(PlayerId player, int placement);
 std::string MatchOver(const MatchManager& match);
 std::string Income(PlayerId player, int round, const IncomeBreakdown& income);
 std::string PveDropMsg(const PveDrop& drop);
+// Mother Nature (private to the player): what is on offer, and what they took.
+std::string GiftsOffered(const std::vector<GiftOffer>& offers, const MotherNatureDatabase* data);
+std::string GiftPicked(int index, const GiftOffer& gift, const MotherNatureDatabase* data, bool automatic, int goldConverted);
 std::string UnitBought(const UnitInstance& unit, int goldSpent);
 std::string UnitSold(const UnitInstance& unit, int goldGained);
 std::string UnitMoved(const UnitMove& move);

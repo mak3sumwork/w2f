@@ -3,8 +3,9 @@
 // Top-level authority for one match: owns the pool and all players, and drives the phase
 // state machine. Fully headless -- advanced only by Tick() at kTicksPerSecond.
 //
-//   Start -> [Draft] -> Planning -> Combat -> Resolution -+-> next round (income, back to top)
-//            (only on draft rounds)                       +-> MatchOver (<= 1 player alive)
+//   Start -> [MotherNature] -> Planning -> Combat -> Resolution -+-> next round (income, back to top)
+//            (every 3rd round: a free gift        (no shop in      +-> MatchOver (<= 1 player alive)
+//             instead of a shop)                   those rounds)
 //
 // All player actions go through the Try* methods below, which enforce phase rules and
 // return an ActionResult. Nothing here allocates per tick.
@@ -17,6 +18,7 @@
 #include "w2f/ChampionDatabase.h"
 #include "w2f/Combat.h"
 #include "w2f/Config.h"
+#include "w2f/MotherNature.h"
 #include "w2f/PlayerEvents.h"
 #include "w2f/PlayerManager.h"
 #include "w2f/Pve.h"
@@ -30,7 +32,7 @@ namespace w2f {
 constexpr const char* ToString(MatchPhase p) {
     switch (p) {
         case MatchPhase::NotStarted: return "NotStarted";
-        case MatchPhase::Draft: return "Draft";
+        case MatchPhase::MotherNature: return "MotherNature";
         case MatchPhase::Planning: return "Planning";
         case MatchPhase::Combat: return "Combat";
         case MatchPhase::Resolution: return "Resolution";
@@ -62,6 +64,14 @@ public:
     // Fired during Resolution entry: a player beat the monsters and was given `drop`. (A Champion drop is also announced
     // through OnUnitBought with 0 gold spent, like any unit that enters a roster.)
     virtual void OnPveDrop(PlayerId /*player*/, const PveDrop& /*drop*/) {}
+    // Mother Nature opened her phase: `offers` are what this player may choose from (private information; the unit copies on offer are
+    // checked out of the shared pool until the pick). Fires for every living player, in seat order, before OnPhaseChanged(MotherNature). An empty
+    // list means nothing could be offered.
+    virtual void OnGiftsOffered(PlayerId /*player*/, const std::vector<GiftOffer>& /*offers*/) {}
+    // A player took offer number `index` (`automatic` = the phase ran out and the first offer was taken for them). `goldConverted` > 0: a Unit gift
+    // could not be received (no room, no merge) and was paid as gold equal to its cost instead. A Unit gift is also announced through OnUnitBought
+    // with 0 gold spent, like any unit that enters a roster.
+    virtual void OnGiftPicked(PlayerId /*player*/, int /*index*/, const GiftOffer& /*gift*/, bool /*automatic*/, int /*goldConverted*/) {}
     // Fired when Planning begins (shops already refreshed, before OnPhaseChanged): the crash-recovery snapshot of the
     // whole match as of the start of the round. Persist it; MatchManager::Restore turns it back into this exact moment.
     virtual void OnAutoSnapshot(int /*round*/, const std::vector<std::uint8_t>& /*snapshot*/) {}
@@ -76,10 +86,13 @@ public:
     // needs the same database to apply it (see CombatSimulator's constructor).
     // `encounters` (optional, must outlive the match) holds the PvE monster boards and drop tables. Without it a PvE round
     // is a round nobody fights: no result, no drop.
+    // `motherNature` (optional, must outlive the match) holds the gifts. Without it the rounds `motherNatureEveryRounds` would make Mother Nature's
+    // are ordinary rounds (shop open, no gift phase).
     static std::unique_ptr<MatchManager> Create(const GameConfig& config, const ChampionDatabase& database,
                                                 std::uint64_t seed, std::unique_ptr<ICombatSimulator> simulator,
                                                 std::string* error = nullptr, const ItemDatabase* items = nullptr,
-                                                const EncounterDatabase* encounters = nullptr);
+                                                const EncounterDatabase* encounters = nullptr,
+                                                const MotherNatureDatabase* motherNature = nullptr);
 
     // Owns objects that reference each other (players hold a pointer back to it), so it is pinned in memory.
     MatchManager(const MatchManager&) = delete;
@@ -105,6 +118,14 @@ public:
     const std::vector<CombatOutcome>& CurrentCombatOutcomes() const { return outcomes_; }
     bool IsPveRound() const { return config_.match.IsPveRound(round_); }
     StageRound CurrentStageRound() const { return config_.match.StageOf(round_); }
+    // Is this round one of Mother Nature's (a gift phase, and no shop)? False when no Mother Nature data is loaded.
+    bool IsMotherNatureRound() const { return IsMotherNatureRound(round_); }
+    bool IsMotherNatureRound(int round) const { return motherNature_ != nullptr && config_.match.IsMotherNatureRound(round); }
+    const MotherNatureDatabase* MotherNature() const { return motherNature_; }
+    // What `player` may still choose from (empty once they picked, and outside the MotherNature phase), and whether their choice is settled
+    // (picked, or nothing was on offer).
+    const std::vector<GiftOffer>& GiftOffers(PlayerId player) const;
+    bool GiftSettled(PlayerId player) const;
 
     // The crash-recovery snapshot taken when the current (or latest) Planning phase began -- empty until the first one, and
     // always empty when GameConfig::snapshot.atPlanningStart is off. A match restored from such a snapshot starts with it.
@@ -121,6 +142,8 @@ public:
     ActionResult TryRerollShop(PlayerId player);
     ActionResult TryBuyShopUnit(PlayerId player, std::size_t shopSlot);
     ActionResult TryBuyXp(PlayerId player);
+    // MotherNature phase only: take offer `index` for free. The other offers are gone (their unit copies return to the pool).
+    ActionResult TryPickGift(PlayerId player, std::size_t index);
     ActionResult TrySellUnit(PlayerId player, UnitId unit);
     // Move to bench slot (x, 0) or board cell (x, y); swaps with whatever is there.
     ActionResult TryMoveUnit(PlayerId player, UnitId unit, LocationType location, int x, int y);
@@ -137,7 +160,8 @@ public:
     static std::unique_ptr<MatchManager> Restore(const std::vector<std::uint8_t>& snapshot, const GameConfig& config,
                                                  const ChampionDatabase& database, std::unique_ptr<ICombatSimulator> simulator,
                                                  std::string* error = nullptr, const ItemDatabase* items = nullptr,
-                                                 const EncounterDatabase* encounters = nullptr, const RestoreOptions& options = RestoreOptions{});
+                                                 const EncounterDatabase* encounters = nullptr, const MotherNatureDatabase* motherNature = nullptr,
+                                                 const RestoreOptions& options = RestoreOptions{});
 
     // ---- Diagnostics ----
     // Every champion copy must be in exactly one of: pool, a shop slot, a unit (a star-N unit
@@ -150,7 +174,8 @@ public:
 
 private:
     MatchManager(const GameConfig& config, const ChampionDatabase& database, std::uint64_t seed,
-                 std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters);
+                 std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters,
+                 const MotherNatureDatabase* motherNature);
 
     int PhaseDuration(MatchPhase phase) const;
     void BeginRound();
@@ -161,6 +186,14 @@ private:
     void ApplyCombatOutcomes();
     PveDrop GrantPveDrop(PlayerState& player, std::uint32_t encounterId, Rng& rng);
     void TakeAutoSnapshot();
+    // Mother Nature
+    void GenerateGifts();
+    bool GiftUsable(const GiftDefinition& gift) const;
+    bool RealizeGift(const GiftDefinition& gift, Rng& rng, GiftOffer& out);
+    ActionResult PickGift(PlayerId player, std::size_t index, bool automatic);
+    void FinishGiftPhase();
+    bool AllGiftsSettled() const;
+    void ReleaseOffers(PlayerId player);
     void EndMatch();
     ActionResult ResolveActor(PlayerId id, PlayerState*& outPlayer);
 
@@ -180,6 +213,7 @@ private:
     const ChampionDatabase& database_;
     const ItemDatabase* items_;
     const EncounterDatabase* encounters_;
+    const MotherNatureDatabase* motherNature_;
     std::uint64_t seed_;
     Rng rng_;
     std::vector<IMatchListener*> listeners_;
@@ -193,6 +227,13 @@ private:
     PlayerId winner_ = kInvalidPlayerId;
     std::vector<Matchup> matchups_;
     std::vector<CombatOutcome> outcomes_;
+
+    // Mother Nature: per player, the gifts on offer this round and whether the choice is settled. Empty / false outside the phase.
+    struct PlayerGifts {
+        std::vector<GiftOffer> offers;
+        bool settled = false;
+    };
+    std::vector<PlayerGifts> gifts_;
 
     // Derived, not authoritative: never part of a snapshot or of StateHash().
     std::vector<std::uint8_t> autoSnapshot_;

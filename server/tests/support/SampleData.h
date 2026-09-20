@@ -47,9 +47,11 @@ constexpr w2f::AbilityId kAbilityDynoShield = 4;
 constexpr w2f::AbilityId kAbilityExploit = 5;
 
 inline std::string ProductionDataPath() { return std::string(W2F_DATA_DIR) + "/champions.json"; }
-inline std::string Phase10ItemsPath() { return std::string(W2F_TEST_DATA_DIR) + "/phase10_items.json"; }
+// The item tests used to run on a separate expressiveness-proof file; the real data/items.json now carries every item of the design doc.
+inline std::string Phase10ItemsPath() { return std::string(W2F_DATA_DIR) + "/items.json"; }
 inline std::string ProductionPvePath() { return std::string(W2F_DATA_DIR) + "/pve.json"; }
 inline std::string ProductionItemsPath() { return std::string(W2F_DATA_DIR) + "/items.json"; }
+inline std::string ProductionMotherNaturePath() { return std::string(W2F_DATA_DIR) + "/mother_nature.json"; }
 inline std::string ProductionTraitsPath() { return std::string(W2F_DATA_DIR) + "/traits.json"; }
 inline std::string LegacyRosterPath() { return std::string(W2F_TEST_DATA_DIR) + "/phase4_roster.json"; }
 

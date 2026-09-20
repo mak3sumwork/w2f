@@ -31,7 +31,9 @@ public:
     const PlayerState* Get(PlayerId id) const;
 
     void GrantRoundIncome(int round);  // every living player
-    void RefreshAllShops();            // every living player, ascending id order
+    void RefreshAllShops();
+    // Mother Nature's rounds have no shop: every living player's offer goes back to the pool and the slots stay empty.
+    void CloseAllShops();            // every living player, ascending id order
     void EliminatePlayer(PlayerId id, int placement);
 
 private:

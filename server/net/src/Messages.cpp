@@ -36,6 +36,23 @@ void WriteUnit(JsonWriter& w, const UnitInstance& u) {
     w.EndObject();
 }
 
+// One gift as a client draws it: which one, its name, and the concrete reward.
+void WriteGift(JsonWriter& w, int index, const GiftOffer& offer, const MotherNatureDatabase* data) {
+    w.BeginObject();
+    w.Field("index", index);
+    w.Field("gift", offer.gift);
+    const GiftDefinition* def = data != nullptr ? data->FindGift(offer.gift) : nullptr;
+    w.Field("name", def != nullptr ? std::string_view(def->name) : std::string_view());
+    w.Field("kind", ToString(offer.type));
+    if (offer.type == GiftType::Gold || offer.type == GiftType::Xp || offer.type == GiftType::Heal) w.Field("amount", offer.amount);
+    if (offer.type == GiftType::Item) w.Field("item", offer.item);
+    if (offer.type == GiftType::Unit && offer.champion != nullptr) {
+        w.Field("champion", offer.champion->id);
+        w.Field("cost", offer.champion->cost);
+    }
+    w.EndObject();
+}
+
 JsonWriter Start(std::string_view type) {
     JsonWriter w;
     w.BeginObject();
@@ -53,7 +70,7 @@ void Seat(JsonWriter& w, const char* key, PlayerId p) {
 
 int PhaseTicks(const GameConfig& c, MatchPhase phase) {
     switch (phase) {
-        case MatchPhase::Draft: return c.match.draftTicks;
+        case MatchPhase::MotherNature: return c.match.motherNatureTicks;
         case MatchPhase::Planning: return c.match.planningTicks;
         case MatchPhase::Combat: return c.match.combatTicks;
         case MatchPhase::Resolution: return c.match.resolutionTicks;
@@ -110,13 +127,13 @@ std::string Pong(bool hasId, long long id) {
     return Finish(w);
 }
 
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you) {
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery) {
     JsonWriter w = Start("match_started");
     w.Field("player_id", static_cast<int>(you));
     w.Field("seats", seats);
     w.Field("tick_rate", kTicksPerSecond);
     w.Key("phase_ticks").BeginObject();
-    w.Field("draft", config.match.draftTicks);
+    w.Field("mother_nature", config.match.motherNatureTicks);
     w.Field("planning", config.match.planningTicks);
     w.Field("combat", config.match.combatTicks);
     w.Field("resolution", config.match.resolutionTicks);
@@ -128,13 +145,14 @@ std::string MatchStarted(const GameConfig& config, int seats, PlayerId you) {
     w.Field("max_items_per_unit", kMaxItemsPerUnit);
     w.Field("shop_slots", config.shop.slotCount);
     w.EndObject();
+    w.Field("mother_nature_every", motherNatureEvery);
     w.Key("combat_event_types").BeginArray();
     for (const char* name : kEventTypeNames) w.String(name);
     w.EndArray();
     return Finish(w);
 }
 
-std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick) {
+std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound) {
     JsonWriter w = Start("phase");
     w.Field("phase", ToString(phase));
     w.Field("round", round);
@@ -142,6 +160,7 @@ std::string Phase(const GameConfig& config, MatchPhase phase, int round, int tic
     w.Field("stage", sr.stage);
     w.Field("round_in_stage", sr.roundInStage);
     w.Field("pve", config.match.IsPveRound(round));
+    w.Field("mother_nature", motherNatureRound);   // a gift phase this round, and no shop until it is over
     const int duration = PhaseTicks(config, phase);
     w.Field("duration_ticks", duration);
     w.Field("ticks_remaining", duration > ticksElapsed ? duration - ticksElapsed : 0);
@@ -177,6 +196,12 @@ std::string PrivateState(const MatchManager& match, PlayerId player) {
     w.Key("item_bag").BeginArray();
     for (ItemId item : p.ItemBag()) w.UInt(item);
     w.EndArray();
+    // Mother Nature: the offers still open (empty once picked, and outside her phase), and whether the choice is settled.
+    w.Key("gifts").BeginArray();
+    const auto& offers = match.GiftOffers(player);
+    for (std::size_t i = 0; i < offers.size(); ++i) WriteGift(w, static_cast<int>(i), offers[i], match.MotherNature());
+    w.EndArray();
+    w.Field("gift_settled", match.Phase() == MatchPhase::MotherNature ? match.GiftSettled(player) : true);
     return Finish(w);
 }
 
@@ -304,6 +329,25 @@ std::string Income(PlayerId player, int round, const IncomeBreakdown& income) {
     w.Field("streak_gold", income.streakGold);
     w.Field("passive_xp", income.passiveXp);
     w.Field("total_gold", income.TotalGold());
+    return Finish(w);
+}
+
+std::string GiftsOffered(const std::vector<GiftOffer>& offers, const MotherNatureDatabase* data) {
+    JsonWriter w = Start("gift_event");
+    w.Field("event", "offered");
+    w.Key("gifts").BeginArray();
+    for (std::size_t i = 0; i < offers.size(); ++i) WriteGift(w, static_cast<int>(i), offers[i], data);
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string GiftPicked(int index, const GiftOffer& gift, const MotherNatureDatabase* data, bool automatic, int goldConverted) {
+    JsonWriter w = Start("gift_event");
+    w.Field("event", "picked");
+    w.Key("gift");
+    WriteGift(w, index, gift, data);
+    w.Field("automatic", automatic);
+    w.Field("gold_converted", goldConverted);   // > 0: a unit gift with no room for it was paid as gold instead
     return Finish(w);
 }
 

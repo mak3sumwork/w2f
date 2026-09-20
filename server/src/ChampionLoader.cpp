@@ -79,6 +79,8 @@ constexpr EnumName<TeleportDestination> kDestinations[] = {{"BehindFarthestEnemy
                                                            {"NextToHighestHpEnemy", TeleportDestination::NextToHighestHpEnemy},
                                                            {"BehindCurrentTarget", TeleportDestination::BehindCurrentTarget}};
 constexpr EnumName<DisplaceDirection> kDisplaceDirections[] = {{"Toward", DisplaceDirection::TowardCaster}, {"Away", DisplaceDirection::AwayFromCaster}};
+constexpr EnumName<GiftType> kGiftTypes[] = {{"Gold", GiftType::Gold}, {"Xp", GiftType::Xp}, {"Heal", GiftType::Heal}, {"Item", GiftType::Item}, {"Unit", GiftType::Unit}};
+constexpr EnumName<ItemClass> kItemClasses[] = {{"Any", ItemClass::Any}, {"Component", ItemClass::Component}, {"Legendary", ItemClass::Legendary}, {"Emblem", ItemClass::Emblem}};
 constexpr EnumName<PveDropType> kDropTypes[] = {{"Gold", PveDropType::Gold}, {"Champion", PveDropType::Champion}, {"Item", PveDropType::Item}};
 constexpr EnumName<TraitScope> kScopes[] = {{"AllAllies", TraitScope::AllAllies}, {"TraitHolders", TraitScope::TraitHolders}, {"Team", TraitScope::Team}};
 constexpr EnumName<DamageFilter> kDamageFilters[] = {{"Any", DamageFilter::Any}, {"Basic", DamageFilter::Basic}, {"Ability", DamageFilter::Ability}};
@@ -96,7 +98,9 @@ constexpr EnumName<CastTrigger> kTriggers[] = {{"Mana", CastTrigger::Mana},
                                                {"OnHpDropBelowPercent", CastTrigger::OnHpDropBelowPercent},
                                                {"OnAllyDealDamage", CastTrigger::OnAllyDealDamage},
                                                {"OnAnyUnitDeath", CastTrigger::OnAnyUnitDeath},
-                                               {"OnShieldBreak", CastTrigger::OnShieldBreak}};
+                                               {"OnShieldBreak", CastTrigger::OnShieldBreak},
+                                               {"EveryInterval", CastTrigger::EveryInterval}};
+constexpr EnumName<EffectCondition> kConditions[] = {{"NoDamageTakenSinceCast", EffectCondition::NoDamageTakenSinceCast}};
 
 constexpr long long kMaxStat = 10'000'000;
 constexpr long long kMaxTicks = 1'000'000;
@@ -190,6 +194,101 @@ public:
             EncounterDefinition def;
             if (!ReadEncounter(encounters->Items()[i], "encounters[" + std::to_string(i) + "]", def)) return Finish(false, "", error);
             parsed.encounters.push_back(std::move(def));
+        }
+        out = std::move(parsed);
+        return Finish(true, "", error);
+    }
+
+    bool ReadGift(const Value& v, const std::string& path, GiftDefinition& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* id = nullptr;
+        const Value* name = nullptr;
+        const Value* type = nullptr;
+        if (!Require(o, "id", id) || !Require(o, "name", name) || !Require(o, "type", type)) return false;
+        const Value* weight = Take(o, "weight");
+        const Value* amount = Take(o, "amount");
+        const Value* itemClass = Take(o, "itemClass");
+        const Value* items = Take(o, "items");
+        const Value* costs = Take(o, "costs");
+        if (!RejectUnknown(o)) return false;
+        int idValue = 0;
+        if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
+        out.id = static_cast<std::uint32_t>(idValue);
+        if (!ReadString(*name, path + ".name", out.name) || !ReadEnum(*type, path + ".type", kGiftTypes, out.type)) return false;
+        if (weight && !ReadInt(*weight, path + ".weight", 1, 1'000'000, out.weight)) return false;
+        if (amount && !ReadInt(*amount, path + ".amount", 1, 1'000'000, out.amount)) return false;
+        if (out.type == GiftType::Gold || out.type == GiftType::Xp || out.type == GiftType::Heal) {
+            if (!amount) return Missing(o, "amount");
+        } else if (amount) {
+            return Fail(path + ".amount", *amount, "\"amount\" only applies to Gold, Xp and Heal gifts");
+        }
+        if (itemClass) {
+            if (out.type != GiftType::Item) return Fail(path + ".itemClass", *itemClass, "\"itemClass\" only applies to Item gifts");
+            if (!ReadEnum(*itemClass, path + ".itemClass", kItemClasses, out.itemClass)) return false;
+        }
+        if (items) {
+            if (out.type != GiftType::Item) return Fail(path + ".items", *items, "\"items\" only applies to Item gifts");
+            if (itemClass) return Fail(path + ".items", *items, "give either \"items\" (an explicit list) or \"itemClass\", not both");
+            if (!items->IsArray()) return Fail(path + ".items", *items, std::string("expected an array of item ids, found ") + Value::TypeName(items->type()));
+            for (std::size_t i = 0; i < items->Items().size(); ++i) {
+                int item = 0;
+                if (!ReadInt(items->Items()[i], path + ".items[" + std::to_string(i) + "]", 1, 2'000'000'000, item)) return false;
+                out.items.push_back(static_cast<ItemId>(item));
+            }
+        }
+        if (out.type == GiftType::Item && !itemClass && !items) return Fail(path, v, "an Item gift needs \"itemClass\" (Any, Component, Legendary, Emblem) or an explicit \"items\" list");
+        if (costs) {
+            if (out.type != GiftType::Unit) return Fail(path + ".costs", *costs, "\"costs\" only applies to Unit gifts");
+            if (!costs->IsArray()) return Fail(path + ".costs", *costs, std::string("expected an array of cost tiers, found ") + Value::TypeName(costs->type()));
+            for (std::size_t i = 0; i < costs->Items().size(); ++i) {
+                int cost = 0;
+                if (!ReadInt(costs->Items()[i], path + ".costs[" + std::to_string(i) + "]", 1, kMaxCostTier, cost)) return false;
+                out.costs.push_back(cost);
+            }
+        } else if (out.type == GiftType::Unit) {
+            return Missing(o, "costs");
+        }
+        return true;
+    }
+
+    bool RunMotherNature(std::string_view text, MotherNatureFile& out, std::string* error) {
+        Value root;
+        std::string parseError;
+        if (!json::Parse(text, root, &parseError)) return Finish(false, parseError, error);
+        Obj top;
+        if (!Open(root, "$", top)) return Finish(false, "", error);
+        const Value* version = Take(top, "version");
+        const Value* options = Take(top, "options");
+        const Value* tiers = Take(top, "tiers");
+        if (version == nullptr) { Missing(top, "version"); return Finish(false, "", error); }
+        long long v = 0;
+        if (!version->ToInt(v) || v != 1) { Fail("$.version", *version, "unsupported format version (this loader reads version 1)"); return Finish(false, "", error); }
+        if (tiers == nullptr) { Missing(top, "tiers"); return Finish(false, "", error); }
+        if (!RejectUnknown(top)) return Finish(false, "", error);
+        if (!tiers->IsArray()) { Fail("$.tiers", *tiers, std::string("expected an array, found ") + Value::TypeName(tiers->type())); return Finish(false, "", error); }
+        MotherNatureFile parsed;
+        if (options && !ReadInt(*options, "$.options", 1, 4, parsed.options)) return Finish(false, "", error);
+        for (std::size_t i = 0; i < tiers->Items().size(); ++i) {
+            const std::string path = "tiers[" + std::to_string(i) + "]";
+            Obj t;
+            if (!Open(tiers->Items()[i], path, t)) return Finish(false, "", error);
+            const Value* id = nullptr;
+            const Value* name = nullptr;
+            const Value* gifts = nullptr;
+            if (!Require(t, "id", id) || !Require(t, "name", name) || !Require(t, "gifts", gifts)) return Finish(false, "", error);
+            const Value* fromStage = Take(t, "fromStage");
+            if (!RejectUnknown(t)) return Finish(false, "", error);
+            MotherNatureTier tier;
+            if (!ReadInt(*id, path + ".id", 1, 1'000'000, tier.id) || !ReadString(*name, path + ".name", tier.name)) return Finish(false, "", error);
+            if (fromStage && !ReadInt(*fromStage, path + ".fromStage", 1, 1000, tier.fromStage)) return Finish(false, "", error);
+            if (!gifts->IsArray()) { Fail(path + ".gifts", *gifts, std::string("expected an array, found ") + Value::TypeName(gifts->type())); return Finish(false, "", error); }
+            for (std::size_t g = 0; g < gifts->Items().size(); ++g) {
+                GiftDefinition gift;
+                if (!ReadGift(gifts->Items()[g], path + ".gifts[" + std::to_string(g) + "]", gift)) return Finish(false, "", error);
+                tier.gifts.push_back(std::move(gift));
+            }
+            parsed.tiers.push_back(std::move(tier));
         }
         out = std::move(parsed);
         return Finish(true, "", error);
@@ -559,10 +658,12 @@ private:
         const Value* target = Take(o, "target");
         const Value* scope = scopeOut ? Take(o, "scope") : nullptr;   // only trait effects have a scope
         const Value* repeat = Take(o, "repeat");
+        const Value* condition = Take(o, "condition");
         int delay = 0;
         bool haveDelay = false;
         if (!ReadScalarTime(o, "delay", delay, haveDelay)) return false;
         out.delayTicks = delay;
+        if (condition && !ReadEnum(*condition, path + ".condition", kConditions, out.condition)) return false;
         if (repeat) {   // {"count": 8, "everySeconds": 0.5}: runs `count` times, the first at the delay, then at that spacing
             Obj r;
             if (!Open(*repeat, path + ".repeat", r)) return false;
@@ -699,6 +800,7 @@ private:
             const Value* isTotal = Take(o, "amountIsTotal");
             const Value* stack = Take(o, "stackBonusPercent");
             const Value* drain = Take(o, "healPercent");
+            const Value* refreshes = Take(o, "refreshes");
             int interval = 0;
             bool haveInterval = false;
             if (!ReadScalarTime(o, "interval", interval, haveInterval)) return false;
@@ -708,6 +810,7 @@ private:
             if (isTotal && !ReadBool(*isTotal, path + ".amountIsTotal", d.amountIsTotal)) return false;
             if (stack && !ReadStarInts(*stack, path + ".stackBonusPercent", 0, kMaxPercent, d.stackBonusPercent)) return false;
             if (drain && !ReadInt(*drain, path + ".healPercent", 0, 1000, d.healPercent)) return false;
+            if (refreshes && !ReadBool(*refreshes, path + ".refreshes", d.refreshes)) return false;
             if (!haveInterval) return Missing(o, "intervalTicks (or intervalSeconds)");
             if (interval < 1) return Fail(path + ".interval", v, "the interval must be at least 1 tick");
             d.intervalTicks = interval;
@@ -735,11 +838,15 @@ private:
         const Value* resetOnTargetChange = Take(o, "resetOnTargetChange");
         const Value* castOnDeath = Take(o, "castOnDeath");
         const Value* requiresCharge = Take(o, "requiresCharge");
+        const Value* onlyShieldsFrom = Take(o, "onlyShieldsFrom");
+        int interval = 0;
+        bool haveInterval = false;
         int lock = 0;
         bool haveLock = false;
         int channel = 0;
         bool haveChannel = false;
-        if (!ReadScalarTime(o, "castLock", lock, haveLock) || !ReadScalarTime(o, "channel", channel, haveChannel) || !RejectUnknown(o)) return false;
+        if (!ReadScalarTime(o, "castLock", lock, haveLock) || !ReadScalarTime(o, "channel", channel, haveChannel) ||
+            !ReadScalarTime(o, "interval", interval, haveInterval) || !RejectUnknown(o)) return false;
 
         int idValue = 0;
         if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
@@ -761,6 +868,12 @@ private:
         if (resetOnTargetChange && !ReadBool(*resetOnTargetChange, path + ".resetOnTargetChange", out.resetCountOnTargetChange)) return false;
         if (castOnDeath && !ReadBool(*castOnDeath, path + ".castOnDeath", out.castOnDeath)) return false;
         if (requiresCharge && !ReadBool(*requiresCharge, path + ".requiresCharge", out.requiresCharge)) return false;
+        if (onlyShieldsFrom) {
+            int from = 0;
+            if (!ReadInt(*onlyShieldsFrom, path + ".onlyShieldsFrom", 1, 2'000'000'000, from)) return false;
+            out.shieldFromAbility = static_cast<AbilityId>(from);
+        }
+        out.intervalTicks = haveInterval ? interval : 0;
         out.castLockTicks = lock;
         out.channelTicks = channel;
 
@@ -1172,6 +1285,33 @@ std::unique_ptr<EncounterDatabase> LoadEncounterDatabaseFromFile(const std::stri
     contents << file.rdbuf();
     std::string inner;
     auto database = LoadEncounterDatabaseFromJson(contents.str(), champions, items, &inner);
+    if (!database && error) *error = path + ": " + inner;
+    return database;
+}
+
+bool ParseMotherNatureJson(std::string_view text, MotherNatureFile& out, std::string* error) {
+    return Loader().RunMotherNature(text, out, error);
+}
+
+std::unique_ptr<MotherNatureDatabase> LoadMotherNatureDatabaseFromJson(std::string_view text, const ItemDatabase* items, std::string* error) {
+    MotherNatureFile file;
+    if (!ParseMotherNatureJson(text, file, error)) return nullptr;
+    std::string validationError;
+    auto database = MotherNatureDatabase::Create(file.options, std::move(file.tiers), items, &validationError);
+    if (!database && error) *error = "Mother Nature data is invalid: " + validationError;
+    return database;
+}
+
+std::unique_ptr<MotherNatureDatabase> LoadMotherNatureDatabaseFromFile(const std::string& path, const ItemDatabase* items, std::string* error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (error) *error = "cannot open Mother Nature data file '" + path + "'";
+        return nullptr;
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    std::string inner;
+    auto database = LoadMotherNatureDatabaseFromJson(contents.str(), items, &inner);
     if (!database && error) *error = path + ": " + inner;
     return database;
 }

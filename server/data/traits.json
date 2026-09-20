@@ -17,7 +17,8 @@
     // everything it does. "Count" = different champions with the trait on the board. Values the doc leaves open are marked ASSUMED.
 
     // HELIOS (3/6) "The Sun's Wrath": Helios units' basic attacks burn their target for 2% / 5% of its MAX HP as true damage over 3 s.
-    // (Every attack starts its own burn and they stack: that is how the doc reads. A tick every second: ASSUMED.)
+    // Every attack RE-LIGHTS the burn: it refreshes its duration instead of stacking, so a target has at most one Helios burn at a time
+    // (whoever lit it last gets the credit). A tick every second: ASSUMED.
     {
       "id": 1, "name": "Helios",
       "breakpoints": [
@@ -25,12 +26,12 @@
             "id": 201, "name": "The Sun's Wrath", "trigger": "OnBasicAttack",
             "effects": [ { "type": "DoT", "target": "CurrentTarget", "damageType": "True",
                            "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 2 } ] }, "amountIsTotal": true,
-                           "durationSeconds": 3, "intervalSeconds": 1 } ] } } ] },
+                           "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ] },
         { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 202, "name": "The Sun's Wrath", "trigger": "OnBasicAttack",
             "effects": [ { "type": "DoT", "target": "CurrentTarget", "damageType": "True",
                            "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 5 } ] }, "amountIsTotal": true,
-                           "durationSeconds": 3, "intervalSeconds": 1 } ] } } ] }
+                           "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ] }
       ]
     },
 
@@ -61,6 +62,21 @@
             "id": 221, "name": "Shield Detonation", "trigger": "OnShieldBreak", "maxTriggers": 1,
             "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false },
                            "damageType": "Magic", "amount": 200 } ] } } ] }
+      ]
+    },
+
+    // ASSASSIN (2/4) "The Unseen Strike": Assassins' abilities can critically strike, their crits hit for +20% / +50% more (CritDamage adds
+    // percentage points to the crit bonus), and they gain +15% / +30% critical strike CHANCE (so the synergy works without crit items). The
+    // Assassins are Vex, Lunis and Raa; the 4 breakpoint needs an Assassin Emblem.
+    {
+      "id": 9, "name": "Assassin",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 20, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 15, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 50, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 30, "permanent": true } ] }
       ]
     },
 

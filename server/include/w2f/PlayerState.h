@@ -88,6 +88,8 @@ public:
 
     // ---- Combat aftermath ----
     void ApplyDamage(int amount);
+    // Restores health, never above the starting health. Nothing for an eliminated player or a non-positive amount. Returns what was actually restored.
+    int Heal(int amount);
     void RecordRoundResult(RoundResult result);  // Draws leave the streak untouched.
 
     // ---- Units ----

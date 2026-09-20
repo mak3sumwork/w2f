@@ -95,6 +95,7 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         case CastTrigger::OnAllyDealDamage:
         case CastTrigger::OnAnyUnitDeath:
         case CastTrigger::OnShieldBreak:
+        case CastTrigger::EveryInterval:
             if (ability.castLockTicks != 0 || ability.channelTicks != 0 || ability.castOnDeath || ability.resetCountOnTargetChange) {
                 return Fail(error, name + " is a hook: it cannot have a cast lock, a channel, cast on death, or reset-on-target-change");
             }
@@ -102,6 +103,14 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
             break;
     }
     if (ability.maxTriggers < 0 || ability.maxTriggers > 1000) return Fail(error, name + ": maxTriggers must be 0..1000");
+    if (ability.trigger == CastTrigger::EveryInterval) {
+        if (ability.intervalTicks < 1 || ability.intervalTicks > 3600) return Fail(error, name + ": an EveryInterval hook needs an interval of 1..3600 ticks");
+    } else if (ability.intervalTicks != 0) {
+        return Fail(error, name + ": an interval only applies to the EveryInterval trigger");
+    }
+    if (ability.shieldFromAbility != kNoAbility && ability.trigger != CastTrigger::OnShieldBreak) {
+        return Fail(error, name + ": onlyShieldsFrom only applies to OnShieldBreak");
+    }
     if (ability.trigger == CastTrigger::OnHpDropBelowPercent) {
         if (ability.thresholdPercent < 1 || ability.thresholdPercent > 99) return Fail(error, name + ": thresholdPercent must be 1..99");
     } else if (ability.thresholdPercent != 0) {
@@ -124,6 +133,9 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
 
     for (const AbilityEffect& effect : ability.effects) {
         if (effect.delayTicks < 0) return Fail(error, name + " has a negative effect delay");
+        if (effect.condition == EffectCondition::NoDamageTakenSinceCast && effect.delayTicks < 1) {
+            return Fail(error, name + ": a \"NoDamageTakenSinceCast\" condition needs a delay (there is nothing to look back over when the effect runs at once)");
+        }
         if (effect.repeatCount < 1 || effect.repeatCount > 64) return Fail(error, name + ": repeat count must be 1..64");
         if (effect.repeatCount > 1 && effect.repeatIntervalTicks < 1) return Fail(error, name + ": a repeating effect needs an interval of at least 1 tick");
         if (std::holds_alternative<TeleportEffect>(effect.payload) && effect.target.mode != TargetMode::Self) {
@@ -213,6 +225,11 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         } else if (const auto* dot = std::get_if<DotEffect>(&effect.payload)) {
             if (dot->intervalTicks < 1) return Fail(error, name + ": DoT interval must be >= 1 tick");
             if (dot->healPercent < 0 || dot->healPercent > 1000) return Fail(error, name + ": DoT healPercent must be 0..1000");
+            if (dot->refreshes) {
+                for (int bonus : dot->stackBonusPercent) {
+                    if (bonus != 0) return Fail(error, name + ": a refreshing DoT never stacks, so it cannot have a stackBonusPercent");
+                }
+            }
             if (!ValidateAmount(dot->amount, name, error) || !ValidateAmount(dot->duration, name, error)) return false;
         }
     }
@@ -232,9 +249,15 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
     h.AddInt(a.channelTicks);
     h.Add(a.castOnDeath ? 1 : 0);
     if (a.requiresCharge) h.Add(0xC4A26Eull);   // (only hashed when set, so data that predates it hashes as before)
+    if (a.intervalTicks != 0) h.AddInt(a.intervalTicks);
+    if (a.shieldFromAbility != kNoAbility) h.Add(a.shieldFromAbility);
     h.AddInt(static_cast<std::int64_t>(a.effects.size()));
     for (const AbilityEffect& e : a.effects) {
         h.Add(static_cast<std::uint64_t>(e.payload.index()));
+        if (const auto* dot = std::get_if<DotEffect>(&e.payload)) {
+            if (dot->refreshes) h.Add(0x8EF8E5ull);   // (only hashed when set, so data that predates it hashes as before)
+        }
+        if (e.condition != EffectCondition::None) h.Add(0xC0DD00ull + static_cast<std::uint64_t>(e.condition));
         h.AddInt(e.delayTicks);
         h.AddInt(e.repeatCount);
         h.AddInt(e.repeatIntervalTicks);

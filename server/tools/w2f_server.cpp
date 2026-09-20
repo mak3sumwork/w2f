@@ -120,14 +120,17 @@ int main(int argc, char** argv) {
     if (!items || !ValidateItemTraits(*items, *traits, &error)) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
     auto encounters = LoadEncounterDatabaseFromFile(opt.dataDir + "/pve.json", champions.get(), items.get(), &error);
     if (!encounters) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
+    auto motherNature = LoadMotherNatureDatabaseFromFile(opt.dataDir + "/mother_nature.json", items.get(), &error);
+    if (!motherNature) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
 
     GameData data;
     data.champions = champions.get();
     data.items = items.get();
     data.traits = traits.get();
     data.encounters = encounters.get();
+    data.motherNature = motherNature.get();
     if (opt.fast) {
-        data.config.match.draftTicks = Seconds(1);
+        data.config.match.motherNatureTicks = Seconds(3);
         data.config.match.planningTicks = Seconds(4);
         data.config.match.combatTicks = Seconds(6);
         data.config.match.resolutionTicks = Seconds(1);

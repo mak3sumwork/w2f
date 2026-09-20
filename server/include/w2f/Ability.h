@@ -261,6 +261,9 @@ struct DotEffect {
     StarValue stackBonusPercent{};
     StatusType visual = StatusType::Burn;  // how the client shows it
     int healPercent = 0;            // the caster heals this % of the damage each hit actually deals (a drain)
+    // Applying this again while a burn from the SAME ability is already running on the victim (from anybody) REPLACES it: the duration restarts and
+    // there is only ever one. (Helios: every attack re-lights the burn; it never stacks.) Exclusive with stackBonusPercent.
+    bool refreshes = false;
 };
 
 struct HealEffect {
@@ -308,8 +311,15 @@ struct DisplaceEffect {
 
 using EffectPayload = std::variant<DamageEffect, ShieldEffect, StatusEffect, DotEffect, HealEffect, TeleportEffect, ManaEffect, SummonEffect, DisplaceEffect>;
 
+// A condition an effect checks when it RUNS (so a delayed effect looks back over the delay): "if the user took no damage during this time".
+enum class EffectCondition : std::uint8_t {
+    None,
+    NoDamageTakenSinceCast,  // the caster has taken no damage (any hit, even one a shield absorbed) since the cast that made this effect began. Needs a delay
+};
+
 struct AbilityEffect {
     TargetSpec target;
+    EffectCondition condition = EffectCondition::None;
     // Effects with the same delay happen simultaneously; a larger delay makes an effect happen
     // that many ticks after the cast (sequential effects). Targets are re-resolved when it runs.
     int delayTicks = 0;
@@ -340,7 +350,11 @@ struct AbilityEffect {
 //    OnHpDropBelowPercent     the holder's HP falls below `thresholdPercent` of its max (re-arms if it heals back above)
 //    OnAllyDealDamage         an ally OF the holder (not the holder itself) deals damage
 //    OnAnyUnitDeath           any unit on the board dies (either team; the holder must still be alive). Fires once per death
-//    OnShieldBreak            one of the holder's shields is used up by damage (not by expiring); TriggerAttacker = who broke it
+//    OnShieldBreak            one of the holder's shields is used up by damage (not by expiring); TriggerAttacker = who broke it;
+//                             TriggerDamage = the STORED damage: everything that shield absorbed over its life ("detonates for the damage it
+//                             stored"). `shieldFromAbility` limits it to shields made by one ability (Mage Shield's own shield)
+//    EveryInterval            every `intervalTicks` of the fight (at tick N, 2N ...) while the holder is alive, not disabled, and has a living
+//                             enemy target within its attack range: `CurrentTarget` is that target. Twin Snipers' "3% max HP every second"
 //
 // For the counted triggers `attackCount` = N means "every Nth occurrence" (0 or 1 = every one) and `maxTriggers` caps the number of
 // firings per fight (0 = no cap; 1 = "once"). Damage that comes from a hook's own effects never fires hooks again: no chain reactions.
@@ -359,6 +373,7 @@ enum class EventTrigger : std::uint8_t {
     OnAllyDealDamage,
     OnAnyUnitDeath,
     OnShieldBreak,
+    EveryInterval,
 };
 using CastTrigger = EventTrigger;   // the original name, kept so existing code and data keep working
 
@@ -371,7 +386,7 @@ constexpr bool IsDamageHook(EventTrigger t) {
 // Everything that can live in a unit's trigger list (as opposed to a champion's cast slots): riders and hooks.
 constexpr bool IsHook(EventTrigger t) {
     return IsDamageHook(t) || t == EventTrigger::OnBasicAttack || t == EventTrigger::EveryNthAttack || t == EventTrigger::OnCast ||
-           t == EventTrigger::OnAnyUnitDeath;
+           t == EventTrigger::OnAnyUnitDeath || t == EventTrigger::EveryInterval;
 }
 
 enum class DamageFilter : std::uint8_t { Any, Basic, Ability };   // OnDealDamage / OnAllyDealDamage: which damage counts
@@ -398,6 +413,8 @@ struct AbilityDefinition {
     // Attack riders / attack hooks only: fires only while the holder has an EmpoweredAttack status, and spends one charge each time
     // ("your next 3 basic attacks deal bonus damage").
     bool requiresCharge = false;
+    int intervalTicks = 0;        // EveryInterval: the period (1..3600 ticks); 0 for every other trigger
+    AbilityId shieldFromAbility = kNoAbility;   // OnShieldBreak: only shields created by this ability (0 = any shield)
     // EveryNthAttack: forget the attack count whenever the caster switches target (or its target dies).
     bool resetCountOnTargetChange = false;
     // After casting, the caster is locked (cannot attack or move) for this many ticks and its

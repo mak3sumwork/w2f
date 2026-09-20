@@ -26,6 +26,8 @@ struct ShieldInst {
     int amount;
     int expiresTick;
     int reductionPercent;
+    AbilityId source = kNoAbility;   // the ability that made it (an OnShieldBreak hook may listen to one ability's shields only)
+    int absorbed = 0;                // damage it has absorbed so far: the "stored damage" of a detonation
 };
 
 struct StatusInst {
@@ -89,6 +91,7 @@ struct CastRecord {
     int triggerVictim = -1;
     int triggerDamage = 0;
     bool fromHook = false;
+    int originTick = -1;   // the tick the cast that made this record began (set when an effect is scheduled; -1 = "now")
 };
 
 struct Scheduled {
@@ -154,6 +157,7 @@ struct FightUnit {
     std::vector<DealtEntry> dealt;  // damage this unit dealt, for "damage in the last N ticks"
     int rawCounter = 0;             // raw basic-attack damage dealt to rawCounterTarget since the last cast
     int rawCounterTarget = -1;
+    int lastDamagedTick = -1;       // the last tick this unit took any damage (even fully absorbed): the "took no damage" condition
 
     int activeChannelSerial = 0;  // non-zero while channelling; 0 once completed or interrupted
     int channelEnd = 0;
@@ -695,6 +699,7 @@ private:
 
     void Resolve(int tick) {
         RegenerateMana(tick);
+        FireIntervalHooks(tick);
         ExecuteScheduled(tick);
         ExecuteCasts(tick);
         TickDots(tick);
@@ -704,6 +709,21 @@ private:
         ApplyManaFromDamage(tick);
         ReapDeathsAndDeathCasts(tick);
         EmitManaEvents(tick);
+    }
+
+    // EveryInterval hooks: at tick N, 2N ... each living, enabled holder with a living enemy target in attack range fires once (Twin Snipers).
+    void FireIntervalHooks(int tick) {
+        if (tick <= 0) return;
+        for (std::size_t i = 0; i < units_.size(); ++i) {
+            FightUnit& u = units_[i];
+            if (!u.alive || u.triggers.empty() || IsDisabled(u) || u.target < 0) continue;
+            const FightUnit& target = units_[static_cast<std::size_t>(u.target)];
+            if (!target.alive || target.team == u.team || !CanBeAffectedByEnemies(target) || !InRange(u, target)) continue;
+            for (TriggerSlot& slot : u.triggers) {
+                if (slot.ability->trigger != EventTrigger::EveryInterval || tick % slot.ability->intervalTicks != 0) continue;
+                FireHook(static_cast<int>(i), slot, static_cast<int>(i), u.target, 0, true, tick);
+            }
+        }
     }
 
     // Statuses that act on their own: HpPerSecond (a heal, or true damage, once a second) and ExecuteBelow (dies below the threshold).
@@ -813,7 +833,9 @@ private:
             if (due <= 0) {
                 ExecuteEffect(cast, effect, tick);
             } else {
-                scheduled_.push_back(Scheduled{tick + due, cast, &effect});
+                Scheduled later{tick + due, cast, &effect};
+                later.cast.originTick = tick;
+                scheduled_.push_back(later);
             }
         }
     }
@@ -1076,6 +1098,10 @@ private:
     }
 
     void ExecuteEffect(const CastRecord& cast, const AbilityEffect& effect, int tick) {
+        if (effect.condition == EffectCondition::NoDamageTakenSinceCast &&
+            units_[static_cast<std::size_t>(cast.caster)].lastDamagedTick >= (cast.originTick >= 0 ? cast.originTick : tick)) {
+            return;   // hurt since the cast began: the effect does not happen
+        }
         ResolveTargets(cast, effect.target, tick, targets_);
         FightUnit& caster = units_[static_cast<std::size_t>(cast.caster)];
         const auto si = static_cast<std::size_t>(caster.star - 1);
@@ -1105,7 +1131,7 @@ private:
                     if (amount <= 0) continue;
                 }
                 holder.shields.push_back(ShieldInst{amount, shield->permanent ? std::numeric_limits<int>::max() : tick + duration,
-                                                    shield->damageReductionPercent[si]});
+                                                    shield->damageReductionPercent[si], cast.ability != nullptr ? cast.ability->id : kNoAbility, 0});
                 CombatEvent e = MakeEvent(tick, CombatEventType::ShieldApplied, holder.id);
                 e.other = caster.id;
                 e.amount = amount;
@@ -1166,6 +1192,18 @@ private:
                 const int hits = std::max(1, duration / dot->intervalTicks);
                 FightUnit& holder = units_[static_cast<std::size_t>(t)];
 
+                // A refreshing burn replaces the one already running (from the same ability, whoever lit it) -- but keeps its RHYTHM: the new
+                // burn's first tick lands when the old one's next tick was due. (Restarting the clock would let a fast attacker re-light the burn
+                // before it ever ticked, and it would never deal damage.)
+                int inheritedNext = -1;
+                if (dot->refreshes) {
+                    const AbilityId key = cast.ability != nullptr ? cast.ability->id : kNoAbility;
+                    for (const DotInst& old : holder.dots) {
+                        if (old.visible && old.key == key && old.hitsLeft > 0) inheritedNext = inheritedNext < 0 ? old.nextTick : std::min(inheritedNext, old.nextTick);
+                    }
+                    holder.dots.erase(std::remove_if(holder.dots.begin(), holder.dots.end(), [key](const DotInst& d) { return d.visible && d.key == key; }),
+                                      holder.dots.end());
+                }
                 // A stack landing on a still-running stack of the same ability hits harder.
                 int running = 0;
                 for (const DotInst& d : holder.dots) running += (d.visible && d.key == cast.ability->id) ? 1 : 0;
@@ -1180,6 +1218,10 @@ private:
                 inst.hitsTotal = hits;
                 inst.hitsLeft = hits;
                 inst.nextTick = tick + duration / hits;
+                if (inheritedNext >= 0) {   // (hit k lands at start + duration * k / hits, so start is set back one step from the inherited tick)
+                    inst.nextTick = inheritedNext;
+                    inst.start = inheritedNext - duration / hits;
+                }
                 inst.remainingRaw = Clamp32(dot->amountIsTotal ? amount : amount * hits);
                 inst.flags = static_cast<std::uint8_t>(kFlagDot | kFlagAbility);
                 inst.visible = true;
@@ -1306,6 +1348,7 @@ private:
         for (std::size_t i = 0; i < victim.shields.size() && remaining > 0; ++i) {  // oldest first
             const int taken = std::min(victim.shields[i].amount, remaining);
             victim.shields[i].amount -= taken;
+            victim.shields[i].absorbed = Clamp32(static_cast<long long>(victim.shields[i].absorbed) + taken);
             remaining -= taken;
             absorbed += taken;
         }
@@ -1321,20 +1364,22 @@ private:
         log_.events.push_back(e);
 
         // Shields that were fully used up end now (and count as "broken").
-        bool shieldBroke = false;
+        std::vector<std::pair<AbilityId, int>> broken;   // (the ability that made the shield, the damage it stored)
         for (std::size_t i = 0; i < victim.shields.size();) {
             if (victim.shields[i].amount <= 0) {
                 CombatEvent ended = MakeEvent(tick, CombatEventType::ShieldEnded, victim.id);
                 log_.events.push_back(ended);
+                broken.emplace_back(victim.shields[i].source, victim.shields[i].absorbed);
                 victim.shields.erase(victim.shields.begin() + static_cast<std::ptrdiff_t>(i));
-                shieldBroke = true;
             } else {
                 ++i;
             }
         }
-        if (shieldBroke) {
+        for (const auto& [source, stored] : broken) {
             for (TriggerSlot& slot : victim.triggers) {
-                if (slot.ability->trigger == EventTrigger::OnShieldBreak) FireHook(victimIndex, slot, attackerIndex, victimIndex, damage, false, tick);
+                if (slot.ability->trigger != EventTrigger::OnShieldBreak) continue;
+                if (slot.ability->shieldFromAbility != kNoAbility && slot.ability->shieldFromAbility != source) continue;
+                FireHook(victimIndex, slot, attackerIndex, victimIndex, stored, false, tick);
             }
         }
 
@@ -1351,6 +1396,7 @@ private:
         }
 
         // Bookkeeping that later formulas / mana read.
+        if (damage > 0) victim.lastDamagedTick = tick;
         if (credit) {   // (a zone's per-second damage is not "damage this unit dealt": formulas and ally ranking do not see it)
             attacker.dealt.push_back(DealtEntry{tick, damage, victimIndex});
             while (!attacker.dealt.empty() && attacker.dealt.front().tick <= tick - kDealtHistoryTicks) {

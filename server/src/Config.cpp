@@ -53,10 +53,10 @@ bool GameConfig::Validate(std::string* error) const {
 
     // Match
     if (match.playerCount < 2 || match.playerCount > kMaxPlayers) return Fail(error, "playerCount must be in [2, kMaxPlayers]");
-    if (match.draftTicks <= 0 || match.planningTicks <= 0 || match.combatTicks <= 0 || match.resolutionTicks <= 0) {
+    if (match.motherNatureTicks <= 0 || match.planningTicks <= 0 || match.combatTicks <= 0 || match.resolutionTicks <= 0) {
         return Fail(error, "phase durations must be > 0 ticks");
     }
-    if (match.draftRoundInterval <= 0) return Fail(error, "draftRoundInterval must be > 0");
+    if (match.motherNatureEveryRounds < 0) return Fail(error, "motherNatureEveryRounds must be >= 0 (0 = never)");
     if (match.firstStageRounds < 1 || match.roundsPerStage < 1) return Fail(error, "stages need at least one round");
     if (match.firstStagePveRounds < 0 || match.firstStagePveRounds > match.firstStageRounds) {
         return Fail(error, "firstStagePveRounds must be between 0 and firstStageRounds");
@@ -121,11 +121,11 @@ std::uint64_t GameConfig::ContentHash() const {
     for (int v : pool.copiesPerTier) h.AddInt(v);
 
     h.AddInt(match.playerCount);
-    h.AddInt(match.draftTicks);
+    h.AddInt(match.motherNatureTicks);
     h.AddInt(match.planningTicks);
     h.AddInt(match.combatTicks);
     h.AddInt(match.resolutionTicks);
-    h.AddInt(match.draftRoundInterval);
+    h.AddInt(match.motherNatureEveryRounds);
     h.AddInt(match.firstStageRounds);
     h.AddInt(match.roundsPerStage);
     h.AddInt(match.firstStagePveRounds);

@@ -75,12 +75,13 @@ struct StageRound {
 
 struct MatchConfig {
     int playerCount = kMaxPlayers;
-    int draftTicks = Seconds(20);
+    int motherNatureTicks = Seconds(20);   // how long players have to pick a gift (the phase ends sooner once everybody has)
     int planningTicks = Seconds(30);
     int combatTicks = Seconds(40);
     int resolutionTicks = Seconds(5);
-    // Draft (carousel) happens on round 1 and every draftRoundInterval rounds after.
-    int draftRoundInterval = 6;
+    // Mother Nature (replaces the carousel and augments): rounds 3, 6, 9 ... open with a gift phase instead of a shop. Needs
+    // data/mother_nature.json loaded: without it these rounds are ordinary rounds.
+    int motherNatureEveryRounds = 3;
 
     // Stages. Stage 1 is short (1-1, 1-2, 1-3), every later stage has roundsPerStage rounds (2-1 ... 2-7).
     int firstStageRounds = 3;
@@ -91,7 +92,7 @@ struct MatchConfig {
     int firstStagePveRounds = 3;
     int pveRoundInLaterStages = 7;
 
-    bool IsDraftRound(int round) const { return (round - 1) % draftRoundInterval == 0; }
+    bool IsMotherNatureRound(int round) const { return motherNatureEveryRounds > 0 && round >= 1 && round % motherNatureEveryRounds == 0; }
 
     StageRound StageOf(int round) const {
         const int r = round < 1 ? 1 : round;

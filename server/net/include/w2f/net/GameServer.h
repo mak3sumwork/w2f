@@ -54,6 +54,7 @@ struct GameData {
     const ItemDatabase* items = nullptr;         // optional
     const TraitDatabase* traits = nullptr;       // optional
     const EncounterDatabase* encounters = nullptr;   // optional (no PvE data: PvE rounds are rounds nobody fights)
+    const MotherNatureDatabase* motherNature = nullptr;   // optional (no data: no gift rounds; every round has its shop)
     GameConfig config;
 };
 

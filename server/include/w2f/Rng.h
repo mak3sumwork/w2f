@@ -21,6 +21,7 @@ constexpr std::uint64_t kRngStreamCombatBase = 1000; // + round number
 constexpr std::uint64_t kRngStreamBotBase = 2000;    // + PlayerId
 constexpr std::uint64_t kRngStreamPveBase = 3000;    // + round number: which encounter a PvE round uses
 constexpr std::uint64_t kRngStreamPveDropBase = 4000; // + round number: the drops that round's winners get
+constexpr std::uint64_t kRngStreamMotherNatureBase = 5000; // + round number: the gifts Mother Nature offers that round
 
 // The full generator state, for snapshots. All-zero is not a valid xoshiro state (it would emit zeros forever).
 struct RngState {

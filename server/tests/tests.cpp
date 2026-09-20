@@ -218,7 +218,7 @@ struct MatchRun {
 static MatchRun PlayFullMatch(const ChampionDatabase& db, std::uint64_t seed) {
     TestGameConfig cfg;
     cfg.match.planningTicks = 60;  // Shorter phases: same logic, faster test.
-    cfg.match.draftTicks = 30;
+    cfg.match.motherNatureTicks = 30;
     cfg.match.combatTicks = 60;
     cfg.match.resolutionTicks = 30;
     cfg.player.startingGold = 10;
@@ -986,30 +986,43 @@ public:
     void OnMatchEnded(PlayerId w) override { winner = w; }
 };
 
+// Mother Nature data with only the simplest gifts (no items, no units), for tests that just need the phase to exist.
+static const char* kTinyGiftsJson = R"({"version": 1, "options": 2, "tiers": [ { "id": 1, "name": "T", "fromStage": 1, "gifts": [
+  {"id": 1, "name": "Gold", "type": "Gold", "amount": 5}, {"id": 2, "name": "Xp", "type": "Xp", "amount": 4}, {"id": 3, "name": "Heal", "type": "Heal", "amount": 3} ] } ]})";
+static std::unique_ptr<MotherNatureDatabase> TinyGifts() {
+    std::string err;
+    auto db = w2f::LoadMotherNatureDatabaseFromJson(kTinyGiftsJson, nullptr, &err);
+    if (!db) std::printf("  tiny Mother Nature data: %s\n", err.c_str());
+    return db;
+}
+
 static void TestMatchFlowPhases() {
     auto db = MakeDb();
+    auto gifts = TinyGifts();
+    CHECK(gifts != nullptr);
+    if (!gifts) return;
     TestGameConfig cfg;
-    cfg.match.draftTicks = 3;
+    cfg.match.motherNatureTicks = 3;
     cfg.match.planningTicks = 5;
     cfg.match.combatTicks = 4;
     cfg.match.resolutionTicks = 2;
-    cfg.match.draftRoundInterval = 2;  // draft on rounds 1, 3, 5...
+    cfg.match.motherNatureEveryRounds = 2;  // Mother Nature on rounds 2, 4, 6...
     cfg.player.startingGold = 10;
 
-    auto match = MatchManager::Create(cfg, *db, 77, nullptr);
+    auto match = MatchManager::Create(cfg, *db, 77, nullptr, nullptr, nullptr, nullptr, gifts.get());
     PhaseRecorder rec;
     match->AddListener(&rec);
     match->Start();
 
-    // Round 1: Draft(3) Planning(5) Combat(4) Resolution(2); round 2 skips Draft; round 3 drafts.
-    const int ticksForTwoRounds = (3 + 5 + 4 + 2) + (5 + 4 + 2);
-    CHECK(match->TicksRemainingInPhase() == 3);
+    // Round 1: Planning(5) Combat(4) Resolution(2); round 2 opens with Mother Nature(3): nobody picks, so it times out; round 3 is plain again.
+    const int ticksForTwoRounds = (5 + 4 + 2) + (3 + 5 + 4 + 2);
+    CHECK(match->TicksRemainingInPhase() == 5);
     for (int i = 0; i < ticksForTwoRounds + 1; ++i) match->Tick();
 
     std::vector<std::pair<MatchPhase, int>> expected = {
-        {MatchPhase::Draft, 1},      {MatchPhase::Planning, 1}, {MatchPhase::Combat, 1},
-        {MatchPhase::Resolution, 1}, {MatchPhase::Planning, 2}, {MatchPhase::Combat, 2},
-        {MatchPhase::Resolution, 2}, {MatchPhase::Draft, 3},
+        {MatchPhase::Planning, 1},   {MatchPhase::Combat, 1},   {MatchPhase::Resolution, 1},
+        {MatchPhase::MotherNature, 2}, {MatchPhase::Planning, 2}, {MatchPhase::Combat, 2},
+        {MatchPhase::Resolution, 2}, {MatchPhase::Planning, 3},
     };
     CHECK(rec.phases.size() == expected.size());
     for (std::size_t i = 0; i < expected.size() && i < rec.phases.size(); ++i) {
@@ -1018,13 +1031,11 @@ static void TestMatchFlowPhases() {
     }
 
     // Action gating + income timing (fresh match, walk to Planning).
-    auto m2 = MatchManager::Create(cfg, *db, 77, nullptr);
+    auto m2 = MatchManager::Create(cfg, *db, 77, nullptr, nullptr, nullptr, nullptr, gifts.get());
     m2->Start();
     // Round 1 income: base 2 + interest(10 gold -> 1) = 13 total
     CHECK(m2->Players().Get(0)->Gold() == 13);
-    CHECK(m2->TryBuyXp(0) == ActionResult::WrongPhase);  // Draft
-    for (int i = 0; i < 3; ++i) m2->Tick();
-    CHECK(m2->Phase() == MatchPhase::Planning);
+    CHECK(m2->Phase() == MatchPhase::Planning);   // round 1 is not one of Mother Nature's: it opens with the shop
     CHECK(m2->Players().Get(0)->Shop().Slots()[0] != nullptr);  // shop stocked on entering Planning
     CHECK(m2->TryRerollShop(200) == ActionResult::InvalidPlayer);
     CHECK(m2->TryBuyXp(0) == ActionResult::Ok);
@@ -1090,7 +1101,7 @@ static void TestEliminationPlacements() {
     auto db = MakeDb();
     TestGameConfig cfg;
     cfg.match.playerCount = 4;
-    cfg.match.draftTicks = cfg.match.planningTicks = cfg.match.combatTicks = cfg.match.resolutionTicks = 1;
+    cfg.match.motherNatureTicks = cfg.match.planningTicks = cfg.match.combatTicks = cfg.match.resolutionTicks = 1;
     cfg.player.startingHealth = 10;
 
     // Seat 0 always beats its opponent for 6 damage; everyone else stays alive until hit twice.
@@ -1470,7 +1481,7 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 h.everStatus = true;
                 if (isDisable) h.stunnedUntil = std::max(h.stunnedUntil, e.tick + e.duration);
                 if (sub == StatusType::Root) h.rootedUntil = std::max(h.rootedUntil, e.tick + e.duration);
-                if (sub == StatusType::CcImmunity && e.duration > 0) h.immuneUntil = std::max(h.immuneUntil, e.tick + e.duration);
+                if (sub == StatusType::CcImmunity) h.immuneUntil = e.duration > 0 ? std::max(h.immuneUntil, e.tick + e.duration) : std::numeric_limits<int>::max();   // duration 0 = for the rest of the fight
                 if (sub == StatusType::Untargetable && e.duration > 0) h.untargetableUntil = std::max(h.untargetableUntil, e.tick + e.duration);
                 if (sub == StatusType::AggroDrop && e.duration > 0) h.aggroDropUntil = std::max(h.aggroDropUntil, e.tick + e.duration);
                 if (sub == StatusType::Blind && e.duration > 0) h.blindUntil = std::max(h.blindUntil, e.tick + e.duration);
@@ -1800,7 +1811,7 @@ static void TestCombatThroughMatch() {
     TestGameConfig cfg;
     cfg.match.playerCount = 2;
     cfg.match.combatTicks = 1200;
-    cfg.match.draftTicks = cfg.match.planningTicks = cfg.match.resolutionTicks = 2;
+    cfg.match.motherNatureTicks = cfg.match.planningTicks = cfg.match.resolutionTicks = 2;
     auto match = MatchManager::Create(cfg, *db, 4, std::make_unique<CombatSimulator>(cfg.combat));
 
     struct Rec : IMatchListener {
@@ -4926,13 +4937,25 @@ static void TestItemData() {
     auto prod = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
     CHECK(prod != nullptr);
     if (!prod) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(prod->All().size() == 3);
-    const ItemDefinition* sword = prod->Find(1);
-    const ItemDefinition* belt = prod->Find(2);
-    const ItemDefinition* emblem = prod->Find(3);
-    CHECK(sword && sword->name == "Example Sword" && sword->stats.attackDamage == 15 && sword->grantsTraits.empty());
-    CHECK(belt && belt->stats.maxHp == 200 && belt->stats.attackDamage == 0);
-    CHECK(emblem && emblem->name == "Coregons Emblem" && emblem->stats.maxHp == 300 && emblem->stats.attackDamage == 25 && emblem->stats.armor == 0 && emblem->grantsTraits == std::vector<std::string>{"Coregons"});
+    {   // The design doc's whole item system: 8 components + the Seed, 28 legendaries, 8 emblems.
+        int components = 0, seeds = 0, legendaries = 0, emblems = 0;
+        for (const ItemDefinition& item : prod->All()) {
+            if (!item.IsCombined()) { (item.HasEffect() ? components : seeds) += 1; }
+            else if (!item.grantsTraits.empty()) ++emblems;
+            else ++legendaries;
+        }
+        CHECK(prod->All().size() == 45 && components == 8 && seeds == 1 && legendaries == 28 && emblems == 8);
+    }
+    const ItemDefinition* sword = prod->Find(3);
+    const ItemDefinition* heart = prod->Find(8);
+    CHECK(sword && sword->name == "Coregons Sword" && sword->stats.attackDamage == 15 && sword->grantsTraits.empty());
+    CHECK(heart && heart->stats.maxHp == 180 && heart->stats.attackDamage == 0);
+    // Emblems are "+1 to the trait" and nothing else (the old placeholder carried +300 HP / +25 AD).
+    const char* emblemTraits[8] = {"Coregons", "Helios", "Najmi", "Omnilium", "Phaisa", "Hexagon", "Assassin", "Protector"};
+    for (int i = 0; i < 8; ++i) {
+        const ItemDefinition* emblem = prod->Find(static_cast<ItemId>(40 + i));
+        CHECK(emblem && emblem->stats.IsEmpty() && emblem->IsCombined() && emblem->grantsTraits == std::vector<std::string>{emblemTraits[i]} && emblem->components[0] == 9);
+    }
     CHECK(prod->Find(0) == nullptr && prod->Find(99) == nullptr);
 
     auto traits = sample::LoadProductionTraits();
@@ -5288,6 +5311,7 @@ struct LiveMatch {
     std::shared_ptr<const TraitDatabase> traits;
     std::shared_ptr<const ItemDatabase> items;
     std::shared_ptr<const EncounterDatabase> encounters;
+    std::shared_ptr<const MotherNatureDatabase> motherNature;
     const ChampionDatabase* db = nullptr;
     std::unique_ptr<MatchManager> match;
     sample::ScriptedPlayer human{0};
@@ -5299,7 +5323,7 @@ struct LiveMatch {
         cfg.player.startingGold = 10;
         cfg.player.limitBoardToLevel = true;
         cfg.match.planningTicks = 90;   // planning / draft / resolution shortened; combat keeps its real length
-        cfg.match.draftTicks = 30;
+        cfg.match.motherNatureTicks = 30;
         cfg.match.resolutionTicks = 30;
         for (auto& row : cfg.shop.dropRatesByLevel) row = {{0, 25, 25, 25, 25}};   // the production roster is tiers 2-5
         return cfg;
@@ -5317,8 +5341,10 @@ struct LiveMatch {
         std::string error;
         live->encounters = w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), &db, live->items.get(), &error);
         if (!live->encounters) std::printf("  pve.json: %s\n", error.c_str());
+        live->motherNature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), live->items.get(), &error);
+        if (!live->motherNature) std::printf("  mother_nature.json: %s\n", error.c_str());
         live->db = &db;
-        live->match = MatchManager::Create(live->cfg, db, seed, live->MakeSimulator(), nullptr, live->items.get(), live->encounters.get());
+        live->match = MatchManager::Create(live->cfg, db, seed, live->MakeSimulator(), nullptr, live->items.get(), live->encounters.get(), live->motherNature.get());
         for (int seat = 1; seat < kMaxPlayers; ++seat) live->bots.emplace_back(static_cast<PlayerId>(seat), seed);
         return live;
     }
@@ -5330,6 +5356,7 @@ struct LiveMatch {
         copy->traits = traits;
         copy->items = items;
         copy->encounters = encounters;
+        copy->motherNature = motherNature;
         copy->db = db;
         copy->match = std::move(restored);
         copy->human = human;
@@ -5339,7 +5366,7 @@ struct LiveMatch {
     }
 
     std::unique_ptr<MatchManager> RestoreFrom(const std::vector<std::uint8_t>& bytes, std::string* error = nullptr) const {
-        return MatchManager::Restore(bytes, cfg, *db, MakeSimulator(), error, items.get(), encounters.get());
+        return MatchManager::Restore(bytes, cfg, *db, MakeSimulator(), error, items.get(), encounters.get(), motherNature.get());
     }
 
     void Step() {
@@ -5611,7 +5638,7 @@ static void TestSnapshotRejectsBadInput() {
         CHECK(tested > 400);
     }
     // Truncation and extension.
-    for (std::size_t keep : {std::size_t{0}, std::size_t{1}, std::size_t{7}, std::size_t{65}, std::size_t{66}, std::size_t{74}, good.size() / 2, good.size() - 9, good.size() - 8, good.size() - 1}) {
+    for (std::size_t keep : {std::size_t{0}, std::size_t{1}, std::size_t{7}, std::size_t{73}, std::size_t{74}, std::size_t{82}, good.size() / 2, good.size() - 9, good.size() - 8, good.size() - 1}) {
         refuses(std::vector<std::uint8_t>(good.begin(), good.begin() + static_cast<std::ptrdiff_t>(keep)), "truncated");
     }
     {
@@ -5623,7 +5650,7 @@ static void TestSnapshotRejectsBadInput() {
     // Valid checksum, wrong content: a tamperer (or a bug) that fixes the trailer still cannot get an impossible match past
     // the semantic checks. Offsets follow the documented layout.
     const std::size_t nChampions = roster->All().size();
-    const std::size_t body = 66;                                  // header size
+    const std::size_t body = 74;                                  // header size
     const std::size_t poolAt = body + 32 + 1 + 4;                  // after the match RNG, winner and the pool count
     const std::size_t player0 = poolAt + 4 * nChampions;
     const PlayerState& p0 = *live->match->Players().Get(0);
@@ -5674,7 +5701,7 @@ static void TestSnapshotRejectsBadInput() {
     tamper(8, 12345, "different seed (low word)", "state hash");
     {
         auto bad = good;
-        bad[56] = 9;   // the phase byte sits right after the seed, the five hashes
+        bad[64] = 9;   // the phase byte sits right after the seed, the five data hashes and the state hash
         FixChecksum(bad);
         refuses(bad, "unknown phase", "phase");
     }
@@ -5682,11 +5709,11 @@ static void TestSnapshotRejectsBadInput() {
         SnapshotInfo info;
         CHECK(w2f::ReadSnapshotInfo(good, info));
         auto bad = good;
-        bad[65] = static_cast<std::uint8_t>(info.playerCount - 1);   // the header's player count byte
+        bad[73] = static_cast<std::uint8_t>(info.playerCount - 1);   // the header's player count byte
         FixChecksum(bad);
         refuses(bad, "wrong player count", "player count");
         bad = good;
-        PutU32(bad, 61, 1000000);   // ticks in phase far beyond the phase's length
+        PutU32(bad, 69, 1000000);   // ticks in phase far beyond the phase's length
         FixChecksum(bad);
         refuses(bad, "tick counter beyond the phase", "inconsistent");
     }
@@ -5706,26 +5733,26 @@ static void TestSnapshotRejectsBadInput() {
         GameConfig other = live->cfg;
         other.match.planningTicks += 1;
         std::string e;
-        CHECK(MatchManager::Restore(good, other, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get()) == nullptr && e.find("configuration") != std::string::npos);
+        CHECK(MatchManager::Restore(good, other, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), live->motherNature.get()) == nullptr && e.find("configuration") != std::string::npos);
         RestoreOptions loose;
         loose.requireMatchingData = false;
-        auto forced = MatchManager::Restore(good, other, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), loose);
+        auto forced = MatchManager::Restore(good, other, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), live->motherNature.get(), loose);
         CHECK(forced != nullptr && forced->StateHash() == live->match->StateHash());   // the tick counter is still inside the (longer) phase
 
         auto legacy = w2f::LoadChampionDatabaseFromFile(sample::LegacyRosterPath());
         CHECK(legacy != nullptr);
         if (legacy) {
             CHECK(MatchManager::Restore(good, live->cfg, *legacy, live->MakeSimulator(), &e, live->items.get(), live->encounters.get()) == nullptr && e.find("champion data") != std::string::npos);
-            CHECK(MatchManager::Restore(good, live->cfg, *legacy, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), loose) == nullptr);   // even forced: the units' champions are gone
+            CHECK(MatchManager::Restore(good, live->cfg, *legacy, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), live->motherNature.get(), loose) == nullptr);   // even forced: the units' champions are gone
         }
         CHECK(MatchManager::Restore(good, live->cfg, *roster, live->MakeSimulator(), &e, nullptr, live->encounters.get()) == nullptr && e.find("item data") != std::string::npos);
         CHECK(MatchManager::Restore(good, live->cfg, *roster, live->MakeSimulator(), &e, live->items.get(), nullptr) == nullptr && e.find("PvE data") != std::string::npos);
         GameConfig fewer = live->cfg;
         fewer.match.playerCount = 4;
-        CHECK(MatchManager::Restore(good, fewer, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), loose) == nullptr && e.find("player count") != std::string::npos);
+        CHECK(MatchManager::Restore(good, fewer, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), live->motherNature.get(), loose) == nullptr && e.find("player count") != std::string::npos);
         GameConfig invalid = live->cfg;
         invalid.shop.slotCount = 0;
-        CHECK(MatchManager::Restore(good, invalid, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), loose) == nullptr && !e.empty());
+        CHECK(MatchManager::Restore(good, invalid, *roster, live->MakeSimulator(), &e, live->items.get(), live->encounters.get(), live->motherNature.get(), loose) == nullptr && !e.empty());
     }
     // The header alone is readable, and bad buffers are refused there too.
     {
@@ -5750,7 +5777,7 @@ static void TestSnapshotChainedActionFuzz() {
 
     TestGameConfig cfg;
     cfg.match.playerCount = 4;
-    cfg.match.draftTicks = 1;
+    cfg.match.motherNatureTicks = 1;
     cfg.match.planningTicks = 1'000'000;   // stay in Planning for the whole fuzz
     cfg.player.startingGold = 200;
     cfg.pool.copiesPerTier = {{9, 6, 18, 12, 10}};   // scarce: sell-outs happen
@@ -5975,7 +6002,7 @@ static void TestPvpDamageAndElimination() {
     cfg.player.startingHealth = 30;
     cfg.player.startingGold = 20;
     cfg.match.planningTicks = 60;
-    cfg.match.draftTicks = 30;
+    cfg.match.motherNatureTicks = 30;
     cfg.match.combatTicks = 60;
     cfg.match.resolutionTicks = 30;
     auto match = MatchManager::Create(cfg, *db, 77, std::make_unique<RuleSimulator>());
@@ -6753,7 +6780,7 @@ static void TestAutomaticSnapshotAtPlanning() {
         live->Step();
         const bool enteredPlanning = live->match->Phase() == MatchPhase::Planning && last != MatchPhase::Planning;
         last = live->match->Phase();
-        if (enteredPlanning || (tick == 0 && last == MatchPhase::Planning)) ++planningsEntered;
+        if (enteredPlanning) ++planningsEntered;
         lastAlwaysMatches = lastAlwaysMatches && (live->match->LastPlanningSnapshot() == (rec.snaps.empty() ? std::vector<std::uint8_t>{} : rec.snaps.back().bytes));
         for (Fork& f : forks) {
             if (f.untilRound < 0) continue;
@@ -7526,7 +7553,8 @@ static void TestHookOnAllyDamageAndCasts() {
         g.specs[0].items = {items->Find(13)};
         const FightResult rg = RunP10(g, 500, 1, cfg);
         const auto immune = StatusOn(rg, 1, StatusType::CcImmunity);
-        CHECK(immune.size() == 1 && immune[0].tick == 24 * 15 && immune[0].duration == 300);   // the 25th attack is at tick 24 * 15
+        CHECK(immune.size() == 1 && immune[0].tick == 24 * 15 && immune[0].duration == 0);   // the 25th attack is at tick 24 * 15; "for the rest of combat" = permanent
+        CHECK(Events(rg.log, CombatEventType::StatusEnded, 1).empty());   // it never ends
     }
     {   // OnBasicAttack + ManaEffect (Unalive Sword): +4 mana with every attack, on top of the +10 an attack already gives.
         ChampionDefinition mage = Fighter(1, 100000, 0, 10, 1000, 1);
@@ -8131,7 +8159,7 @@ static void TestRecipeItemsThroughAFullMatch() {
         TestGameConfig cfg;
         cfg.player.startingGold = 10;
         cfg.match.planningTicks = 90;
-        cfg.match.draftTicks = 30;
+        cfg.match.motherNatureTicks = 30;
         cfg.match.resolutionTicks = 30;
         auto match = MatchManager::Create(cfg, *db, seed, std::make_unique<CombatSimulator>(cfg.combat, traits.get(), items.get()), &err, items.get());
         ItemMatchListener listener;
@@ -8214,7 +8242,7 @@ static void TestPermilleTermsAndGunfire() {
     const ItemDefinition* gun = items->Find(26);
     const auto* dmg = std::get_if<DamageEffect>(&gun->abilities[0].effects[0].payload);
     CHECK(dmg && dmg->amount.terms.size() == 1 && dmg->amount.terms[0].divisor == 1000 && dmg->amount.terms[0].percent == Same(5));
-    CHECK(items->Find(46) && items->FindCombination(7, 2)->id == 46);   // Fishscale
+    CHECK(items->Find(37) && items->FindCombination(7, 2)->id == 37);   // Fishscale
 }
 
 static void TestBotEconomyAndPlacement() {
@@ -8256,9 +8284,9 @@ static void TestBotEconomyAndPlacement() {
         cfg.player.startingGold = 20;
         auto match = MatchManager::Create(cfg, *db, 1, nullptr);
         AIBotController bot(0, 1);
-        match->Start();
-        bot.Tick(*match);  // Draft phase in round 1
+        bot.Tick(*match);  // the match has not started: nothing to act on
         CHECK(match->Players().Get(0)->Roster().Count() == 0);
+        match->Start();
         while (match->Phase() != MatchPhase::Planning) match->Tick();
         bot.Tick(*match);
         CHECK(match->Players().Get(0)->Roster().Count() > 0);
@@ -8399,7 +8427,7 @@ static BotMatchRun PlayBotMatch(const ChampionDatabase& db, std::uint64_t seed, 
     cfg.player.startingGold = 10;
     cfg.player.limitBoardToLevel = true;
     cfg.match.planningTicks = 90;   // planning/draft/resolution shortened; combat keeps its real length
-    cfg.match.draftTicks = 30;
+    cfg.match.motherNatureTicks = 30;
     cfg.match.resolutionTicks = 30;
     if (highTierShop) {
         // Every level sells only tiers 2-5, evenly: so the expensive champions (Les, Lum) really get bought and fielded.
@@ -8851,16 +8879,19 @@ static void TestHeliosPhaisaHexagonSeliniNajmi() {
         for (int tier = 1; tier <= 2; ++tier) {
             const std::vector<ChampionId> team = tier == 1 ? std::vector<ChampionId>{9013, 9014, 9020}
                                                             : std::vector<ChampionId>{9013, 9014, 9020, 9026, 9028, 9001};
-            const SynergyFight f = RunSynergy(*prod, *traits, team, wall, 80);
+            const SynergyFight f = RunSynergy(*prod, *traits, team, wall, 260);
             const auto act = TraitEvents(f.result, 1);
             CHECK(act.size() == 1 && act[0].subtype == tier && act[0].amount == static_cast<int>(team.size()));
-            // Ignis (unit 1) attacks on tick 0; its first burn hits at ticks 30, 60, 90 for a third each of 2% / 5% of 1,000,000.
-            std::vector<int> burn;
+            // Every attack of every Helios unit re-lights THE burn: it refreshes instead of stacking, so the target has one burn (the last one
+            // lit) and each tick is a third of 2% / 5% of 1,000,000 -- never one tick per attacker.
+            std::vector<int> burnTicks, burnAmounts;
             for (const CombatEvent& e : Events(f.result.log, CombatEventType::Damage, 100)) {
-                if ((e.flags & kFlagDot) && e.other == 1 && e.subtype == static_cast<std::uint8_t>(DamageType::True)) burn.push_back(e.amount);
+                if ((e.flags & kFlagDot) && e.subtype == static_cast<std::uint8_t>(DamageType::True)) { burnTicks.push_back(e.tick); burnAmounts.push_back(e.amount); }
             }
             const int total = tier == 1 ? 20000 : 50000;
-            CHECK(!burn.empty() && burn[0] == total / 3);
+            CHECK(!burnAmounts.empty());
+            for (int amount : burnAmounts) CHECK(amount == total / 3 || amount == total / 3 + 1);   // a third of the burn per tick (the remainder on the later ticks)
+            CHECK(std::adjacent_find(burnTicks.begin(), burnTicks.end()) == burnTicks.end());   // never two burn hits on the same tick: no stacking
         }
         const SynergyFight two = RunSynergy(*prod, *traits, {9013, 9014}, wall, 80);
         CHECK(TraitEvents(two.result, 1).empty());
@@ -9221,6 +9252,810 @@ static void TestShopPoolExhaustionFallback() {
     }
 }
 
+// ==== Phase 12: item gaps (shield-break detonation, "took no damage" condition, every-second hook), Assassin, Omnivamp, permanent immunity ====
+
+static void TestMageShieldDetonation() {
+    auto items = P10Items();
+    CHECK(items != nullptr);
+    if (!items) return;
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;
+    // The holder (2000 HP, AP stat 10) wears Mage Shield (+30 MR, +12 AP). An enemy's ability hits it for 200 magic every second (153 after MR).
+    ChampionDefinition holder = Fighter(1, 2000, 0, 0);
+    holder.stats.abilityDamage = Same(10);
+    ChampionDefinition caster = Fighter(2, 100000, 0, 0);
+    SetAbility(caster, 84, CastTrigger::EveryNthAttack, 1, 0, {Eff(TargetSpec::CurrentTarget(), Dmg(DamageType::Magic, 200))});
+    Duel d;
+    d.Add(holder, 1, 0, {3, 3});
+    d.Add(caster, 2, 1, {3, 4});
+    d.Finish();
+    d.specs[0].items = {items->Find(14)};
+    const FightResult r = RunP10(d, 320, 1, cfg);
+
+    std::vector<int> shieldTicks;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::ShieldApplied, 1)) shieldTicks.push_back(e.tick);
+    CHECK(shieldTicks.size() >= 2 && shieldTicks[0] == 90);   // the 4th ability hit (ticks 0, 30, 60, 90) grants the shield
+    const auto shield = Events(r.log, CombatEventType::ShieldApplied, 1);
+    CHECK(!shield.empty() && shield[0].amount == 200 && shield[0].duration == 150);   // 10% of 2000 HP for 5 s
+    // The shield stores what it absorbs: 153 from the 5th hit, then the last 47 of the 6th -- 200 in all -- and detonates when it breaks:
+    // 200 stored + 150% of the holder's 22 AP (10 + 12) = 233 magic damage, to the enemy that broke it.
+    std::vector<CombatEvent> blasts;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 2)) {
+        if ((e.flags & kFlagTriggered) && e.other == 1) blasts.push_back(e);
+    }
+    CHECK(!blasts.empty() && blasts[0].tick == 150 && blasts[0].amount == 233 && blasts[0].subtype == static_cast<std::uint8_t>(DamageType::Magic));
+    for (const CombatEvent& b : blasts) CHECK(b.amount == 233);
+    // A shield that runs out of TIME does not detonate: the second shield is made on tick 240 (hit 8) and breaks on hit 10, so exactly two blasts by tick 300.
+    CHECK(blasts.size() == 2);
+
+    // The detonation belongs to the item's own shield: a plain shield on the holder (a shield ability of its own) breaking does not set it off.
+    ChampionDefinition shielded = Fighter(1, 2000, 0, 0);
+    SetAbility(shielded, 85, CastTrigger::EveryNthAttack, 1, 0, {Eff(TargetSpec::Self(), [] { ShieldEffect sh; sh.amount = FlatAmount(Same(100)); sh.duration = FlatAmount(Same(300)); return sh; }())});
+    shielded.stats.attackDamage = Same(1);
+    Duel d2;
+    d2.Add(shielded, 1, 0, {3, 3});
+    d2.Add(caster, 2, 1, {3, 4});
+    d2.Finish();
+    d2.specs[0].items = {items->Find(14)};
+    const FightResult r2 = RunP10(d2, 100, 1, cfg);
+    int plainBreaks = 0, blasts2 = 0;
+    for (const CombatEvent& e : Events(r2.log, CombatEventType::ShieldEnded, 1)) plainBreaks += e.tick < 90 ? 1 : 0;
+    for (const CombatEvent& e : Events(r2.log, CombatEventType::Damage, 2)) blasts2 += ((e.flags & kFlagTriggered) != 0) ? 1 : 0;
+    CHECK(plainBreaks > 0 && blasts2 == 0);   // its own shields broke, and nothing detonated (Mage Shield's shield does not exist before the 4th ability hit)
+}
+
+static void TestTearOfMotherNoDamageCondition() {
+    auto items = P10Items();
+    CHECK(items != nullptr);
+    if (!items) return;
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;
+    // The holder casts on every attack (ability id 84 does 1 true damage), so its 2nd cast is at tick 30.
+    const auto run = [&](int enemyDamage) {
+        ChampionDefinition holder = Fighter(1, 100000, 0, 1);
+        holder.stats.abilityDamage = Same(10);
+        SetAbility(holder, 84, CastTrigger::EveryNthAttack, 1, 0, {Eff(TargetSpec::CurrentTarget(), Dmg(DamageType::True, 1))});
+        Duel d;
+        d.Add(holder, 1, 0, {3, 3});
+        d.Add(Fighter(2, 100000000, 0, enemyDamage), 2, 1, {3, 4});
+        d.Finish();
+        d.specs[0].items = {items->Find(18)};
+        return RunP10(d, 400, 1, cfg);
+    };
+    {   // Nobody hurts the holder: the shield (200% of AP: (10 + 15) x 2 = 50, 5 s) and then, when the 5 s are over untouched, +15% AP for 3 s.
+        const FightResult r = run(0);
+        const auto shield = Events(r.log, CombatEventType::ShieldApplied, 1);
+        CHECK(shield.size() == 1 && shield[0].tick == 30 && shield[0].amount == 50 && shield[0].duration == 150);
+        const auto ap = StatusOn(r, 1, StatusType::AbilityPower);
+        CHECK(ap.size() == 1 && ap[0].tick == 30 + 150 && ap[0].amount == 15 && ap[0].duration == 90);
+    }
+    {   // One hit at any time inside the window (even one the shield swallows) cancels the bonus -- the shield itself is unaffected.
+        const FightResult r = run(1);
+        CHECK(Events(r.log, CombatEventType::ShieldApplied, 1).size() == 1);
+        CHECK(StatusOn(r, 1, StatusType::AbilityPower).empty());
+    }
+    {   // Damage taken BEFORE the cast does not count: the enemy stops attacking (it is stunned) right after the first hit.
+        ChampionDefinition holder = Fighter(1, 100000, 0, 1);
+        holder.stats.abilityDamage = Same(10);
+        SetAbility(holder, 84, CastTrigger::EveryNthAttack, 1, 0, {Eff(TargetSpec::CurrentTarget(), Dmg(DamageType::True, 1))});
+        ChampionDefinition enemy = Fighter(2, 100000000, 0, 5);
+        SetAbility(enemy, 86, CastTrigger::EveryNthAttack, 1, 0, {Eff(TargetSpec::Self(), [] { StatusEffect st; st.status = StatusType::Stun; st.duration = FlatAmount(Same(600)); return st; }())});
+        Duel d;
+        d.Add(holder, 1, 0, {3, 3});
+        d.Add(enemy, 2, 1, {3, 4});
+        d.Finish();
+        d.specs[0].items = {items->Find(18)};
+        const FightResult r = RunP10(d, 400, 1, cfg);
+        CHECK(Events(r.log, CombatEventType::Damage, 1).size() == 1);   // the single hit at tick 0
+        CHECK(StatusOn(r, 1, StatusType::AbilityPower).size() == 1);
+    }
+    // The condition needs a delay, and only knows one name.
+    std::string err;
+    const std::string head = R"({"version": 1, "champions": [ { "id": 1, "name": "A", "cost": 1, "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 1, "attackSpeed": 1, "range": 1 }, )";
+    CHECK(w2f::LoadChampionDatabaseFromJson((head + R"("ability": { "id": 1, "name": "x", "trigger": "EveryNthAttack", "attackCount": 1, "effects": [ { "type": "Status", "target": "Self", "status": "AbilityPower", "percent": 5, "durationSeconds": 1, "condition": "NoDamageTakenSinceCast" } ] } } ]})").c_str(), &err) == nullptr && err.find("needs a delay") != std::string::npos);
+    CHECK(w2f::LoadChampionDatabaseFromJson((head + R"("ability": { "id": 1, "name": "x", "trigger": "EveryNthAttack", "attackCount": 1, "effects": [ { "type": "Status", "target": "Self", "status": "AbilityPower", "percent": 5, "durationSeconds": 1, "delaySeconds": 1, "condition": "WhenItRains" } ] } } ]})").c_str(), &err) == nullptr && err.find("condition") != std::string::npos);
+}
+
+static void TestTwinSnipersEverySecond() {
+    auto items = P10Items();
+    CHECK(items != nullptr);
+    if (!items) return;
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;
+    const auto truePings = [](const FightResult& r, UnitId victim) {   // hook damage: true damage, flagged "triggered", not a DoT tick
+        std::vector<CombatEvent> out;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, victim)) {
+            if ((e.flags & kFlagTriggered) && !(e.flags & kFlagDot) && e.subtype == static_cast<std::uint8_t>(DamageType::True)) out.push_back(e);
+        }
+        return out;
+    };
+    {   // One Twin Snipers: every second (ticks 30, 60, 90 ...) its target loses 3% of ITS max HP -- 3000 of 100,000 -- as true damage, and is wounded.
+        Duel d;
+        d.Add(Fighter(1, 100000, 0, 1, 1000, 3), 1, 0, {3, 2});
+        d.Add(Dummy(2, 100000), 2, 1, {3, 4});   // 2 hexes away: in range 3
+        d.Finish();
+        d.specs[0].items = {items->Find(30)};
+        const FightResult r = RunP10(d, 130, 1, cfg);
+        const auto pings = truePings(r, 2);
+        CHECK(pings.size() == 4 && pings[0].tick == 30 && pings[1].tick == 60 && pings[3].tick == 120);
+        for (const CombatEvent& p : pings) CHECK(p.amount == 3000 && p.other == 1);
+        bool wound = false;
+        for (const CombatEvent& e : StatusOn(r, 2, StatusType::Wound)) wound = wound || (e.amount == 30 && e.other == 1);
+        CHECK(wound);
+    }
+    {   // It follows the CURRENT target, and only while it is in attack range: a unit that has not reached its enemy yet deals nothing.
+        Duel d;
+        d.Add(Fighter(1, 100000, 0, 1, 1000, 1), 1, 0, {3, 0});   // melee, far from its enemy at first
+        d.Add(Dummy(2, 100000), 2, 1, {3, 7});
+        d.Finish();
+        d.specs[0].items = {items->Find(30)};
+        const FightResult r = RunP10(d, 130, 1, cfg);
+        const auto pings = truePings(r, 2);
+        int firstAttack = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Attack, 1)) { firstAttack = e.tick; break; }
+        CHECK(!pings.empty() || firstAttack > 0);
+        for (const CombatEvent& p : pings) CHECK(p.tick >= firstAttack);   // never before it is in range (= before its first swing)
+        CHECK(pings.size() < 4);
+    }
+    {   // Two Twin Snipers stack: two pings a second. A stunned holder deals none while it is stunned.
+        Duel d;
+        d.Add(Fighter(1, 100000, 0, 1, 1000, 3), 1, 0, {3, 2});
+        d.Add(Dummy(2, 100000), 2, 1, {3, 4});
+        d.Finish();
+        d.specs[0].items = {items->Find(30), items->Find(30)};
+        const FightResult r = RunP10(d, 70, 1, cfg);
+        CHECK(truePings(r, 2).size() == 4);   // ticks 30 and 60, twice each
+    }
+    // Loader: the interval is required and only belongs to this trigger.
+    std::string err;
+    const std::string head = R"({"version": 1, "champions": [ { "id": 1, "name": "A", "cost": 1, "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 1, "attackSpeed": 1, "range": 1 }, "triggers": [ )";
+    const std::string tail = R"( ] } ]})";
+    const std::string fx = R"("effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "True", "amount": 5 } ])";
+    CHECK(w2f::LoadChampionDatabaseFromJson((head + R"({ "id": 1, "name": "x", "trigger": "EveryInterval", )" + fx + "}" + tail).c_str(), &err) == nullptr && err.find("interval") != std::string::npos);
+    CHECK(w2f::LoadChampionDatabaseFromJson((head + R"({ "id": 1, "name": "x", "trigger": "OnBasicAttack", "intervalSeconds": 1, )" + fx + "}" + tail).c_str(), &err) == nullptr && err.find("interval") != std::string::npos);
+    CHECK(w2f::LoadChampionDatabaseFromJson((head + R"({ "id": 1, "name": "x", "trigger": "OnBasicAttack", "onlyShieldsFrom": 3, )" + fx + "}" + tail).c_str(), &err) == nullptr && err.find("onlyShieldsFrom") != std::string::npos);
+    CHECK(w2f::LoadChampionDatabaseFromJson((head + R"({ "id": 1, "name": "x", "trigger": "EveryInterval", "intervalSeconds": 2, )" + fx + "}" + tail).c_str(), &err) != nullptr);
+}
+
+static void TestFishscaleOmnivampAndAssassin() {
+    auto items = P10Items();
+    auto prod = ProdDb();
+    auto traits = sample::LoadProductionTraits();
+    CHECK(items != nullptr && prod != nullptr && traits != nullptr);
+    if (!items || !prod || !traits) return;
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;
+    {   // Fishscale: 25% Omnivamp -- the holder heals for 25% of ALL the damage it deals (after armor), e.g. 40 -> 10.
+        Duel d;
+        d.Add(Fighter(1, 100000, 0, 40), 1, 0, {3, 3});
+        d.Add(Fighter(2, 100000000, 0, 30), 2, 1, {3, 4});   // hurts the holder, so there is HP to restore
+        d.Finish();
+        d.specs[0].items = {items->Find(37)};
+        CombatConfig noCrit = cfg;
+        const FightResult r = RunP10(d, 130, 1, noCrit);
+        int dealt = 0, healed = 0, hits = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 2)) {
+            if (e.other == 1 && !(e.flags & kFlagTriggered)) { dealt += e.amount * 25 / 100; ++hits; }
+        }
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Heal, 1)) healed += e.amount;
+        CHECK(hits >= 4 && dealt > 0 && healed == dealt);
+        // ...and the shield of 10% max HP with every cast is still there (it needs a cast; this unit has none) -- data check instead:
+        const ItemDefinition* fish = items->Find(37);
+        CHECK(fish && fish->abilities.size() == 2 && fish->abilities[0].trigger == CastTrigger::OnCast && fish->abilities[1].trigger == CastTrigger::OnDealDamage);
+    }
+    {   // ASSASSIN (2/4): Vex, Lunis and Raa are the Assassins. Two of them: abilities can crit (a unit with 100% crit chance always does) and crits hit
+        // for +20% more; the emblem makes a 4th Assassin and the bonus +50%.
+        const auto play = [&](int assassins, bool emblem) {
+            const ChampionId ids[3] = {9015, 9009, 9028};
+            Duel d;
+            AddSummonDefs(d, *prod);
+            for (int i = 0; i < assassins; ++i) {
+                ChampionDefinition def = Primed(*prod, ids[i]);
+                def.stats.critChance = Same(100);
+                d.Add(def, static_cast<UnitId>(i + 1), 0, HexCoord{3 + i, 3});
+            }
+            if (emblem) d.Add(Dummy(4, 100000), 4, 0, HexCoord{0, 0});
+            d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+            d.Finish();
+            if (emblem) d.specs[static_cast<std::size_t>(assassins)].items = {items->Find(46)};
+            const FightResult r = CombatSimulator(cfg, traits.get(), items.get(), d.db.get()).RunFight(d.specs, 20, 5);
+            CheckValid(r, d, 20, cfg);
+            return r;
+        };
+        const FightResult one = play(1, false);
+        CHECK(TraitEvents(one, 9).empty());   // one Assassin: nothing
+        const FightResult two = play(2, false);
+        const auto act = TraitEvents(two, 9);
+        CHECK(act.size() == 1 && act[0].subtype == 1 && act[0].amount == 2);
+        for (UnitId u : {UnitId{1}, UnitId{2}}) {
+            CHECK(StatusOn(two, u, StatusType::AbilityCrit).size() == 1);
+            const auto cd = StatusOn(two, u, StatusType::CritDamage);
+            CHECK(cd.size() == 1 && cd[0].amount == 20 && cd[0].duration == 0);
+        }
+        // Vex (unit 1): 150 physical, crit bonus 21 + 20 = 141% -> 211 on the dummy (armor 0).
+        int vexHit = 0;
+        for (const CombatEvent& e : Events(two.log, CombatEventType::Damage, 10)) {
+            if (e.other == 1 && (e.flags & kFlagAbility)) { vexHit = e.amount; CHECK((e.flags & kFlagCrit) != 0); break; }
+        }
+        CHECK(vexHit == 150 * (100 + cfg.critBonusPercent + 20) / 100);
+        const FightResult four = play(3, true);   // Vex + Lunis + Raa + an Assassin Emblem on the 4th unit
+        const auto act4 = TraitEvents(four, 9);
+        CHECK(act4.size() == 1 && act4[0].subtype == 2 && act4[0].amount == 4);
+        const auto cd4 = StatusOn(four, 1, StatusType::CritDamage);
+        CHECK(cd4.size() == 1 && cd4[0].amount == 50);
+        // The emblem carrier itself is an Assassin too (it gets the bonus).
+        CHECK(StatusOn(four, 4, StatusType::AbilityCrit).size() == 1);
+    }
+}
+
+static void TestProductionItemsAreTheWholeDesignDoc() {
+    auto items = P10Items();
+    auto traits = sample::LoadProductionTraits();
+    auto prod = ProdDb();
+    CHECK(items != nullptr && traits != nullptr && prod != nullptr);
+    if (!items || !traits || !prod) return;
+    std::string err;
+    CHECK(w2f::ValidateItemTraits(*items, *traits, &err));
+    CHECK(w2f::ValidateSummonReferences(*prod, items.get(), traits.get(), &err));
+    // Every recipe of the doc resolves to the right finished item, in both orders.
+    struct Recipe { ItemId a, b; const char* name; };
+    const Recipe recipes[] = {
+        {1, 2, "Sayona's Casket"}, {1, 3, "Soldiers' Soul"}, {1, 4, "Guardians Armor"}, {1, 5, "Gylachster"}, {1, 6, "Mage Shield"}, {1, 8, "Mother's Hands"}, {1, 1, "Big Helmet"}, {1, 7, "Head Shot"},
+        {2, 2, "Tear Of Mother"}, {2, 3, "Unalive Sword"}, {2, 4, "Fishtank"}, {2, 5, "Water Gun"}, {2, 6, "Divine Magic"}, {2, 8, "Blue Whale"}, {2, 7, "Fishscale"},
+        {3, 3, "Soul's Sword"}, {3, 4, "Deadbeat"}, {3, 5, "Gunfire"}, {3, 6, "Electroblade"}, {3, 8, "HeartBroke"}, {3, 7, "Full Kit"},
+        {5, 5, "Twin Snipers"}, {5, 6, "Phaisa's Magic"}, {5, 8, "Betrayed Heart"}, {5, 7, "Guardian Destroyer"},
+        {6, 6, "Magic Stick"}, {6, 8, "Omnilium's Book"}, {6, 7, "Resist Puncher"},
+        {9, 3, "Coregons Emblem"}, {9, 1, "Helios Emblem"}, {9, 2, "Najmi Emblem"}, {9, 4, "Omnilium Emblem"}, {9, 5, "Phaisa Emblem"}, {9, 6, "Hexagon Emblem"}, {9, 7, "Assassin Emblem"}, {9, 8, "Protector Emblem"},
+    };
+    int good = 0;
+    for (const Recipe& r : recipes) {
+        const ItemDefinition* ab = items->FindCombination(r.a, r.b);
+        const ItemDefinition* ba = items->FindCombination(r.b, r.a);
+        if (ab && ab == ba && ab->name == r.name) ++good;
+        else std::printf("  recipe %u + %u should make %s\n", r.a, r.b, r.name);
+    }
+    CHECK(good == static_cast<int>(sizeof(recipes) / sizeof(recipes[0])));
+    CHECK(sizeof(recipes) / sizeof(recipes[0]) == 28 + 8);
+    // Numbers of the latest doc.
+    CHECK(items->Find(13)->abilities[0].effects.size() == 1);   // Gylachster (permanent immunity: see the hook test)
+    const auto* tick = std::get_if<DamageEffect>(&items->Find(30)->abilities[1].effects[0].payload);   // Twin Snipers' 3% a second
+    CHECK(tick && tick->type == DamageType::True && tick->amount.terms.size() == 1 && tick->amount.terms[0].source == StatSource::TargetMaxHp && tick->amount.terms[0].percent == Same(3));
+    CHECK(items->Find(30)->abilities[1].trigger == CastTrigger::EveryInterval && items->Find(30)->abilities[1].intervalTicks == 30);
+    const auto* omni = std::get_if<HealEffect>(&items->Find(37)->abilities[1].effects[0].payload);   // Fishscale's Omnivamp 25%
+    CHECK(omni && omni->amount.terms.size() == 1 && omni->amount.terms[0].source == StatSource::TriggerDamage && omni->amount.terms[0].percent == Same(25));
+    CHECK(items->Find(14)->abilities.size() == 2 && items->Find(14)->abilities[1].trigger == CastTrigger::OnShieldBreak && items->Find(14)->abilities[1].shieldFromAbility == 1401);
+    CHECK(items->Find(18)->abilities[0].effects[1].condition == EffectCondition::NoDamageTakenSinceCast);
+    // The data hash sees the new shapes.
+    CHECK(items->ContentHash() != 0);
+    CHECK(prod->Find(9015)->traits == std::vector<std::string>({"Phaisa", "Assassin"}) && prod->Find(9009)->traits.back() == "Assassin" && prod->Find(9028)->traits.back() == "Assassin");
+}
+
+
+// ==== Phase 13: Mother Nature (gifts every 3rd round instead of a shop), refreshing burns, Assassin crit chance ==============================
+
+namespace {
+
+std::unique_ptr<MotherNatureDatabase> MnDb(const std::string& json, const ItemDatabase* items = nullptr) {
+    std::string err;
+    auto db = w2f::LoadMotherNatureDatabaseFromJson(json, items, &err);
+    if (!db) std::printf("  Mother Nature data: %s\n", err.c_str());
+    return db;
+}
+// options + one tier holding exactly the given gifts (JSON objects, comma separated).
+std::string MnJson(int options, const std::string& gifts, int fromStage = 1) {
+    return R"({"version": 1, "options": )" + std::to_string(options) + R"(, "tiers": [ { "id": 1, "name": "T", "fromStage": )" + std::to_string(fromStage) +
+           R"(, "gifts": [ )" + gifts + R"( ] } ]})";
+}
+
+struct GiftLog : IMatchListener {
+    struct Offered { PlayerId player; std::vector<GiftOffer> offers; };
+    struct Picked { PlayerId player; int index; GiftOffer gift; bool automatic; int goldConverted; };
+    std::vector<Offered> offered;
+    std::vector<Picked> picked;
+    void OnGiftsOffered(PlayerId p, const std::vector<GiftOffer>& o) override { offered.push_back({p, o}); }
+    void OnGiftPicked(PlayerId p, int i, const GiftOffer& g, bool a, int c) override { picked.push_back({p, i, g, a, c}); }
+};
+
+// A 2-player match whose EVERY round is a Mother Nature round, started and sitting in the MotherNature phase of round 1.
+struct MnMatch {
+    std::unique_ptr<MatchManager> match;
+    GiftLog log;
+    std::unique_ptr<MotherNatureDatabase> data;
+    static std::unique_ptr<MnMatch> Make(const ChampionDatabase& db, std::unique_ptr<MotherNatureDatabase> data, const ItemDatabase* items = nullptr,
+                                         std::uint64_t seed = 7, const std::function<void(GameConfig&)>& tweak = {}) {
+        auto m = std::make_unique<MnMatch>();
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.match.motherNatureEveryRounds = 1;
+        cfg.match.motherNatureTicks = 30;
+        cfg.match.planningTicks = 10;
+        cfg.match.combatTicks = 5;
+        cfg.match.resolutionTicks = 2;
+        cfg.player.startingGold = 10;
+        if (tweak) tweak(cfg);
+        m->data = std::move(data);
+        m->match = MatchManager::Create(cfg, db, seed, nullptr, nullptr, items, nullptr, m->data.get());
+        if (!m->match) return nullptr;
+        m->match->AddListener(&m->log);
+        m->match->Start();
+        return m;
+    }
+};
+
+}  // namespace
+
+static void TestMotherNatureDataFile() {
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+    std::string err;
+    auto data = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get(), &err);
+    CHECK(items != nullptr && data != nullptr);
+    if (!items || !data) { std::printf("  %s\n", err.c_str()); return; }
+    CHECK(data->Options() == 2 && data->Tiers().size() == 2);
+    const MotherNatureTier& early = data->Tiers()[0];
+    const MotherNatureTier& late = data->Tiers()[1];
+    CHECK(early.id == 1 && early.fromStage == 1 && late.id == 3 && late.fromStage == 4);
+    CHECK(&data->TierFor(1) == &early && &data->TierFor(3) == &early && &data->TierFor(4) == &late && &data->TierFor(9) == &late);
+    // Tier 1: a component, +5 gold, +4 XP, Mother's Blessing (+3 HP), a 2/3-cost unit.
+    CHECK(early.gifts.size() == 5);
+    const auto find = [](const MotherNatureTier& t, GiftType type) { std::vector<const GiftDefinition*> out; for (const GiftDefinition& g : t.gifts) if (g.type == type) out.push_back(&g); return out; };
+    CHECK(find(early, GiftType::Gold).size() == 1 && find(early, GiftType::Gold)[0]->amount == 5);
+    CHECK(find(early, GiftType::Xp).size() == 1 && find(early, GiftType::Xp)[0]->amount == 4);
+    CHECK(find(early, GiftType::Heal).size() == 1 && find(early, GiftType::Heal)[0]->amount == 3 && find(early, GiftType::Heal)[0]->name == "Mother's Blessing");
+    CHECK(find(early, GiftType::Unit).size() == 1 && find(early, GiftType::Unit)[0]->costs == std::vector<int>({2, 3}));
+    CHECK(find(early, GiftType::Item).size() == 1 && find(early, GiftType::Item)[0]->itemClass == ItemClass::Component);
+    // Tier 3: a completed legendary item, an emblem (low chance), +15 gold, Mother's Miracle (+7 HP), a 5-cost unit.
+    CHECK(late.gifts.size() == 5);
+    CHECK(find(late, GiftType::Gold)[0]->amount == 15 && find(late, GiftType::Heal)[0]->amount == 7 && find(late, GiftType::Heal)[0]->name == "Mother's Miracle");
+    CHECK(find(late, GiftType::Unit)[0]->costs == std::vector<int>({5}));
+    int legendaryWeight = 0, emblemWeight = 0;
+    for (const GiftDefinition* g : find(late, GiftType::Item)) (g->itemClass == ItemClass::Emblem ? emblemWeight : legendaryWeight) += g->weight;
+    CHECK(emblemWeight > 0 && emblemWeight < legendaryWeight);   // "low chance"
+    // The item classes resolve against the real items.json: 8 components, 28 legendaries, 8 emblems.
+    GiftDefinition gift;
+    gift.type = GiftType::Item;
+    gift.itemClass = ItemClass::Component;
+    CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({1, 2, 3, 4, 5, 6, 7, 8})));   // never the Omnilium Seed (9)
+    gift.itemClass = ItemClass::Legendary;
+    const auto legendaries = w2f::GiftItemChoices(gift, *items);
+    CHECK(legendaries.size() == 28 && legendaries.front() == 10 && legendaries.back() == 37);
+    gift.itemClass = ItemClass::Emblem;
+    CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({40, 41, 42, 43, 44, 45, 46, 47})));
+    gift.itemClass = ItemClass::Any;
+    CHECK(w2f::GiftItemChoices(gift, *items).size() == items->All().size());
+    gift.items = {3, 4};
+    CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({3, 4})));   // an explicit list wins
+
+    // The hash sees everything a designer can tweak.
+    const std::string base = MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "weight": 3})");
+    const auto a = MnDb(base);
+    CHECK(a && a->ContentHash() == MnDb(base)->ContentHash());
+    for (const std::string& changed : {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 6, "weight": 3})"), MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "weight": 4})"),
+                                       MnJson(1, R"({"id": 1, "name": "H", "type": "Gold", "amount": 5, "weight": 3})"), MnJson(1, R"({"id": 2, "name": "G", "type": "Gold", "amount": 5, "weight": 3})"),
+                                       std::string(base).replace(base.find("\"T\""), 3, "\"U\"")}) {
+        const auto b = MnDb(changed);
+        CHECK(b && a && a->ContentHash() != b->ContentHash());
+    }
+
+    // A designer's mistakes are refused with the place and the reason.
+    struct Bad { std::string json; const char* mention; };
+    const std::string g1 = R"({"id": 1, "name": "G", "type": "Gold", "amount": 5})";
+    const std::string g2 = R"({"id": 2, "name": "X", "type": "Xp", "amount": 4})";
+    const Bad bad[] = {
+        {MnJson(2, g1), "at least 2 gifts"},
+        {MnJson(5, g1 + "," + g2), "options"},
+        {MnJson(1, g1 + "," + R"({"id": 1, "name": "Dup", "type": "Xp", "amount": 4})"), "duplicate gift id"},
+        {MnJson(1, g1, 2), "first tier must start at stage 1"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold"})"), "amount"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 0})"), "amount"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "weight": 0})"), "weight"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Present", "amount": 5})"), "unknown value"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "costs": [2]})"), "costs"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "colour": "red"})"), "colour"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit"})"), "costs"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costs": [6]})"), "costs"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costs": []})"), "cost tier"},
+        {MnJson(1, R"({"id": 1, "name": "I", "type": "Item"})"), "itemClass"},
+        {MnJson(1, R"({"id": 1, "name": "I", "type": "Item", "itemClass": "Component", "items": [1]})"), "either"},
+        {MnJson(1, R"({"id": 1, "name": "I", "type": "Item", "itemClass": "Shiny"})"), "unknown value"},
+        {MnJson(1, R"({"id": 1, "name": "I", "type": "Item", "items": [99999]})"), "not in the item data"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "itemClass": "Any"})"), "itemClass"},
+        {R"({"version": 2, "tiers": []})", "version"},
+        {R"({"version": 1})", "tiers"},
+        {R"({"version": 1, "tiers": []})", "at least one tier"},
+    };
+    for (const Bad& b : bad) {
+        std::string e;
+        const bool loaded = w2f::LoadMotherNatureDatabaseFromJson(b.json, items.get(), &e) != nullptr;
+        const bool ok = !loaded && e.find(b.mention) != std::string::npos;
+        if (!ok) std::printf("  wanted an error mentioning '%s', got %s'%s'\n", b.mention, loaded ? "NO ERROR " : "", e.c_str());
+        CHECK(ok);
+    }
+    // An item class with no member in the item data is refused too.
+    auto few = w2f::LoadItemDatabaseFromJson(R"({"version": 1, "items": [ {"id": 1, "name": "A", "stats": {"armor": 1}} ]})");
+    std::string e;
+    CHECK(few && w2f::LoadMotherNatureDatabaseFromJson(MnJson(1, R"({"id": 1, "name": "I", "type": "Item", "itemClass": "Emblem"})"), few.get(), &e) == nullptr && e.find("no item of that class") != std::string::npos);
+    CHECK(w2f::LoadMotherNatureDatabaseFromFile("/definitely/not/here.json", items.get(), &e) == nullptr && e.find("cannot open") != std::string::npos);
+    CHECK(MnDb(base, items.get()) != nullptr);
+}
+
+static void TestMotherNatureRewards() {
+    auto prod = ProdDb();
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+    CHECK(prod != nullptr && items != nullptr);
+    if (!prod || !items) return;
+    const auto only = [&](const std::string& gift, const std::function<void(GameConfig&)>& tweak = {}) {
+        return MnMatch::Make(*prod, MnDb(MnJson(1, gift), items.get()), items.get(), 7, tweak);
+    };
+    {   // Gold: +5.
+        auto m = only(R"({"id": 1, "name": "G", "type": "Gold", "amount": 5})");
+        CHECK(m && m->match->Phase() == MatchPhase::MotherNature && m->match->GiftOffers(0).size() == 1);
+        if (!m) return;
+        const int before = m->match->Players().Get(0)->Gold();
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);
+        CHECK(m->match->Players().Get(0)->Gold() == before + 5 && m->match->GiftSettled(0) && m->match->GiftOffers(0).empty());
+        CHECK(m->log.picked.size() == 1 && m->log.picked[0].player == 0 && m->log.picked[0].index == 0 && m->log.picked[0].gift.type == GiftType::Gold &&
+              m->log.picked[0].gift.amount == 5 && !m->log.picked[0].automatic && m->log.picked[0].goldConverted == 0);
+    }
+    {   // XP: +4 XP (several level-ups on the early curve: 2 + 2 XP make level 3).
+        auto m = only(R"({"id": 1, "name": "X", "type": "Xp", "amount": 4})");
+        if (!m) return;
+        const PlayerState& p = *m->match->Players().Get(0);
+        const int levelBefore = p.Level(), xpBefore = p.Xp();
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);
+        CHECK(p.Level() > levelBefore || p.Xp() == xpBefore + 4);
+        CHECK(p.Level() == 3 && p.Xp() == 0);
+    }
+    {   // Heal: +3 health, never above the starting health.
+        auto m = only(R"({"id": 1, "name": "H", "type": "Heal", "amount": 3})");
+        if (!m) return;
+        m->match->PlayersMutable().Get(0)->ApplyDamage(10);
+        m->match->PlayersMutable().Get(1)->ApplyDamage(1);
+        CHECK(m->match->Players().Get(0)->Health() == 90);
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok && m->match->Players().Get(0)->Health() == 93);
+        CHECK(m->match->TryPickGift(1, 0) == ActionResult::Ok && m->match->Players().Get(1)->Health() == 100);   // 99 + 3 = capped at 100
+    }
+    {   // Item: a random component, into the bag.
+        auto m = only(R"({"id": 1, "name": "C", "type": "Item", "itemClass": "Component"})");
+        if (!m) return;
+        CHECK(m->match->GiftOffers(0).size() == 1 && m->match->GiftOffers(0)[0].item >= 1 && m->match->GiftOffers(0)[0].item <= 8);
+        const ItemId promised = m->match->GiftOffers(0)[0].item;
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);
+        CHECK(m->match->Players().Get(0)->ItemBag() == std::vector<ItemId>({promised}));   // exactly what was shown
+    }
+    {   // Unit: a champion of an allowed cost, checked out of the pool while on offer.
+        auto m = only(R"({"id": 1, "name": "U", "type": "Unit", "costs": [2, 3]})");
+        if (!m) return;
+        const GiftOffer offer = m->match->GiftOffers(0)[0];
+        CHECK(offer.champion != nullptr && (offer.champion->cost == 2 || offer.champion->cost == 3) && !offer.champion->summon);
+        CHECK(m->match->VerifyPoolIntegrity() && m->match->Pool().Remaining(offer.champion->id) < m->match->Pool().InitialCopies(offer.champion->id));
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);
+        CHECK(m->match->Players().Get(0)->Roster().Count() == 1 && m->match->Players().Get(0)->Roster().Units()[0].champion == offer.champion);
+        CHECK(m->match->VerifyPoolIntegrity());
+        CHECK(m->log.picked.size() == 1 && m->log.picked[0].gift.champion == offer.champion && m->log.picked[0].goldConverted == 0);
+    }
+    {   // A unit with no room for it is paid as gold (its cost) instead, and the copy goes back to the pool.
+        auto m = only(R"({"id": 1, "name": "U", "type": "Unit", "costs": [5]})");
+        if (!m) return;
+        PlayerState* p = m->match->PlayersMutable().Get(0);
+        int filled = 0;
+        for (int round = 0; round < 2; ++round) {
+            for (const ChampionDefinition& c : prod->All()) {
+                if (c.summon || c.cost == 5 || !p->CanAcquire(&c)) continue;
+                p->AcquireUnit(&c, 0);
+                ++filled;
+            }
+        }
+        const GiftOffer offer = m->match->GiftOffers(0)[0];
+        CHECK(filled >= 20 && !p->CanAcquire(offer.champion));
+        const int goldBefore = p->Gold();
+        const int remainingBefore = m->match->Pool().Remaining(offer.champion->id);
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);
+        CHECK(p->Gold() == goldBefore + 5 && m->log.picked.size() == 1 && m->log.picked[0].goldConverted == 5);
+        CHECK(m->match->Pool().Remaining(offer.champion->id) == remainingBefore + 1);   // the checked-out copy came back
+    }
+}
+
+static void TestMotherNaturePhaseFlow() {
+    auto prod = ProdDb();
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+    CHECK(prod != nullptr && items != nullptr);
+    if (!prod || !items) return;
+    // The whole production gift table, 3 players, Mother Nature every 3rd round: rounds 1-2 are ordinary, round 3 is hers.
+    auto data = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get());
+    CHECK(data != nullptr);
+    if (!data) return;
+    TestGameConfig cfg;
+    cfg.match.playerCount = 3;
+    cfg.match.motherNatureTicks = 40;
+    cfg.match.planningTicks = 12;
+    cfg.match.combatTicks = 4;
+    cfg.match.resolutionTicks = 2;
+    cfg.player.startingGold = 20;
+    auto match = MatchManager::Create(cfg, *prod, 99, nullptr, nullptr, items.get(), nullptr, data.get());
+    GiftLog log;
+    match->AddListener(&log);
+    match->Start();
+    CHECK(!match->IsMotherNatureRound() && match->Phase() == MatchPhase::Planning && match->Players().Get(0)->Shop().Slots()[0] != nullptr);
+    CHECK(match->TryPickGift(0, 0) == ActionResult::WrongPhase);   // no gifts outside her phase
+    while (match->Round() < 3) match->Tick();
+    CHECK(match->Round() == 3 && match->IsMotherNatureRound() && match->Phase() == MatchPhase::MotherNature);
+
+    // Everyone alive was offered 2 DISTINCT gifts from the early tier, in seat order, before the phase event.
+    CHECK(log.offered.size() == 3 && log.offered[0].player == 0 && log.offered[1].player == 1 && log.offered[2].player == 2);
+    for (const GiftLog::Offered& o : log.offered) {
+        CHECK(o.offers.size() == 2 && o.offers[0].gift != o.offers[1].gift);
+        for (const GiftOffer& g : o.offers) CHECK(g.gift >= 101 && g.gift <= 105);
+    }
+    CHECK(match->VerifyPoolIntegrity());
+    // The phase is closed to everything but the pick: no shop, no XP, no moves.
+    CHECK(match->TryBuyXp(0) == ActionResult::WrongPhase && match->TryRerollShop(0) == ActionResult::WrongPhase && match->TryBuyShopUnit(0, 0) == ActionResult::WrongPhase);
+    CHECK(match->TryPickGift(0, 2) == ActionResult::InvalidSlot && match->TryPickGift(0, 99) == ActionResult::InvalidSlot);
+    CHECK(match->TryPickGift(77, 0) == ActionResult::InvalidPlayer);
+
+    // Player 0 picks their second offer; picking twice is refused; the rest of the table is untouched.
+    const GiftOffer chosen = match->GiftOffers(0)[1];
+    CHECK(match->TryPickGift(0, 1) == ActionResult::Ok && match->GiftSettled(0));
+    CHECK(match->TryPickGift(0, 0) == ActionResult::AlreadyPicked && match->GiftOffers(0).empty());
+    CHECK(log.picked.size() == 1 && log.picked[0].gift.gift == chosen.gift && log.picked[0].index == 1 && !log.picked[0].automatic);
+    CHECK(match->Phase() == MatchPhase::MotherNature && !match->GiftSettled(1));   // still waiting for the others
+    CHECK(match->VerifyPoolIntegrity());
+
+    // Player 1 picks too; player 2 never does. The phase runs its full length, then player 2 gets their FIRST offer automatically.
+    const GiftOffer firstOfThird = match->GiftOffers(2)[0];
+    CHECK(match->TryPickGift(1, 0) == ActionResult::Ok);
+    const int remaining = match->TicksRemainingInPhase();
+    int ticks = 0;
+    while (match->Phase() == MatchPhase::MotherNature) { match->Tick(); ++ticks; }
+    CHECK(remaining > 1 && ticks == remaining);   // it waited for the player who never chose, for the whole rest of the phase
+    CHECK(match->Phase() == MatchPhase::Planning && match->Round() == 3);
+    CHECK(log.picked.size() == 3 && log.picked[2].player == 2 && log.picked[2].automatic && log.picked[2].index == 0 && log.picked[2].gift.gift == firstOfThird.gift);
+    // The offers are gone, and there is no shop for the whole of a Mother Nature round.
+    for (PlayerId p = 0; p < 3; ++p) {
+        CHECK(match->GiftOffers(p).empty());
+        for (const ChampionDefinition* slot : match->Players().Get(p)->Shop().Slots()) CHECK(slot == nullptr);
+    }
+    CHECK(match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed);
+    CHECK(match->TryBuyXp(0) == ActionResult::Ok);   // levelling up is not the shop
+    CHECK(match->VerifyPoolIntegrity() && match->VerifyRosterLayouts());
+    // The next round is ordinary again.
+    while (match->Round() == 3) match->Tick();
+    CHECK(match->Round() == 4 && !match->IsMotherNatureRound() && match->Phase() == MatchPhase::Planning);
+    CHECK(match->Players().Get(0)->Shop().Slots()[0] != nullptr && match->TryRerollShop(0) == ActionResult::Ok);
+}
+
+static void TestMotherNatureEarlyEndAndDeterminism() {
+    auto prod = ProdDb();
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+    CHECK(prod != nullptr && items != nullptr);
+    if (!prod || !items) return;
+    const std::string gifts = R"({"id": 1, "name": "G", "type": "Gold", "amount": 5}, {"id": 2, "name": "X", "type": "Xp", "amount": 4}, {"id": 3, "name": "U", "type": "Unit", "costs": [1, 2, 3, 4, 5]})";
+    {   // Once everybody has chosen, the phase ends at once instead of running out its 30 ticks.
+        auto m = MnMatch::Make(*prod, MnDb(MnJson(2, gifts), items.get()), items.get());
+        CHECK(m && m->match->Phase() == MatchPhase::MotherNature);
+        if (!m) return;
+        m->match->Tick();
+        CHECK(m->match->Phase() == MatchPhase::MotherNature);
+        CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);
+        m->match->Tick();
+        CHECK(m->match->Phase() == MatchPhase::MotherNature);
+        CHECK(m->match->TryPickGift(1, 1) == ActionResult::Ok);
+        m->match->Tick();
+        CHECK(m->match->Phase() == MatchPhase::Planning && m->match->Round() == 1);
+        CHECK(m->log.picked.size() == 2 && !m->log.picked[0].automatic && !m->log.picked[1].automatic);
+        CHECK(m->match->VerifyPoolIntegrity());
+    }
+    {   // With nobody choosing, the phase lasts exactly motherNatureTicks and everyone gets their first offer.
+        auto m = MnMatch::Make(*prod, MnDb(MnJson(2, gifts), items.get()), items.get());
+        if (!m) return;
+        for (int i = 0; i < 29; ++i) m->match->Tick();
+        CHECK(m->match->Phase() == MatchPhase::MotherNature && m->match->TicksRemainingInPhase() == 1);
+        m->match->Tick();
+        CHECK(m->match->Phase() == MatchPhase::Planning && m->log.picked.size() == 2 && m->log.picked[0].automatic && m->log.picked[1].automatic);
+        CHECK(m->log.picked[0].index == 0 && m->log.picked[0].gift.gift == m->log.offered[0].offers[0].gift);
+        CHECK(m->match->VerifyPoolIntegrity());
+    }
+    {   // Same seed, same gifts and the same state on every tick; another seed, another table.
+        const auto trace = [&](std::uint64_t seed) {
+            auto m = MnMatch::Make(*prod, MnDb(MnJson(2, gifts), items.get()), items.get(), seed);
+            std::vector<std::uint64_t> hashes;
+            std::vector<std::uint32_t> offered;
+            if (!m) return std::make_pair(hashes, offered);
+            for (int i = 0; i < 200 && !m->match->IsFinished(); ++i) {
+                hashes.push_back(m->match->StateHash());
+                m->match->Tick();
+            }
+            for (const auto& o : m->log.offered) for (const GiftOffer& g : o.offers) offered.push_back(g.gift * 1000 + (g.champion != nullptr ? g.champion->id % 1000 : 0));
+            return std::make_pair(hashes, offered);
+        };
+        const auto a = trace(11), b = trace(11), c = trace(12);
+        CHECK(!a.second.empty() && a == b && a.first != c.first);
+    }
+    {   // Unit gifts are checked out of the pool one player at a time: with a pool of ONE copy per champion and only 5-cost gifts (4 champions),
+        // 8 players cannot all be offered a unit -- nobody is offered a copy that is not there, nothing crashes, and every copy is accounted for.
+        auto m = MnMatch::Make(*prod, MnDb(MnJson(2, R"({"id": 1, "name": "U", "type": "Unit", "costs": [5]}, {"id": 2, "name": "G", "type": "Gold", "amount": 5})"), items.get()), items.get(), 3,
+                               [](GameConfig& cfg) { cfg.match.playerCount = 8; cfg.pool.copiesPerTier = {{1, 1, 1, 1, 1}}; });
+        CHECK(m && m->match->Phase() == MatchPhase::MotherNature);
+        if (!m) return;
+        int unitOffers = 0;
+        for (const auto& o : m->log.offered) for (const GiftOffer& g : o.offers) unitOffers += g.type == GiftType::Unit ? 1 : 0;
+        CHECK(unitOffers == 4 && m->log.offered.size() == 8);   // exactly the 4 copies that exist
+        CHECK(m->match->VerifyPoolIntegrity());
+        for (int i = 0; i < 40 && m->match->Phase() == MatchPhase::MotherNature; ++i) m->match->Tick();
+        CHECK(m->match->Phase() == MatchPhase::Planning && m->match->VerifyPoolIntegrity());
+    }
+    {   // The tier follows the STAGE: with one round per stage, round 4 is stage 4 and switches to the later tier.
+        const std::string twoTiers = R"({"version": 1, "options": 1, "tiers": [
+            { "id": 1, "name": "Early", "fromStage": 1, "gifts": [ {"id": 11, "name": "A", "type": "Gold", "amount": 1} ] },
+            { "id": 3, "name": "Late", "fromStage": 4, "gifts": [ {"id": 33, "name": "B", "type": "Gold", "amount": 2} ] } ]})";
+        auto m = MnMatch::Make(*prod, MnDb(twoTiers), nullptr, 5, [](GameConfig& cfg) { cfg.match.firstStageRounds = 1; cfg.match.roundsPerStage = 1; cfg.match.firstStagePveRounds = 0; cfg.match.pveRoundInLaterStages = 0; });
+        if (!m) return;
+        for (int i = 0; i < 400 && m->match->Round() < 5; ++i) m->match->Tick();
+        std::vector<std::uint32_t> perRound;
+        for (const auto& o : m->log.offered) if (o.player == 0) perRound.push_back(o.offers.empty() ? 0 : o.offers[0].gift);
+        CHECK(perRound.size() >= 4 && perRound[0] == 11 && perRound[2] == 11 && perRound[3] == 33);
+    }
+}
+
+static void TestMotherNatureSnapshotAndBots() {
+    auto prod = ProdDb();
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+    CHECK(prod != nullptr && items != nullptr);
+    if (!prod || !items) return;
+    const std::string gifts = R"({"id": 1, "name": "G", "type": "Gold", "amount": 5}, {"id": 2, "name": "U", "type": "Unit", "costs": [2, 3]}, {"id": 3, "name": "C", "type": "Item", "itemClass": "Component"})";
+    auto m = MnMatch::Make(*prod, MnDb(MnJson(2, gifts), items.get()), items.get(), 21);
+    CHECK(m && m->match->Phase() == MatchPhase::MotherNature);
+    if (!m) return;
+    m->match->Tick();
+    CHECK(m->match->TryPickGift(0, 0) == ActionResult::Ok);   // player 0 has chosen, player 1 has not: offers AND a settled flag are in the snapshot
+    const std::vector<std::uint8_t> bytes = m->match->Snapshot();
+    SnapshotInfo info;
+    std::string err;
+    CHECK(w2f::ReadSnapshotInfo(bytes, info, &err) && info.version == w2f::kSnapshotVersion && info.phase == static_cast<std::uint8_t>(MatchPhase::MotherNature) &&
+          info.motherNatureHash == m->data->ContentHash() && info.stateHash == m->match->StateHash());
+    const auto restore = [&](const MotherNatureDatabase* data, const RestoreOptions& options = RestoreOptions{}) {
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.match.motherNatureEveryRounds = 1;
+        cfg.match.motherNatureTicks = 30;
+        cfg.match.planningTicks = 10;
+        cfg.match.combatTicks = 5;
+        cfg.match.resolutionTicks = 2;
+        cfg.player.startingGold = 10;
+        return MatchManager::Restore(bytes, cfg, *prod, nullptr, &err, items.get(), nullptr, data, options);
+    };
+    auto twin = restore(m->data.get());
+    CHECK(twin != nullptr && twin->StateHash() == m->match->StateHash() && twin->Snapshot() == bytes);
+    if (twin) {
+        CHECK(twin->GiftSettled(0) && !twin->GiftSettled(1) && twin->GiftOffers(1).size() == m->match->GiftOffers(1).size() && twin->VerifyPoolIntegrity());
+        // The restored match plays on exactly like the original: same pick, same state, on every tick.
+        CHECK(twin->TryPickGift(1, 0) == ActionResult::Ok && m->match->TryPickGift(1, 0) == ActionResult::Ok);
+        bool same = twin->StateHash() == m->match->StateHash();
+        for (int i = 0; i < 60; ++i) {
+            twin->Tick();
+            m->match->Tick();
+            same = same && twin->StateHash() == m->match->StateHash();
+        }
+        CHECK(same && twin->Round() == m->match->Round());
+    }
+    // Different Mother Nature data (or none) cannot restore it, unless the caller forces it -- and a forced restore still checks every offer.
+    auto other = MnDb(MnJson(2, gifts + R"(, {"id": 4, "name": "H", "type": "Heal", "amount": 3})"), items.get());
+    CHECK(restore(other.get()) == nullptr && err.find("Mother Nature data") != std::string::npos);
+    CHECK(restore(nullptr) == nullptr && err.find("Mother Nature data") != std::string::npos);
+    RestoreOptions loose;
+    loose.requireMatchingData = false;
+    auto without = MnDb(MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5}, {"id": 9, "name": "Z", "type": "Xp", "amount": 1})"), items.get());
+    if (m->match->GiftOffers(1).size() > 0) {
+        bool wantsUnknownGift = false;
+        for (const GiftOffer& g : m->match->GiftOffers(1)) wantsUnknownGift = wantsUnknownGift || g.gift == 2 || g.gift == 3;
+        if (wantsUnknownGift) CHECK(restore(without.get(), loose) == nullptr && !err.empty());
+    }
+    // Flipped bytes never restore (the trailer checksum, and beyond that every offer is checked against the data).
+    int tested = 0;
+    for (std::size_t i = 0; i < bytes.size(); i += 2) {
+        auto bad = bytes;
+        bad[i] ^= 0x40;
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        CHECK(MatchManager::Restore(bad, cfg, *prod, nullptr, &err, items.get(), nullptr, m->data.get()) == nullptr);
+        ++tested;
+    }
+    CHECK(tested > 100 && tested == static_cast<int>((bytes.size() + 1) / 2));
+
+    // A bot takes the most useful gift: a unit, then an item, then gold.
+    auto bots = MnMatch::Make(*prod, MnDb(MnJson(2, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5}, {"id": 2, "name": "U", "type": "Unit", "costs": [2, 3]})"), items.get()), items.get(), 4);
+    CHECK(bots && bots->match->GiftOffers(0).size() == 2);
+    if (bots) {
+        AIBotController bot(0, 4);
+        bot.Tick(*bots->match);
+        CHECK(bots->match->GiftSettled(0) && bots->match->Players().Get(0)->Roster().Count() == 1 && bots->log.picked.size() == 1 && bots->log.picked[0].gift.type == GiftType::Unit);
+        bot.Tick(*bots->match);   // nothing more to do
+        CHECK(bots->log.picked.size() == 1);
+    }
+}
+
+static void TestRefreshingBurnAndAssassinCrit() {
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;
+    // A burn of 60 over 3 s (a tick every second) lit by every attack of a fast attacker (one every 15 ticks). Refreshing: the burn keeps its rhythm,
+    // so it ticks every 30 ticks for as long as it is re-lit, one hit at a time. Stacking (the control): every attack adds a burn, so hits pile up.
+    const auto run = [&](bool refreshes) {
+        ChampionDefinition attacker = Fighter(1, 100000, 0, 1, 2000);
+        DotEffect burn;
+        burn.type = DamageType::True;
+        burn.amount = FlatAmount(Same(60));
+        burn.amountIsTotal = true;
+        burn.duration = FlatAmount(Same(90));
+        burn.intervalTicks = 30;
+        burn.refreshes = refreshes;
+        attacker.onAttack = Hook(777, CastTrigger::OnBasicAttack, {Eff(TargetSpec::CurrentTarget(), burn)});
+        Duel d;
+        d.Add(attacker, 1, 0, {3, 3});
+        d.Add(Dummy(2, 100000000), 2, 1, {3, 4});
+        d.Finish();
+        const FightResult r = CombatSimulator(cfg, nullptr, nullptr, d.db.get()).RunFight(d.specs, 200, 1);
+        CheckValid(r, d, 200, cfg);
+        std::map<int, int> perTick;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 2)) {
+            if (e.flags & kFlagDot) perTick[e.tick] += e.amount;
+        }
+        return perTick;
+    };
+    const auto refreshed = run(true);
+    const auto stacked = run(false);
+    CHECK(!refreshed.empty() && refreshed.begin()->first == 30);
+    int previous = -1;
+    for (const auto& [tick, amount] : refreshed) {
+        CHECK(amount == 20);                                  // one third of 60, once per tick, never piled up
+        CHECK(previous < 0 || tick - previous == 30);           // the rhythm never breaks while it is re-lit
+        previous = tick;
+    }
+    int biggest = 0;
+    for (const auto& [tick, amount] : stacked) biggest = std::max(biggest, amount);
+    CHECK(biggest >= 40);   // without refreshing, overlapping burns do add up
+    // It also has to be a sensible definition.
+    std::string err;
+    const std::string head = R"({"version": 1, "champions": [ { "id": 1, "name": "A", "cost": 1, "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 1, "attackSpeed": 1, "range": 1 }, "onAttack": { "id": 1, "name": "x", "effects": [ )";
+    CHECK(w2f::LoadChampionDatabaseFromJson(head + R"({ "type": "DoT", "target": "CurrentTarget", "damageType": "True", "amount": 5, "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true, "stackBonusPercent": 25 } ] } } ]})", &err) == nullptr &&
+          err.find("never stacks") != std::string::npos);
+    CHECK(w2f::LoadChampionDatabaseFromJson(head + R"({ "type": "DoT", "target": "CurrentTarget", "damageType": "True", "amount": 5, "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ]})", &err) != nullptr);
+
+    // The production Helios synergy uses it, and the Assassins' synergy now also grants crit CHANCE (+15% at 2, +30% at 4).
+    auto traits = sample::LoadProductionTraits();
+    CHECK(traits != nullptr);
+    if (!traits) return;
+    for (const TraitBreakpoint& bp : traits->FindByName("Helios")->breakpoints) {
+        const auto* dot = bp.triggers.empty() || bp.triggers[0].ability.effects.empty() ? nullptr : std::get_if<DotEffect>(&bp.triggers[0].ability.effects[0].payload);
+        CHECK(dot && dot->refreshes && dot->type == DamageType::True);
+    }
+    const TraitDefinition* assassin = traits->FindByName("Assassin");
+    CHECK(assassin && assassin->breakpoints.size() == 2 && assassin->breakpoints[0].count == 2 && assassin->breakpoints[1].count == 4);
+    const int expectedChance[2] = {15, 30}, expectedDamage[2] = {20, 50};
+    for (int i = 0; i < 2 && assassin; ++i) {
+        int chance = 0, damage = 0;
+        bool abilityCrit = false;
+        for (const TraitEffect& te : assassin->breakpoints[static_cast<std::size_t>(i)].effects) {
+            const auto* st = std::get_if<StatusEffect>(&te.effect.payload);
+            if (st == nullptr) continue;
+            if (st->status == StatusType::BonusCritChance) chance = st->value.flat[0];
+            if (st->status == StatusType::CritDamage) damage = st->percent[0];
+            if (st->status == StatusType::AbilityCrit) abilityCrit = true;
+        }
+        CHECK(chance == expectedChance[i] && damage == expectedDamage[i] && abilityCrit);
+    }
+    // In a fight: two Assassins get a real +15 crit chance status (and Vex, with no base crit, now crits about 15% of the time).
+    auto prod = ProdDb();
+    if (!prod) return;
+    Duel d;
+    for (int i = 0; i < 2; ++i) d.Add(*prod->Find(i == 0 ? 9015 : 9009), static_cast<UnitId>(i + 1), 0, HexCoord{3 + i, 3});
+    d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+    d.Finish();
+    const FightResult r = CombatSimulator(cfg, traits.get(), nullptr, d.db.get()).RunFight(d.specs, 10, 1);
+    for (UnitId u : {UnitId{1}, UnitId{2}}) {
+        const auto chance = StatusOn(r, u, StatusType::BonusCritChance);
+        CHECK(chance.size() == 1 && chance[0].amount == 15 && chance[0].duration == 0);
+    }
+}
+
 int main() {
     const std::vector<std::pair<const char*, std::function<void()>>> tests = {
         {"Rng", TestRng},
@@ -9346,6 +10181,17 @@ int main() {
         {"Synergy: Coregons 3 / 6 / 8 from the design doc", TestCoregonsFromTheDesignDoc},
         {"Zone statuses: ExecuteBelow, HpPerSecond", TestZoneStatusesAndExecute},
         {"Phase 11 primitives: loader errors + data hash", TestPhase11PrimitiveLoaderErrors},
+        {"Items: Mage Shield detonation (stored damage)", TestMageShieldDetonation},
+        {"Items: Tear of Mother 'took no damage' condition", TestTearOfMotherNoDamageCondition},
+        {"Items: Twin Snipers (every-second hook)", TestTwinSnipersEverySecond},
+        {"Items: Fishscale Omnivamp + Assassin synergy", TestFishscaleOmnivampAndAssassin},
+        {"Items: production data is the whole design doc", TestProductionItemsAreTheWholeDesignDoc},
+        {"Mother Nature: data file + loader errors", TestMotherNatureDataFile},
+        {"Mother Nature: every kind of gift", TestMotherNatureRewards},
+        {"Mother Nature: the phase, the closed shop, timeouts", TestMotherNaturePhaseFlow},
+        {"Mother Nature: early end, determinism, pool, tiers", TestMotherNatureEarlyEndAndDeterminism},
+        {"Mother Nature: snapshots + bots", TestMotherNatureSnapshotAndBots},
+        {"Refreshing burn + Assassin crit chance", TestRefreshingBurnAndAssassinCrit},
     };
     for (const auto& [name, fn] : tests) {
         std::printf("[ RUN  ] %s\n", name);

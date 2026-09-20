@@ -10,6 +10,7 @@ namespace {
 
 constexpr long long kMaxId = 9007199254740991LL;   // 2^53 - 1: what a JSON number in a JavaScript / Lua client can hold exactly
 constexpr int kMaxShopIndex = 63;
+constexpr int kMaxGiftIndex = 3;   // Mother Nature offers 1..4 gifts
 
 struct Reader {
     const json::Value& object;
@@ -75,7 +76,7 @@ ParseResult ParseCommand(std::string_view text) {
     long long v = 0;
     bool present = false;
     struct Known { const char* name; CommandType type; };
-    static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"buy_xp", CommandType::BuyXp},
+    static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp},
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
                                    {"unequip_item", CommandType::UnequipItem}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
                                    {"ping", CommandType::Ping}};
@@ -89,6 +90,7 @@ ParseResult ParseCommand(std::string_view text) {
     std::vector<const char*> allowed;   // a vector, NOT an initializer_list: that would dangle after its assignment
     switch (c.type) {
         case CommandType::BuyUnit: allowed = {"id", "action", "shop_index"}; break;
+        case CommandType::PickGift: allowed = {"id", "action", "gift_index"}; break;
         case CommandType::SellUnit: allowed = {"id", "action", "unit_id"}; break;
         case CommandType::MoveUnit: allowed = {"id", "action", "unit_id", "location", "x", "y"}; break;
         case CommandType::EquipItem: allowed = {"id", "action", "unit_id", "item_id"}; break;
@@ -111,6 +113,10 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::BuyUnit:
             ok = in.Required("shop_index", 0, kMaxShopIndex, v);
             c.shopIndex = static_cast<int>(v);
+            break;
+        case CommandType::PickGift:
+            ok = in.Required("gift_index", 0, kMaxGiftIndex, v);
+            c.giftIndex = static_cast<int>(v);
             break;
         case CommandType::SellUnit:
             ok = in.Required("unit_id", 1, 4294967295LL, v);

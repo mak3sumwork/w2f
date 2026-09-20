@@ -4,7 +4,7 @@
 std::vector<std::uint8_t> bytes = match.Snapshot();                       // the ENTIRE authoritative state
 auto again = MatchManager::Restore(bytes, config, championDb,             // or nullptr + *error
                                    std::make_unique<CombatSimulator>(config.combat, traits, items),
-                                   &error, items, encounters);
+                                   &error, items, encounters, motherNature);
 ```
 
 Use it for reconnects (resume a seat's match on another process), rollback while debugging ("go back to round 12"), and regression fixtures.
@@ -19,8 +19,8 @@ by its own restored copy every 25 actions.
 diverge on the next roll hash differently.
 
 ## What is in the snapshot
-* header — magic `W2FS`, format version (currently 2), seed, hashes of the game config / champion data / item data / PvE data, the `StateHash`, phase, round, tick in phase, player count
-* body — match RNG, pool counts, every player (health, level, XP, gold, streak, placement, units in roster order with their ids and items, item bag, shop offer, shop RNG),
+* header — magic `W2FS`, format version (currently 3), seed, hashes of the game config / champion data / item data / PvE data / Mother Nature data, the `StateHash`, phase, round, tick in phase, player count
+* body — match RNG, pool counts, every player (health, level, XP, gold, streak, placement, units in roster order with their ids and items, item bag, shop offer, shop RNG, Mother Nature offers and whether the pick is settled),
   this round's matchups (PvE ones name their encounter), and every fight's outcome (result, survivors, damage dealt, PvE drop) **including the full event log** (a client reconnecting mid-round needs the stream it missed; Resolution needs the results)
 * trailer — FNV-1a checksum of everything before it
 
@@ -31,7 +31,7 @@ a few hundred KB, almost all of it the fight logs.
 Listeners (attach them after restoring), the combat simulator object (pass a new one to `Restore`), the champion / item / trait data files, and **clients** — AI bots and scripted
 players are not match state. Save a bot with `AIBotController::GetState()` and give it back with `SetState()`.
 Data files are represented by hashes only: `Restore` refuses a snapshot taken under a different game config, champion data (ids, names, costs, traits, base stats, which abilities
-exist), item data or PvE data (monsters, encounters, drop tables), because the recorded fights and the pool were built from the old data. The numbers *inside* an ability's effects are deliberately not hashed, so re-tuning a spell
+exist), item data, PvE data (monsters, encounters, drop tables) or Mother Nature data (the gifts and their weights), because the recorded fights and the pool were built from the old data. The numbers *inside* an ability's effects are deliberately not hashed, so re-tuning a spell
 keeps old snapshots restorable. `RestoreOptions opts; opts.requireMatchingData = false;` skips the hash check for deliberate "replay this under retuned data" debugging; the match then
 continues under the new rules, and a snapshot whose champions no longer exist is still refused.
 
@@ -46,4 +46,4 @@ The MatchManager takes one itself at the start of every Planning phase and offer
 derived data: it is not part of a snapshot or of `StateHash()`.
 
 ## Changing the format
-Bump `kSnapshotVersion` for any change to the layout (version 2 added the PvE fields and the PvE data hash). Old versions are refused with a clear message; there is deliberately no in-place migration yet.
+Bump `kSnapshotVersion` for any change to the layout (version 2 added the PvE fields and the PvE data hash; version 3 the Mother Nature offers and data hash, and replaced the Draft phase). Old versions are refused with a clear message; there is deliberately no in-place migration yet.

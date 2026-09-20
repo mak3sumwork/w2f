@@ -10,23 +10,27 @@ namespace w2f {
 
 std::unique_ptr<MatchManager> MatchManager::Create(const GameConfig& config, const ChampionDatabase& database,
                                                    std::uint64_t seed, std::unique_ptr<ICombatSimulator> simulator,
-                                                   std::string* error, const ItemDatabase* items, const EncounterDatabase* encounters) {
+                                                   std::string* error, const ItemDatabase* items, const EncounterDatabase* encounters,
+                                                   const MotherNatureDatabase* motherNature) {
     if (!config.Validate(error)) return nullptr;
     // Private ctor: can't use make_unique.
-    return std::unique_ptr<MatchManager>(new MatchManager(config, database, seed, std::move(simulator), items, encounters));
+    return std::unique_ptr<MatchManager>(new MatchManager(config, database, seed, std::move(simulator), items, encounters, motherNature));
 }
 
 MatchManager::MatchManager(const GameConfig& config, const ChampionDatabase& database, std::uint64_t seed,
-                           std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters)
+                           std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters,
+                           const MotherNatureDatabase* motherNature)
     : config_(config),
       database_(database),
       items_(items),
       encounters_(encounters),
+      motherNature_(motherNature),
       seed_(seed),
       rng_(seed, kRngStreamMatch),
       pool_(database, config.pool),
       players_(config.match.playerCount, config.player, config.shop, pool_, seed, static_cast<IPlayerListener*>(this), items),
-      simulator_(std::move(simulator)) {}
+      simulator_(std::move(simulator)),
+      gifts_(static_cast<std::size_t>(config.match.playerCount)) {}
 
 // ---- Listeners ---------------------------------------------------------------------------
 
@@ -49,12 +53,17 @@ void MatchManager::Start() {
 void MatchManager::Tick() {
     if (phase_ == MatchPhase::NotStarted || phase_ == MatchPhase::MatchOver) return;
     ++ticksInPhase_;
+    // Mother Nature's phase ends as soon as everybody has chosen (or had nothing to choose from), or when the time is up.
+    if (phase_ == MatchPhase::MotherNature && AllGiftsSettled()) {
+        AdvancePhase();
+        return;
+    }
     if (ticksInPhase_ >= PhaseDuration(phase_)) AdvancePhase();
 }
 
 int MatchManager::PhaseDuration(MatchPhase phase) const {
     switch (phase) {
-        case MatchPhase::Draft: return config_.match.draftTicks;
+        case MatchPhase::MotherNature: return config_.match.motherNatureTicks;
         case MatchPhase::Planning: return config_.match.planningTicks;
         case MatchPhase::Combat: return config_.match.combatTicks;
         case MatchPhase::Resolution: return config_.match.resolutionTicks;
@@ -71,12 +80,15 @@ int MatchManager::TicksRemainingInPhase() const {
 void MatchManager::BeginRound() {
     // Income is paid when a round begins, from the gold/streak the player finished the last one with.
     players_.GrantRoundIncome(round_);
-    EnterPhase(config_.match.IsDraftRound(round_) ? MatchPhase::Draft : MatchPhase::Planning);
+    EnterPhase(IsMotherNatureRound() ? MatchPhase::MotherNature : MatchPhase::Planning);
 }
 
 void MatchManager::AdvancePhase() {
     switch (phase_) {
-        case MatchPhase::Draft: EnterPhase(MatchPhase::Planning); break;
+        case MatchPhase::MotherNature:
+            FinishGiftPhase();   // whoever has not chosen gets the first offer; the offers nobody took go back
+            EnterPhase(MatchPhase::Planning);
+            break;
         case MatchPhase::Planning: EnterPhase(MatchPhase::Combat); break;
         case MatchPhase::Combat: EnterPhase(MatchPhase::Resolution); break;
         case MatchPhase::Resolution:
@@ -98,11 +110,13 @@ void MatchManager::EnterPhase(MatchPhase next) {
     ticksInPhase_ = 0;
 
     switch (next) {
-        case MatchPhase::Draft:
-            // Placeholder: shared carousel pick is not implemented yet; the phase only times.
+        case MatchPhase::MotherNature:
+            GenerateGifts();
             break;
         case MatchPhase::Planning:
-            players_.RefreshAllShops();
+            // A Mother Nature round has no shop at all: the gift was the reward for the round.
+            if (IsMotherNatureRound()) players_.CloseAllShops();
+            else players_.RefreshAllShops();
             if (config_.snapshot.atPlanningStart) TakeAutoSnapshot();
             break;
         case MatchPhase::Combat:
@@ -321,6 +335,160 @@ PveDrop MatchManager::GrantPveDrop(PlayerState& player, std::uint32_t encounterI
     return drop;
 }
 
+// ---- Mother Nature ------------------------------------------------------------------------
+
+const std::vector<GiftOffer>& MatchManager::GiftOffers(PlayerId player) const {
+    static const std::vector<GiftOffer> kNone;
+    return player < gifts_.size() ? gifts_[player].offers : kNone;
+}
+
+bool MatchManager::GiftSettled(PlayerId player) const { return player < gifts_.size() && gifts_[player].settled; }
+
+// A gift that cannot be handed out right now (no item of its kind exists, every cost tier it lists is sold out) is never offered.
+bool MatchManager::GiftUsable(const GiftDefinition& gift) const {
+    switch (gift.type) {
+        case GiftType::Gold:
+        case GiftType::Xp:
+        case GiftType::Heal: return true;
+        case GiftType::Item: return items_ != nullptr && !GiftItemChoices(gift, *items_).empty();
+        case GiftType::Unit:
+            for (int cost : gift.costs) {
+                if (pool_.RemainingInTier(cost) > 0) return true;
+            }
+            return false;
+    }
+    return false;
+}
+
+// Turns a gift into a concrete offer: rolls the item, or checks a copy of the champion out of the shared pool.
+bool MatchManager::RealizeGift(const GiftDefinition& gift, Rng& rng, GiftOffer& out) {
+    out = GiftOffer{};
+    out.gift = gift.id;
+    out.type = gift.type;
+    switch (gift.type) {
+        case GiftType::Gold:
+        case GiftType::Xp:
+        case GiftType::Heal:
+            out.amount = gift.amount;
+            return true;
+        case GiftType::Item: {
+            if (items_ == nullptr) return false;
+            const std::vector<ItemId> choices = GiftItemChoices(gift, *items_);
+            if (choices.empty()) return false;
+            out.item = choices[rng.NextBelow(static_cast<std::uint32_t>(choices.size()))];
+            return true;
+        }
+        case GiftType::Unit: {
+            std::vector<int> costs;
+            for (int cost : gift.costs) {
+                if (pool_.RemainingInTier(cost) > 0 && std::find(costs.begin(), costs.end(), cost) == costs.end()) costs.push_back(cost);
+            }
+            if (costs.empty()) return false;
+            out.champion = pool_.DrawFromTier(costs[rng.NextBelow(static_cast<std::uint32_t>(costs.size()))], rng);
+            return out.champion != nullptr;
+        }
+    }
+    return false;
+}
+
+// The MotherNature phase opens: every living player gets `options` distinct gifts from the tier in force this stage (chosen by weight, one
+// roll stream for the round, players in seat order).
+void MatchManager::GenerateGifts() {
+    for (PlayerGifts& g : gifts_) g = PlayerGifts{};
+    if (motherNature_ == nullptr) return;
+    const MotherNatureTier& tier = motherNature_->TierFor(config_.match.StageOf(round_).stage);
+    Rng rng(seed_, kRngStreamMotherNatureBase + static_cast<std::uint64_t>(round_));
+    for (PlayerId id : players_.AlivePlayerIds()) {
+        std::vector<const GiftDefinition*> candidates;
+        for (const GiftDefinition& gift : tier.gifts) {
+            if (GiftUsable(gift)) candidates.push_back(&gift);
+        }
+        PlayerGifts& mine = gifts_[id];
+        while (static_cast<int>(mine.offers.size()) < motherNature_->Options() && !candidates.empty()) {
+            std::uint32_t total = 0;
+            for (const GiftDefinition* gift : candidates) total += static_cast<std::uint32_t>(gift->weight);
+            std::uint32_t roll = rng.NextBelow(total);
+            std::size_t chosen = 0;
+            while (roll >= static_cast<std::uint32_t>(candidates[chosen]->weight)) roll -= static_cast<std::uint32_t>(candidates[chosen++]->weight);
+            const GiftDefinition* gift = candidates[chosen];
+            candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(chosen));   // distinct options
+            GiftOffer offer;
+            if (RealizeGift(*gift, rng, offer)) mine.offers.push_back(offer);
+        }
+        mine.settled = mine.offers.empty();   // nothing on offer: nothing to wait for
+        for (IMatchListener* listener : listeners_) listener->OnGiftsOffered(id, mine.offers);
+    }
+}
+
+bool MatchManager::AllGiftsSettled() const {
+    for (PlayerId id : players_.AlivePlayerIds()) {
+        if (!gifts_[id].settled) return false;
+    }
+    return true;
+}
+
+// The unit copies on offer that were not taken go back to the shared pool.
+void MatchManager::ReleaseOffers(PlayerId player) {
+    PlayerGifts& mine = gifts_[player];
+    for (const GiftOffer& offer : mine.offers) {
+        if (offer.champion != nullptr) {
+            const bool returned = pool_.Return(offer.champion, 1);
+            assert(returned);
+            (void)returned;
+        }
+    }
+    mine.offers.clear();
+}
+
+ActionResult MatchManager::PickGift(PlayerId player, std::size_t index, bool automatic) {
+    PlayerState* p = players_.Get(player);
+    if (p == nullptr) return ActionResult::InvalidPlayer;
+    if (!p->IsAlive()) return ActionResult::PlayerEliminated;
+    PlayerGifts& mine = gifts_[player];
+    if (mine.settled) return ActionResult::AlreadyPicked;   // (also the answer when nothing was on offer: there is nothing left to take)
+    if (index >= mine.offers.size()) return ActionResult::InvalidSlot;
+
+    const GiftOffer taken = mine.offers[index];
+    mine.offers.erase(mine.offers.begin() + static_cast<std::ptrdiff_t>(index));
+    ReleaseOffers(player);   // the rest are gone
+    mine.settled = true;
+
+    int goldConverted = 0;
+    switch (taken.type) {
+        case GiftType::Gold: p->AddGold(taken.amount); break;
+        case GiftType::Xp: p->AddXp(taken.amount); break;
+        case GiftType::Heal: p->Heal(taken.amount); break;
+        case GiftType::Item: p->AddItemToBag(taken.item); break;
+        case GiftType::Unit:
+            if (p->CanAcquire(taken.champion)) {
+                p->AcquireUnit(taken.champion, 0);
+            } else {
+                // No room on the bench or board and no merge to make: the copy goes back and the player is paid its cost instead
+                // (the same rule as a PvE champion drop).
+                pool_.Return(taken.champion, 1);
+                p->AddGold(taken.champion->cost);
+                goldConverted = taken.champion->cost;
+            }
+            break;
+    }
+    for (IMatchListener* listener : listeners_) listener->OnGiftPicked(player, static_cast<int>(index), taken, automatic, goldConverted);
+    return ActionResult::Ok;
+}
+
+ActionResult MatchManager::TryPickGift(PlayerId player, std::size_t index) {
+    if (phase_ != MatchPhase::MotherNature) return ActionResult::WrongPhase;
+    return PickGift(player, index, false);
+}
+
+// The phase is over: anyone who has not chosen receives the first offer, and nothing stays on offer.
+void MatchManager::FinishGiftPhase() {
+    for (PlayerId id : players_.AlivePlayerIds()) {
+        if (!gifts_[id].settled) PickGift(id, 0, true);
+    }
+    for (PlayerId id = 0; id < gifts_.size(); ++id) ReleaseOffers(id);
+    for (PlayerGifts& g : gifts_) g = PlayerGifts{};
+}
+
 void MatchManager::TakeAutoSnapshot() {
     autoSnapshot_ = Snapshot();
     autoSnapshotRound_ = round_;
@@ -355,13 +523,15 @@ ActionResult MatchManager::ResolveActor(PlayerId id, PlayerState*& outPlayer) {
 ActionResult MatchManager::TryRerollShop(PlayerId player) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p);
-    return check == ActionResult::Ok ? p->Shop().TryReroll() : check;
+    if (check != ActionResult::Ok) return check;
+    return IsMotherNatureRound() ? ActionResult::ShopClosed : p->Shop().TryReroll();
 }
 
 ActionResult MatchManager::TryBuyShopUnit(PlayerId player, std::size_t shopSlot) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p);
-    return check == ActionResult::Ok ? p->Shop().TryBuy(shopSlot) : check;
+    if (check != ActionResult::Ok) return check;
+    return IsMotherNatureRound() ? ActionResult::ShopClosed : p->Shop().TryBuy(shopSlot);
 }
 
 ActionResult MatchManager::TryBuyXp(PlayerId player) {
@@ -435,6 +605,9 @@ bool MatchManager::VerifyPoolIntegrity() const {
         for (const UnitInstance& unit : p->Roster().Units()) {
             outstanding[database_.IndexOf(unit.champion->id)] += SharedChampionPool::CopiesForStarLevel(unit.starLevel);
         }
+        for (const GiftOffer& offer : gifts_[static_cast<std::size_t>(i)].offers) {   // a unit on offer is checked out of the pool
+            if (offer.champion != nullptr) outstanding[database_.IndexOf(offer.champion->id)] += 1;
+        }
     }
     for (std::size_t i = 0; i < all.size(); ++i) {
         if (pool_.Remaining(all[i].id) + outstanding[i] != pool_.InitialCopies(all[i].id)) return false;
@@ -483,6 +656,16 @@ std::uint64_t MatchManager::StateHash() const {
         for (ItemId item : p->ItemBag()) h.Add(item);
         h.Add(0xFFFFFFFFull);  // separator
         for (const ChampionDefinition* slot : p->Shop().Slots()) h.Add(slot ? slot->id : 0);
+        const PlayerGifts& gifts = gifts_[static_cast<std::size_t>(i)];
+        h.Add(gifts.settled ? 1 : 0);
+        for (const GiftOffer& offer : gifts.offers) {
+            h.Add(offer.gift);
+            h.Add(static_cast<std::uint64_t>(offer.type));
+            h.AddInt(offer.amount);
+            h.Add(offer.item);
+            h.Add(offer.champion != nullptr ? offer.champion->id : 0);
+        }
+        h.Add(0xFFFFFFFDull);  // separator
         h.Add(p->Roster().NextSerial());
         for (std::uint64_t word : p->Shop().GetRngState().words) h.Add(word);
     }

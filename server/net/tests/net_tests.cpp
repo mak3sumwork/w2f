@@ -363,6 +363,8 @@ static void TestCommandParsing() {
         {R"({"action":"buy_unit","shop_index":0,"id":17})", CommandType::BuyUnit},
         {R"({"id": 0, "action": "reroll_shop"})", CommandType::RerollShop},
         {R"({"action": "buy_xp"})", CommandType::BuyXp},
+        {R"({"action": "pick_gift", "gift_index": 0})", CommandType::PickGift},
+        {R"({"id": 4, "action": "pick_gift", "gift_index": 3})", CommandType::PickGift},
         {R"({"action": "sell_unit", "unit_id": 16777217})", CommandType::SellUnit},
         {R"({"action": "move_unit", "unit_id": 5, "location": "bench", "x": 8})", CommandType::MoveUnit},
         {R"({"action": "move_unit", "unit_id": 5, "location": "bench", "x": 0, "y": 0})", CommandType::MoveUnit},
@@ -381,6 +383,10 @@ static void TestCommandParsing() {
         const ParseResult r = ParseCommand(g.json);
         if (!r.ok) std::printf("  rejected a valid command %s: %s / %s\n", g.json, r.error.code.c_str(), r.error.detail.c_str());
         CHECK(r.ok && r.command.type == g.type);
+    }
+    {
+        const ParseResult r = ParseCommand(R"({"action": "pick_gift", "gift_index": 2, "id": 8})");
+        CHECK(r.ok && r.command.type == CommandType::PickGift && r.command.giftIndex == 2 && r.command.hasId && r.command.id == 8);
     }
     {   // The fields land where they should.
         const ParseResult r = ParseCommand(R"({"action": "move_unit", "unit_id": 33554433, "location": "board", "x": 4, "y": 2, "id": 41})");
@@ -401,7 +407,10 @@ static void TestCommandParsing() {
         {"{}", "missing_action"}, {R"({"id": 1})", "missing_action"},
         {R"({"action": 5})", "wrong_type"}, {R"({"action": null})", "wrong_type"}, {R"({"action": ["ping"]})", "wrong_type"},
         {R"({"action": "teleport"})", "unknown_action"}, {R"({"action": ""})", "unknown_action"}, {R"({"action": "BUY_UNIT", "shop_index": 1})", "unknown_action"},
-        {R"({"action": "buy_unit"})", "missing_field"}, {R"({"action": "sell_unit"})", "missing_field"},
+        {R"({"action": "buy_unit"})", "missing_field"}, {R"({"action": "sell_unit"})", "missing_field"}, {R"({"action": "pick_gift"})", "missing_field"},
+        {R"({"action": "pick_gift", "gift_index": -1})", "out_of_range"}, {R"({"action": "pick_gift", "gift_index": 4})", "out_of_range"},
+        {R"({"action": "pick_gift", "gift_index": "0"})", "wrong_type"}, {R"({"action": "pick_gift", "gift_index": 0.5})", "wrong_type"},
+        {R"({"action": "pick_gift", "gift_index": 0, "shop_index": 0})", "unknown_field"}, {R"({"action": "pick_gift", "index": 0})", "unknown_field"},
         {R"({"action": "move_unit", "unit_id": 5, "x": 1, "y": 1})", "missing_field"},
         {R"({"action": "move_unit", "unit_id": 5, "location": "board", "x": 1})", "missing_field"},
         {R"({"action": "equip_item", "unit_id": 5})", "missing_field"},
@@ -520,7 +529,7 @@ struct Rig {
         data.items = items.get();
         data.traits = traits.get();
         data.encounters = encounters.get();
-        data.config.match.draftTicks = 30;
+        data.config.match.motherNatureTicks = 30;
         data.config.match.planningTicks = 90;
         data.config.match.combatTicks = 300;
         data.config.match.resolutionTicks = 30;
@@ -658,7 +667,7 @@ static void TestReconnect() {
     const std::string tokenA = Str(r.Last(a, "welcome"), "token");
     const std::string tokenB = Str(r.Last(b, "welcome"), "token");
     CHECK(r.server->state() == GameServer::State::Running);
-    r.Tick(40);   // into Planning (draft is 30 ticks)
+    r.Tick(40);   // well inside round 1's Planning
 
     // A drops. The seat stays reserved and the match carries on without them.
     r.server->OnDisconnect(a);
@@ -717,15 +726,8 @@ static void TestCommandRouting() {
     const ConnectionId a = r.Connect();
     const ConnectionId b = r.Connect();
 
-    // Round 1 opens with the draft: shopping is not allowed yet, and the answer says so, with the request's id.
-    r.Say(a, R"({"action": "buy_unit", "shop_index": 0, "id": 101})");
-    {
-        const json::Value res = r.Last(a, "result");
-        CHECK(Str(res, "result") == "WrongPhase" && res.Find("ok")->AsBool() == false && Num(res, "id") == 101 && Str(res, "action") == "buy_unit");
-    }
-    CHECK(observed.size() == 1 && observed[0].result == ActionResult::WrongPhase && observed[0].player == 0);
-
-    CHECK(r.RunUntil([&] { return IsPlanning(r); }, 100));
+    // Round 1 opens straight into Planning (Mother Nature comes every 3rd round).
+    CHECK(IsPlanning(r));
     r.net.sent.clear();
 
     // The shop is private state: read it from the state message the server pushed when the phase began.
@@ -831,6 +833,114 @@ static void TestCommandRouting() {
     // Moving past the end of the Planning phase: the engine itself refuses, and the client learns why.
     CHECK(r.RunUntil([&] { return r.Match().Phase() == MatchPhase::Combat; }, 300));
     r.Say(a, R"({"action": "reroll_shop"})");
+    CHECK(Str(r.Last(a, "result"), "result") == "WrongPhase");
+}
+
+static void TestMotherNatureOverTheProtocol() {
+    std::string err;
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+    auto nature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get(), &err);
+    CHECK(items != nullptr && nature != nullptr);
+    if (!items || !nature) return;
+    // Mother Nature every round, so the very first phase of the match is hers.
+    Rig r(2, [&](GameData& d, GameServerConfig&) { d.motherNature = nature.get(); d.config.match.motherNatureEveryRounds = 1; });
+    const ConnectionId a = r.Connect();
+    const ConnectionId b = r.Connect();
+    CHECK(r.server->state() == GameServer::State::Running && r.Match().Phase() == MatchPhase::MotherNature && r.Match().IsMotherNatureRound());
+
+    // What the client is told when the match opens: how long she stays, how often she comes, and that this round has no shop.
+    const json::Value started = r.Last(a, "match_started");
+    CHECK(Num(*started.Find("phase_ticks"), "mother_nature") == 30 && Num(started, "mother_nature_every") == 1 && started.Find("phase_ticks")->Find("draft") == nullptr);
+    const json::Value phase = r.Last(a, "phase");
+    CHECK(Str(phase, "phase") == "MotherNature" && phase.Find("mother_nature")->AsBool() && Num(phase, "duration_ticks") == 30);
+
+    // Each player is privately offered 2 concrete gifts.
+    const json::Value offeredA = r.Last(a, "gift_event");
+    CHECK(Str(offeredA, "event") == "offered" && offeredA.Find("gifts")->Items().size() == 2);
+    const auto& giftsA = offeredA.Find("gifts")->Items();
+    CHECK(Num(giftsA[0], "index") == 0 && Num(giftsA[1], "index") == 1 && Num(giftsA[0], "gift") != Num(giftsA[1], "gift"));
+    for (const json::Value& g : giftsA) {
+        const std::string kind = Str(g, "kind");
+        CHECK(!Str(g, "name").empty());
+        if (kind == "gold" || kind == "xp" || kind == "heal") CHECK(Num(g, "amount") > 0);
+        else if (kind == "item") CHECK(Num(g, "item") >= 1 && Num(g, "item") <= 8);
+        else if (kind == "unit") CHECK(Num(g, "champion") > 0 && Num(g, "cost") >= 2 && Num(g, "cost") <= 3);
+        else CHECK(false);
+    }
+    const json::Value stateA = r.Last(a, "state");
+    CHECK(stateA.Find("gifts")->Items().size() == 2 && !stateA.Find("gift_settled")->AsBool());
+    // Nobody else sees them: b's messages carry b's own offers, and a's are not in there.
+    CHECK(r.CountType(b, "gift_event") == 1 && r.Last(b, "gift_event").Find("gifts")->Items().size() == 2);
+    r.net.sent.clear();
+
+    // The pick: the answer, the private event, and the new state (the offers are gone, the choice is settled).
+    r.Say(a, R"({"action": "pick_gift", "gift_index": 1, "id": 5})");
+    {
+        const json::Value res = r.Last(a, "result");
+        CHECK(Str(res, "result") == "Ok" && Num(res, "id") == 5 && Str(res, "action") == "pick_gift" && res.Find("ok")->AsBool());
+        const json::Value picked = r.Last(a, "gift_event");
+        CHECK(Str(picked, "event") == "picked" && Num(*picked.Find("gift"), "index") == 1 && Num(*picked.Find("gift"), "gift") == Num(giftsA[1], "gift") &&
+              !picked.Find("automatic")->AsBool() && Num(picked, "gold_converted") == 0);
+        const json::Value st = r.Last(a, "state");
+        CHECK(st.Find("gifts")->Items().empty() && st.Find("gift_settled")->AsBool());
+        CHECK(r.CountType(b, "gift_event") == 0 && r.CountType(b, "result") == 0);   // b learns nothing about a's pick
+    }
+    // Refusals come back as engine results; malformed commands are protocol errors.
+    r.net.sent.clear();
+    r.Say(a, R"({"action": "pick_gift", "gift_index": 0, "id": 6})");
+    CHECK(Str(r.Last(a, "result"), "result") == "AlreadyPicked");
+    r.Say(b, R"({"action": "pick_gift", "gift_index": 3})");
+    CHECK(Str(r.Last(b, "result"), "result") == "InvalidSlot");
+    r.Say(b, R"({"action": "buy_unit", "shop_index": 0})");
+    CHECK(Str(r.Last(b, "result"), "result") == "WrongPhase");   // not even the shop's command works during her phase
+    r.Say(b, R"({"action": "pick_gift", "gift_index": 9})");
+    CHECK(Str(r.Last(b, "error"), "code") == "out_of_range");
+
+    // b picks; the phase ends at once and the round's Planning has no shop.
+    r.Say(b, R"({"action": "pick_gift", "gift_index": 0})");
+    CHECK(Str(r.Last(b, "result"), "result") == "Ok");
+    r.Tick(2);
+    CHECK(r.Match().Phase() == MatchPhase::Planning && r.Match().Round() == 1);
+    const json::Value planning = r.Last(a, "phase");
+    CHECK(Str(planning, "phase") == "Planning" && planning.Find("mother_nature")->AsBool());
+    r.Say(a, R"({"action": "get_state"})");
+    const json::Value shopState = r.Last(a, "state");
+    CHECK(shopState.Find("shop")->Items().size() == static_cast<std::size_t>(r.data.config.shop.slotCount));
+    for (const json::Value& slot : shopState.Find("shop")->Items()) {   // every slot empty (0)
+        long long id = -1;
+        CHECK(slot.ToInt(id) && id == 0);
+    }
+    r.net.sent.clear();
+    r.Say(a, R"({"action": "buy_unit", "shop_index": 0, "id": 7})");
+    CHECK(Str(r.Last(a, "result"), "result") == "ShopClosed" && Num(r.Last(a, "result"), "id") == 7);
+    r.Say(a, R"({"action": "reroll_shop"})");
+    CHECK(Str(r.Last(a, "result"), "result") == "ShopClosed");
+    r.Say(a, R"({"action": "pick_gift", "gift_index": 0})");
+    CHECK(Str(r.Last(a, "result"), "result") == "WrongPhase");
+    CHECK(r.Match().VerifyPoolIntegrity());
+
+    // A player who reconnects during the phase gets the offers again (they are part of the private state).
+    Rig q(2, [&](GameData& d, GameServerConfig&) { d.motherNature = nature.get(); d.config.match.motherNatureEveryRounds = 1; });
+    const ConnectionId c1 = q.Connect();
+    q.Connect();
+    const std::string token = Str(q.Last(c1, "welcome"), "token");
+    q.server->OnDisconnect(c1);
+    const ConnectionId c2 = q.Connect(token);
+    const json::Value again = q.Last(c2, "state");
+    CHECK(again.Find("gifts")->Items().size() == 2 && !again.Find("gift_settled")->AsBool() && Str(q.Last(c2, "phase"), "phase") == "MotherNature");
+}
+
+// Without Mother Nature data the server plays exactly as before: no gift phase, no closed shop, and the messages say so.
+static void TestNoMotherNatureData() {
+    Rig r(2);
+    const ConnectionId a = r.Connect();
+    r.Connect();
+    CHECK(Num(r.Last(a, "match_started"), "mother_nature_every") == 0);
+    CHECK(r.Match().Phase() == MatchPhase::Planning && !r.Match().IsMotherNatureRound(3));
+    CHECK(!r.Last(a, "phase").Find("mother_nature")->AsBool());
+    r.Say(a, R"({"action": "get_state"})");
+    CHECK(r.Last(a, "state").Find("gifts")->Items().empty() && r.Last(a, "state").Find("gift_settled")->AsBool());
+    r.Say(a, R"({"action": "pick_gift", "gift_index": 0})");
     CHECK(Str(r.Last(a, "result"), "result") == "WrongPhase");
 }
 
@@ -1780,7 +1890,7 @@ static void TestSocketSlowReaderIsDropped() {
 }
 
 static void TestSocketFullMatchFlow() {
-    NetRig n(2, {}, [](GameData& d, GameServerConfig&) { d.config.match.draftTicks = 10; d.config.match.planningTicks = 200; d.config.player.startingGold = 30; });
+    NetRig n(2, {}, [](GameData& d, GameServerConfig&) { d.config.match.motherNatureTicks = 10; d.config.match.planningTicks = 200; d.config.player.startingGold = 30; });
     RawClient a, b;
     CHECK(n.Open(a));
     json::Value wa, wb;
@@ -1882,6 +1992,8 @@ int main() {
         {"Reconnect: tokens, replacement, resync", TestReconnect},
         {"Command routing + engine results", TestCommandRouting},
         {"Item combination over the protocol", TestItemCombinationOverTheProtocol},
+        {"Mother Nature over the protocol", TestMotherNatureOverTheProtocol},
+        {"No Mother Nature data: nothing changes", TestNoMotherNatureData},
         {"Malformed traffic never reaches the engine", TestMalformedTrafficNeverReachesTheEngine},
         {"Rate limiting", TestRateLimiting},
         {"Privacy + event delivery over a whole match", TestPrivacyAndDelivery},

@@ -9,7 +9,21 @@ Stage 1 has `firstStageRounds` = 3 rounds, every later stage `roundsPerStage` = 
 **PvE rounds** are the first `firstStagePveRounds` rounds of stage 1 (all three) and round `pveRoundInLaterStages` (7) of every later stage,
 so 1-1, 1-2, 1-3, 2-7, 3-7 ... (`pveRoundInLaterStages = 0` means none after stage 1). Every other round is PvP.
 
-Each round runs Draft (only on draft rounds) -> Planning -> Combat -> Resolution. Income is paid at the start of the round (see Streaks).
+Each round runs [MotherNature] -> Planning -> Combat -> Resolution, where MotherNature only exists on Mother Nature's rounds (below). Income is paid at the start of the round (see Streaks).
+
+## Mother Nature (replaces the carousel and augments)
+Every `MatchConfig::motherNatureEveryRounds` rounds (**3**: rounds 3, 6, 9 ... whatever their stage) the round opens with a **MotherNature phase** (`motherNatureTicks`, 20 s) *instead of a shop*.
+Every living player is privately offered **2 random gifts** (`options` in `data/mother_nature.json`) and may take exactly **one**, for free (`TryPickGift`). The **shop stays closed for the whole round**: `TryBuyShopUnit` / `TryRerollShop` answer
+`ShopClosed` during its Planning phase (buying XP, selling, moving and equipping still work), and the players' shop offers are returned to the pool when Planning begins.
+Without `mother_nature.json` loaded there are no such rounds: every round has its shop.
+
+* **The gifts** (data, tweakable weights): a tier is used from its `fromStage`; tier 1 = a random component item, +5 gold, +4 XP, Mother's Blessing (+3 player HP), a random 2/3-cost unit; tier 3 (from stage 4) = a completed legendary item, an emblem (low chance), +15 gold, Mother's Miracle (+7 HP), a 5-cost unit.
+  The two options are **distinct gift kinds**, chosen by weight; a kind that cannot be handed out right now (no item of its class, its unit tiers sold out) is never offered. Offers are **concrete** ("Omnilium Heart", "Soul"), rolled from the round's own random stream (`kRngStreamMotherNatureBase + round`).
+* **Units** on offer are checked out of the shared pool exactly like shop slots (`VerifyPoolIntegrity` counts them), and go back when another gift is picked or the phase ends. A unit with no room for it (bench and board full, no merge) is paid as gold equal to its cost, like a PvE champion drop.
+  Heal never takes a player above their starting health.
+* **The phase ends** as soon as every living player has settled (picked, or had nothing on offer), or when its time is up: whoever has not picked then gets their **first offer automatically** (`OnGiftPicked(..., automatic = true)`).
+* **Events**: `IMatchListener::OnGiftsOffered(player, offers)` for each living player when the phase opens, `OnGiftPicked(player, index, offer, automatic, goldConverted)` for each pick. A unit gift is also announced through `OnUnitBought` (0 gold).
+  Offers and picks are private to their owner. Bots (`AIBotController`) take a unit, then an item, then gold, then XP, then healing.
 
 ## PvE rounds
 * Everyone alive fights the **same encounter** (chosen from `pve.json` by stage/round, ties broken by the match seed) on their own copy of the board. The fight is an ordinary log played back by the client; the monsters have unit ids above `kMonsterUnitBase` and are on team 1.

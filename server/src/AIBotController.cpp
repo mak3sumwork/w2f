@@ -17,6 +17,10 @@ AIBotController::AIBotController(PlayerId player, std::uint64_t matchSeed, const
     : player_(player), rng_(matchSeed, kRngStreamBotBase + player), profile_(profile) {}
 
 void AIBotController::Tick(MatchManager& match) {
+    if (match.Phase() == MatchPhase::MotherNature) {
+        PickGift(match);
+        return;
+    }
     if (match.Phase() != MatchPhase::Planning) return;
     if (match.Round() == lastActedRound_) return;  // already played this round's planning
     const PlayerState* self = match.Players().Get(player_);
@@ -26,6 +30,29 @@ void AIBotController::Tick(MatchManager& match) {
     BuyExperience(match);
     BuyUnits(match);
     PlaceUnits(match);
+}
+
+// Mother Nature: take the most useful gift on offer -- a unit first, then an item, gold, XP and healing last. (No randomness, so a bot that
+// is restored from a snapshot picks the same thing.) Does nothing once it has picked.
+void AIBotController::PickGift(MatchManager& match) {
+    const PlayerState* self = match.Players().Get(player_);
+    if (self == nullptr || !self->IsAlive() || match.GiftSettled(player_)) return;
+    const std::vector<GiftOffer>& offers = match.GiftOffers(player_);
+    const auto rank = [](GiftType type) {
+        switch (type) {
+            case GiftType::Unit: return 4;
+            case GiftType::Item: return 3;
+            case GiftType::Gold: return 2;
+            case GiftType::Xp: return 1;
+            case GiftType::Heal: return 0;
+        }
+        return 0;
+    };
+    std::size_t best = 0;
+    for (std::size_t i = 1; i < offers.size(); ++i) {
+        if (rank(offers[i].type) > rank(offers[best].type)) best = i;
+    }
+    if (!offers.empty()) match.TryPickGift(player_, best);
 }
 
 void AIBotController::BuyExperience(MatchManager& match) {

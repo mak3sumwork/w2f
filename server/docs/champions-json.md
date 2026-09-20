@@ -88,7 +88,7 @@ Enemies that are **Untargetable** are never picked by any of these, area effects
 | `Teleport` | `destination` (`BehindFarthestEnemy` / `BehindClosestEnemy` / `NextToLowestHpEnemy` / `NextToHighestHpEnemy` / `BehindCurrentTarget`); target must be `Self`. Lands on a free hex next to that enemy, on the side away from where it started; stays put if nothing is free. The first two leave the unit without a target; the others make that enemy its target (Vex, Raa, Bit) |
 | `Displace` | `direction` (`Toward` / `Away` from the caster), `hexes` (1-8, default 1): slides each target in a straight line and stops at the first blocked or off-board hex (Null's pull, Orion's knock-back). Reported as a `Teleport` event with `subtype` 1 |
 | `Status` | `status`, `percent` (per star, signed; not for Stun/Root/Knockup/CcImmunity), a duration **or** `"permanent": true`, `multiplierPercent` (scales the duration), `"stacking": "add"\|"refresh"`, and `value` (BonusAttackDamage only) |
-| `DoT` | `damageType`, `amount`, `amountIsTotal` (amount is the total over the duration, split evenly), a duration, `intervalSeconds`/`intervalTicks`, `stackBonusPercent`, `healPercent` (a drain: the caster heals this % of the damage each tick actually deals — Lich) |
+| `DoT` | `damageType`, `amount`, `amountIsTotal` (amount is the total over the duration, split evenly), a duration, `intervalSeconds`/`intervalTicks`, `stackBonusPercent`, `healPercent` (a drain: the caster heals this % of the damage each tick actually deals — Lich), `"refreshes": true` (applying it again while a burn from the same ability runs on the victim, from anyone, REPLACES it — one burn at a time, and it keeps its tick rhythm so a fast attacker cannot re-light it before it ever ticks; exclusive with `stackBonusPercent` — Helios) |
 | `Heal` | `amount` (flat, or a formula such as 5% of `TargetMaxHp`). Reduced by the target's Wound; capped at max HP |
 
 **status**: `Stun`, `AttackDamage`, `AttackSpeed`, `Armor`, `MagicResist`, `MaxHp` (percent of base max HP; current HP moves with it),
@@ -179,6 +179,18 @@ See `docs/game-loop.md` for how PvE rounds work. The file has three parts:
 * **encounters** are the boards. `units` stand on the same board a player has — `x` 0–6, `y` 0–3 with `y` = 3 the front row — and the fight mirrors them to the far side. `stage` / `round` choose when an encounter is used, **0 or absent = any**: (1, 2) is round 1-2, (0, 7) is X-7 of every stage. The most specific match wins (stage+round > stage only > round only > neither); if several tie, the match seed picks one, so every player in a round meets the same board. `drops` optionally replaces the default table for that encounter.
 * **drop tables**: winning a PvE round gives **one** drop, chosen from the table by `weight`. `Gold` needs `minGold` and `maxGold` (uniform between); `Champion` needs `tiers` (cost tiers to draw from — the copy comes out of the shared pool, and a full roster gets gold equal to its cost instead); `Item` optionally lists `items` (item ids; empty = any item in `items.json`). Lines that cannot pay out right now — no item data loaded, every listed tier sold out — are skipped for that roll.
 
+## `mother_nature.json`
+```json
+{ "version": 1, "options": 2,
+  "tiers": [ { "id": 1, "name": "Early Game", "fromStage": 1, "gifts": [
+      { "id": 101, "name": "Component", "type": "Item", "itemClass": "Component", "weight": 25 },
+      { "id": 102, "name": "Pocket Change", "type": "Gold", "amount": 5, "weight": 25 },
+      { "id": 105, "name": "Wanderer", "type": "Unit", "costs": [2, 3], "weight": 15 } ] } ] }
+```
+`options` (1..4) = how many distinct gifts each player is shown; the gifts of a round come from the tier with the largest `fromStage` that is not above the round's stage (the first tier must start at stage 1; tier ids are just the designer's numbers, gaps allowed).
+A gift has a unique `id`, a `name`, a `type` and an optional `weight` (default 1). `Gold` / `Xp` / `Heal` need `amount`. `Item` needs either `"itemClass"` — `Component` (a base item that is an ingredient of a recipe, never the Omnilium Seed), `Legendary` (a finished item that grants no trait), `Emblem` (a finished trait item) or `Any` — or an explicit `"items": [ids]` list. `Unit` needs `costs` (the champion cost tiers it may come from).
+Everything is validated at start-up (item ids, that every item class has members, unit costs 1..5, that a tier has at least `options` gifts). Rules of the phase itself: `docs/game-loop.md`.
+
 ## Event triggers (hooks)
 An ability's `trigger` says when it fires. `Mana`, `EveryNthAttack` (as a champion's `ability`) *cast*: a SpellCast event, a lock, mana drained. Every other trigger is a **hook**:
 silent (no cast, no mana use, no lock) - its effects just happen, on the tick the event happens. Hooks live in a champion's `triggers`, an item's `abilities`, or a synergy's `triggers`.
@@ -249,6 +261,9 @@ this damage is never counted as "damage the source dealt" by formulas / ally ran
 
 **Empowered attacks** (Solis, Mortis): a cast applies `EmpoweredAttack` with N charges (use `"stacking": "refresh"`, and give it a duration so unused charges lapse); a champion `trigger` with `"trigger": "OnBasicAttack"` and `"requiresCharge": true` fires only while the holder has a charge and spends one each time.
 The rider's effects then hit the unit that attack just hit (`CurrentTarget`).
+
+**Phase 12**: `OnShieldBreak` now carries the shield's **stored damage** as `TriggerDamage` (everything that shield absorbed) and an optional `"onlyShieldsFrom": <ability id>`; a new hook `EveryInterval` (`intervalSeconds` / `intervalTicks`)
+fires every N ticks for a holder that is alive, not disabled, and has a living enemy target in attack range (`CurrentTarget`); and any effect with a `delay*` may carry `"condition": "NoDamageTakenSinceCast"` (runs only if the caster took no damage since the cast began). Details in `item-coverage.md`.
 
 New **hook triggers**: `OnAnyUnitDeath` (any unit on the board dies, either team; fires once per death for every unit still alive that holds it — Phaisa) and `OnShieldBreak` (one of the holder's shields is used up by damage, not by expiring; `TriggerAttacker` = who broke it — Hexagon's detonation).
 

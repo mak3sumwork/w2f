@@ -48,7 +48,8 @@ A message is at most 4096 bytes.
 | action | fields | notes |
 |---|---|---|
 | `buy_unit` | `shop_index` 0..63 | Planning phase only (else `WrongPhase`) |
-| `reroll_shop` | | |
+| `reroll_shop` | | `ShopClosed` in a Mother Nature round |
+| `pick_gift` | `gift_index` 0..3 | Mother Nature's phase only (else `WrongPhase`): take one of the offered gifts, free. `AlreadyPicked` / `InvalidSlot` when refused |
 | `buy_xp` | | |
 | `sell_unit` | `unit_id` | |
 | `move_unit` | `unit_id`, `location` `"bench"`\|`"board"`, `x`, `y` | bench: `x` 0..8 (`y` optional, must be 0); board: `x` 0..6, `y` 0..3 (3 = front row). Swaps with whatever is there |
@@ -74,12 +75,13 @@ Each message has a `"type"`.
 | type | when | fields |
 |---|---|---|
 | `welcome` | on connect | `protocol` (1), `player_id`, `token`, `reconnected`, `seats`, `connected`, `match_running` |
-| `result` | answer to a command | `id` (if given), `action`, `result`, `ok`. `result` is the engine's `ActionResult`: `Ok`, `WrongPhase`, `InvalidPlayer`, `PlayerEliminated`, `NotEnoughGold`, `InvalidSlot`, `EmptySlot`, `RosterFull`, `BoardFull`, `MaxLevel`, `InvalidUnit`, `ItemsFull`, `InvalidItem` |
+| `result` | answer to a command | `id` (if given), `action`, `result`, `ok`. `result` is the engine's `ActionResult`: `Ok`, `WrongPhase`, `InvalidPlayer`, `PlayerEliminated`, `NotEnoughGold`, `InvalidSlot`, `EmptySlot`, `RosterFull`, `BoardFull`, `MaxLevel`, `InvalidUnit`, `ItemsFull`, `InvalidItem`, `ShopClosed`, `AlreadyPicked` |
 | `error` | a bad message | `code`, `detail`, `id` (if readable) |
 | `pong` | answer to `ping` | `id` |
-| `state` | whenever anything private changed | `player_id`, `alive`, `health`, `gold`, `level`, `xp`, `xp_to_next`, `streak`, `shop` (champion ids, 0 = empty), `bench` (9 entries: a unit or `null`), `board` (units), `item_bag` (item ids) |
+| `state` | whenever anything private changed | `player_id`, `alive`, `health`, `gold`, `level`, `xp`, `xp_to_next`, `streak`, `shop` (champion ids, 0 = empty), `bench` (9 entries: a unit or `null`), `board` (units), `item_bag` (item ids), `gifts` (Mother Nature: the offers still open, each `{index, gift, name, kind: gold\|xp\|heal\|item\|unit, amount \| item \| champion + cost}`; empty once picked and outside her phase), `gift_settled` |
 | `income` | start of every round | `player_id`, `round`, `base_gold`, `interest_gold`, `streak_gold`, `passive_xp`, `total_gold` |
 | `pve_drop` | won a PvE round | `drop` (`gold`\|`champion`\|`item`) and `gold` / `champion` / `item` |
+| `gift_event` | Mother Nature | `event` `offered` (`gifts`: as in `state`) when her phase opens, `picked` (`gift`, `automatic`: the time ran out and the first offer was taken, `gold_converted`: > 0 when a unit gift had no room and was paid as gold) |
 | `unit_event` | the player's own units changed | `event`: `bought`, `sold`, `moved`, `merged`, `item_equipped`, `item_unequipped`, `items_combined` (`first`, `second`, `result`: two items on the unit became one), plus the `unit` (as `{id, champion, star, location, x, y, items}`) and event-specific fields |
 
 A **unit** is `{"id", "champion", "star", "location": "bench"|"board", "x", "y", "items": [item ids]}`.
@@ -88,8 +90,8 @@ A **unit** is `{"id", "champion", "star", "location": "bench"|"board", "x", "y",
 | type | when | fields |
 |---|---|---|
 | `lobby` | someone joined / left before the match | `seats`, `connected`, `players` |
-| `match_started` | the match begins (and on reconnect) | `player_id`, `seats`, `tick_rate` (30), `phase_ticks`, `board` dimensions, `combat_event_types` (names, index = event type number) |
-| `phase` | every phase change (and on reconnect) | `phase` (`Draft`\|`Planning`\|`Combat`\|`Resolution`\|`MatchOver`), `round`, `stage`, `round_in_stage`, `pve`, `duration_ticks`, `ticks_remaining`, `server_tick`. Clients count the phase down themselves at 30 ticks/s |
+| `match_started` | the match begins (and on reconnect) | `player_id`, `seats`, `tick_rate` (30), `phase_ticks` (`mother_nature`, `planning`, `combat`, `resolution`), `mother_nature_every` (every N rounds; 0 = no Mother Nature data), `board` dimensions, `combat_event_types` (names, index = event type number) |
+| `phase` | every phase change (and on reconnect) | `phase` (`MotherNature`\|`Planning`\|`Combat`\|`Resolution`\|`MatchOver`), `round`, `stage`, `round_in_stage`, `pve`, `mother_nature` (this is one of her rounds: a gift phase first, and no shop until the round is over), `duration_ticks`, `ticks_remaining`, `server_tick`. Clients count the phase down themselves at 30 ticks/s |
 | `public_state` | whenever it changed | `round` and `players`: `player_id`, `alive`, `health`, `level`, `streak`, `placement`, **`board`** (units). Gold, XP, shop, bench and item bag are **not** in it |
 | `combat_summary` | a Combat phase begins | `round`, `fights`: `index`, `home`, `away` (`null` for monsters), `away_is_ghost`, `away_is_monsters`, `encounter`, `events` |
 | `player_damaged` | a PvP round resolved | `player_id`, `damage`, `health` |
@@ -117,7 +119,7 @@ they arrive as `player_damaged` / `player_eliminated` when the round resolves.
 ### Who gets what (privacy)
 | | owner | other players |
 |---|---|---|
-| gold, XP, shop offer, bench, item bag, income, PvE drops, own unit events | yes | **never** |
+| gold, XP, shop offer, bench, item bag, income, PvE drops, Mother Nature offers and picks, own unit events | yes | **never** |
 | board (units, positions, items), health, level, streak, alive / placement | yes | yes |
 | phase, damage, eliminations, combat summary, combat logs, results | yes | yes |
 

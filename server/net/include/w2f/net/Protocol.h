@@ -26,6 +26,7 @@ constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 2
 enum class CommandType : std::uint8_t {
     BuyUnit,      // shop_index
     RerollShop,
+    PickGift,     // gift_index: Mother Nature's phase only -- take one of the offered gifts, free
     BuyXp,
     SellUnit,     // unit_id
     MoveUnit,     // unit_id, location ("bench" | "board"), x, [y]
@@ -40,6 +41,7 @@ constexpr const char* ToString(CommandType t) {
     switch (t) {
         case CommandType::BuyUnit: return "buy_unit";
         case CommandType::RerollShop: return "reroll_shop";
+        case CommandType::PickGift: return "pick_gift";
         case CommandType::BuyXp: return "buy_xp";
         case CommandType::SellUnit: return "sell_unit";
         case CommandType::MoveUnit: return "move_unit";
@@ -57,6 +59,7 @@ struct Command {
     bool hasId = false;
     long long id = 0;
     int shopIndex = 0;
+    int giftIndex = 0;
     UnitId unit = kInvalidUnitId;
     ItemId item = 0;
     LocationType location = LocationType::None;

@@ -96,7 +96,8 @@ private:
     bool ok_ = true;
 };
 
-constexpr std::size_t kHeaderBytes = 4 + 4 + 8 * 6 + 1 + 4 + 4 + 1;  // magic, version, seed + 5 hashes, phase, round, tick, player count
+constexpr std::size_t kHeaderBytes = 4 + 4 + 8 * 7 + 1 + 4 + 4 + 1;  // magic, version, seed + 5 hashes + state hash, phase, round, tick, player count
+constexpr std::size_t kGiftBytes = 4 + 1 + 4 + 4 + 4;   // gift id, type, amount, item, champion
 constexpr std::size_t kTrailerBytes = 8;
 
 // Serialized size of one CombatEvent (kept next to the writer so the two cannot drift apart unnoticed: the round-trip
@@ -209,6 +210,7 @@ bool ParseHeader(const std::vector<std::uint8_t>& bytes, SnapshotInfo& info, std
     info.championHash = r.U64();
     info.itemHash = r.U64();
     info.encounterHash = r.U64();
+    info.motherNatureHash = r.U64();
     info.stateHash = r.U64();
     info.phase = static_cast<std::uint8_t>(r.U8());
     info.round = r.I32();
@@ -237,6 +239,7 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
     w.U64(database_.ContentHash());
     w.U64(items_ != nullptr ? items_->ContentHash() : 0);
     w.U64(encounters_ != nullptr ? encounters_->ContentHash() : 0);
+    w.U64(motherNature_ != nullptr ? motherNature_->ContentHash() : 0);
     w.U64(StateHash());
     w.U8(static_cast<std::uint32_t>(phase_));
     w.I32(round_);
@@ -279,6 +282,17 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
         w.U32(static_cast<std::uint32_t>(p.Shop().Slots().size()));
         for (const ChampionDefinition* slot : p.Shop().Slots()) w.U32(slot != nullptr ? slot->id : kInvalidChampionId);
         w.Rng(p.Shop().GetRngState());
+
+        const PlayerGifts& gifts = gifts_[static_cast<std::size_t>(i)];
+        w.Bool(gifts.settled);
+        w.U32(static_cast<std::uint32_t>(gifts.offers.size()));
+        for (const GiftOffer& offer : gifts.offers) {
+            w.U32(offer.gift);
+            w.U8(static_cast<std::uint32_t>(offer.type));
+            w.I32(offer.amount);
+            w.U32(offer.item);
+            w.U32(offer.champion != nullptr ? offer.champion->id : kInvalidChampionId);
+        }
     }
 
     w.U32(static_cast<std::uint32_t>(matchups_.size()));
@@ -315,7 +329,7 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
                                                     const ChampionDatabase& database,
                                                     std::unique_ptr<ICombatSimulator> simulator, std::string* error,
                                                     const ItemDatabase* items, const EncounterDatabase* encounters,
-                                                    const RestoreOptions& options) {
+                                                    const MotherNatureDatabase* motherNature, const RestoreOptions& options) {
     const auto fail = [error](const std::string& message) -> std::unique_ptr<MatchManager> {
         Fail(error, message);
         return nullptr;
@@ -329,11 +343,12 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
         if (info.championHash != database.ContentHash()) return fail("taken under different champion data");
         if (info.itemHash != (items != nullptr ? items->ContentHash() : 0)) return fail("taken under different item data");
         if (info.encounterHash != (encounters != nullptr ? encounters->ContentHash() : 0)) return fail("taken under different PvE data");
+        if (info.motherNatureHash != (motherNature != nullptr ? motherNature->ContentHash() : 0)) return fail("taken under different Mother Nature data");
     }
     if (info.phase > static_cast<std::uint8_t>(MatchPhase::MatchOver)) return fail("unknown phase");
     if (info.playerCount != config.match.playerCount) return fail("player count does not match the configuration");
 
-    std::unique_ptr<MatchManager> match = Create(config, database, info.seed, std::move(simulator), error, items, encounters);
+    std::unique_ptr<MatchManager> match = Create(config, database, info.seed, std::move(simulator), error, items, encounters, motherNature);
     if (!match) return nullptr;
     match->phase_ = static_cast<MatchPhase>(info.phase);
     match->round_ = info.round;
@@ -404,6 +419,37 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
         }
         data.shopRng = r.Rng();
         if (!r.ok()) return fail("truncated player section");
+
+        // Mother Nature's offers: only ever present during the gift phase, and every one must resolve in the loaded data.
+        PlayerGifts& gifts = match->gifts_[static_cast<std::size_t>(i)];
+        gifts.settled = r.Bool();
+        const std::size_t offerCount = r.Count(4, kGiftBytes);
+        for (std::size_t g = 0; g < offerCount; ++g) {
+            GiftOffer offer;
+            offer.gift = r.U32();
+            const std::uint32_t type = r.U8();
+            offer.amount = r.I32();
+            offer.item = r.U32();
+            const ChampionId champion = r.U32();
+            if (!r.ok()) return fail("truncated gift offers");
+            if (type > static_cast<std::uint32_t>(GiftType::Unit)) return fail("unknown gift type");
+            offer.type = static_cast<GiftType>(type);
+            const GiftDefinition* def = motherNature != nullptr ? motherNature->FindGift(offer.gift) : nullptr;
+            if (def == nullptr || def->type != offer.type) return fail("a gift offer does not match the loaded Mother Nature data");
+            if (offer.type == GiftType::Unit) {
+                offer.champion = champion == kInvalidChampionId ? nullptr : database.Find(champion);
+                if (offer.champion == nullptr || offer.champion->summon) return fail("a gift offers a champion missing from the loaded data");
+            } else if (champion != kInvalidChampionId) {
+                return fail("a non-unit gift names a champion");
+            }
+            if (offer.type == GiftType::Item && (items == nullptr || items->Find(offer.item) == nullptr)) return fail("a gift offers an item missing from the loaded data");
+            if (offer.type != GiftType::Item && offer.item != 0) return fail("a non-item gift names an item");
+            gifts.offers.push_back(offer);
+        }
+        if ((gifts.settled || !gifts.offers.empty()) && info.phase != static_cast<std::uint8_t>(MatchPhase::MotherNature)) {
+            return fail("gift offers outside Mother Nature's phase");
+        }
+        if (gifts.settled && !gifts.offers.empty()) return fail("a settled gift choice still lists offers");
 
         std::string playerError;
         if (!match->players_.Get(static_cast<PlayerId>(i))->RestoreState(data, &playerError)) return fail(playerError);

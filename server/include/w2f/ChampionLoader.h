@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "w2f/ChampionDatabase.h"
+#include "w2f/MotherNature.h"
 #include "w2f/Pve.h"
 #include "w2f/Trait.h"
 
@@ -60,6 +61,17 @@ std::unique_ptr<EncounterDatabase> LoadEncounterDatabaseFromJson(std::string_vie
                                                                   const ItemDatabase* items, std::string* error = nullptr);
 std::unique_ptr<EncounterDatabase> LoadEncounterDatabaseFromFile(const std::string& path, const ChampionDatabase* champions,
                                                                   const ItemDatabase* items, std::string* error = nullptr);
+
+// ---- mother_nature.json ----
+// { "version": 1, "options": 2, "tiers": [ { "id", "name", "fromStage", "gifts": [ { "id", "name", "type", "weight", ... } ] } ] }
+struct MotherNatureFile {
+    int options = 2;
+    std::vector<MotherNatureTier> tiers;
+};
+bool ParseMotherNatureJson(std::string_view text, MotherNatureFile& out, std::string* error = nullptr);
+// Parse + validate against the item data (`items` may be null: item lists and classes are then not checked).
+std::unique_ptr<MotherNatureDatabase> LoadMotherNatureDatabaseFromJson(std::string_view text, const ItemDatabase* items, std::string* error = nullptr);
+std::unique_ptr<MotherNatureDatabase> LoadMotherNatureDatabaseFromFile(const std::string& path, const ItemDatabase* items, std::string* error = nullptr);
 
 // Every trait tag an item grants must exist in the trait data (same typo protection as for champions).
 class TraitDatabase;

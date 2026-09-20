@@ -46,6 +46,12 @@ void PlayerManager::RefreshAllShops() {
     }
 }
 
+void PlayerManager::CloseAllShops() {
+    for (auto& p : players_) {
+        if (p->IsAlive()) p->Shop().ReturnShopToPool();
+    }
+}
+
 void PlayerManager::EliminatePlayer(PlayerId id, int placement) {
     if (PlayerState* p = Get(id)) p->Eliminate(placement);
 }

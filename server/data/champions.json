@@ -246,7 +246,7 @@
     // ---------------------------------------------------------------- LUNIS (2-cost assassin) [Selini]
     {
       "id": 9009, "name": "Lunis", "cost": 2, "role": "Damage",
-      "traits": ["Selini"],
+      "traits": ["Selini", "Assassin"],
       "stats": {
         "hp": [550, 990, 1780], "armor": [25, 35, 50], "magicResist": [25, 35, 50], "attackDamage": [45, 68, 102],
         "attackSpeed": 0.80, "range": 1, "maxMana": 40
@@ -391,7 +391,7 @@
     // ---------------------------------------------------------------- VEX (1-cost assassin) [Phaisa]
     {
       "id": 9015, "name": "Vex", "cost": 1, "role": "Damage",
-      "traits": ["Phaisa"],
+      "traits": ["Phaisa", "Assassin"],
       "stats": { "hp": [450, 810, 1458], "armor": 20, "magicResist": 20, "attackDamage": 45, "attackSpeed": 0.75, "range": 1, "maxMana": 40 },
       // Blinks next to the enemy with the least HP (landing on its far side, and fighting it from then on) and hits it.
       "ability": {
@@ -581,7 +581,7 @@
     // ---------------------------------------------------------------- RAA (4-cost assassin) [Helios]
     {
       "id": 9028, "name": "Raa", "cost": 4, "role": "Damage",
-      "traits": ["Helios"],
+      "traits": ["Helios", "Assassin"],
       "stats": { "hp": [700, 1260, 2268], "armor": 40, "magicResist": 40, "attackDamage": 70, "attackSpeed": 0.85, "range": 1, "maxMana": 70 },
       "ability": {
         "id": 36, "name": "Solar Leap", "trigger": "Mana", "castLockTicks": 15,

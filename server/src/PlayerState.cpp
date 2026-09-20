@@ -101,6 +101,13 @@ void PlayerState::ApplyDamage(int amount) {
     if (amount > 0 && IsAlive()) health_ -= amount;
 }
 
+int PlayerState::Heal(int amount) {
+    if (amount <= 0 || !IsAlive() || health_ >= config_.startingHealth) return 0;
+    const int restored = std::min(amount, config_.startingHealth - health_);
+    health_ += restored;
+    return restored;
+}
+
 void PlayerState::RecordRoundResult(RoundResult result) {
     switch (result) {
         case RoundResult::Win: streak_ = streak_ > 0 ? streak_ + 1 : 1; break;

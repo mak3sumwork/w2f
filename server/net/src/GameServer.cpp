@@ -174,6 +174,7 @@ public:
         switch (cmd.type) {
             case CommandType::BuyUnit: result = match_->TryBuyShopUnit(player, static_cast<std::size_t>(cmd.shopIndex)); break;
             case CommandType::RerollShop: result = match_->TryRerollShop(player); break;
+            case CommandType::PickGift: result = match_->TryPickGift(player, static_cast<std::size_t>(cmd.giftIndex)); break;
             case CommandType::BuyXp: result = match_->TryBuyXp(player); break;
             case CommandType::SellUnit: result = match_->TrySellUnit(player, cmd.unit); break;
             case CommandType::MoveUnit: result = match_->TryMoveUnit(player, cmd.unit, cmd.location, cmd.x, cmd.y); break;
@@ -214,7 +215,7 @@ public:
     void OnPhaseChanged(MatchPhase, MatchPhase to, int round) override {
         if (to == MatchPhase::Combat) QueueCombat(round);
         combatBatchOpen_ = false;
-        Queue(-1, msg::Phase(config_, to, round, 0, tick_));
+        Queue(-1, msg::Phase(config_, to, round, 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round)));
     }
     void OnPlayerEliminated(PlayerId p, int placement) override { Queue(-1, msg::PlayerEliminated(p, placement)); }
     void OnMatchEnded(PlayerId) override { dirty_ = true; }   // the final message needs the placements: sent when Tick() returns
@@ -231,6 +232,10 @@ public:
     }
     void OnPlayerDamaged(PlayerId p, int damage, int health) override { Queue(-1, msg::PlayerDamaged(p, damage, health)); }
     void OnPveDrop(PlayerId p, const PveDrop& drop) override { Queue(p, msg::PveDropMsg(drop)); }
+    void OnGiftsOffered(PlayerId p, const std::vector<GiftOffer>& offers) override { Queue(p, msg::GiftsOffered(offers, data_.motherNature)); }
+    void OnGiftPicked(PlayerId p, int index, const GiftOffer& gift, bool automatic, int goldConverted) override {
+        Queue(p, msg::GiftPicked(index, gift, data_.motherNature, automatic, goldConverted));
+    }
     void OnAutoSnapshot(int round, const std::vector<std::uint8_t>& bytes) override {
         if (snapshotSink_) snapshotSink_(round, bytes);
     }
@@ -253,6 +258,8 @@ public:
     GameServerConfig cfg_;
     std::unordered_map<ConnectionId, Conn> conns_;
     std::vector<Seat> seats_;
+
+    int MotherNatureEvery() const { return data_.motherNature != nullptr ? config_.match.motherNatureEveryRounds : 0; }
 
     int ConnectedCount() const {
         int n = 0;
@@ -366,8 +373,8 @@ private:
     // A player (re)joining a running match gets everything they need to draw the game as it is right now.
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
-        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat)));
-        SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), tick_));
+        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery()));
+        SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), tick_, match_->IsMotherNatureRound()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
         SendTo(s.conn, msg::PublicState(*match_));
@@ -387,7 +394,7 @@ private:
         const std::uint64_t seed = cfg_.seed != 0 ? cfg_.seed : cfg_.entropy();
         std::string error;
         auto simulator = std::make_unique<CombatSimulator>(config_.combat, data_.traits, data_.items);
-        match_ = MatchManager::Create(config_, *data_.champions, seed, std::move(simulator), &error, data_.items, data_.encounters);
+        match_ = MatchManager::Create(config_, *data_.champions, seed, std::move(simulator), &error, data_.items, data_.encounters, data_.motherNature);
         if (!match_) {   // a bad configuration is the operator's problem; tell the players and start over
             Broadcast(msg::Error("match_failed", "the server could not start the match: " + error));
             ResetToLobby();
@@ -400,7 +407,7 @@ private:
         fights_.clear();
         fightJson_.clear();
         combatBatchOpen_ = false;
-        for (std::size_t i = 0; i < seats_.size(); ++i) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i)));
+        for (std::size_t i = 0; i < seats_.size(); ++i) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery()));
         match_->Start();
         SyncAfterEngineCall();
     }

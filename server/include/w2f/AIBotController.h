@@ -48,6 +48,7 @@ public:
     }
 
 private:
+    void PickGift(MatchManager& match);
     void BuyExperience(MatchManager& match);
     void BuyUnits(MatchManager& match);
     void PlaceUnits(MatchManager& match);
