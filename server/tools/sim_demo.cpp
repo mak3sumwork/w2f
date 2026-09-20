@@ -3,7 +3,7 @@
 // Usage: w2f_demo [seed] [champions.json] [traits.json] [items.json] [pve.json]
 // The demo also drills crash recovery: at round 10 it throws the running match away and carries on from the automatic snapshot
 // taken when that round's Planning phase began. Set W2F_NO_DRILL=1 to skip the drill; the final state hash must be the same
-// either way (that is the whole point of a safety net).
+// either way (that is the whole point of a safety net). Set W2F_ROSTER_ONLY=1 to sell only the real roster (no generic fillers).
 
 #include <cstdio>
 #include <cstdlib>
@@ -59,6 +59,12 @@ struct PrintSink : ICombatEventSink {
             case StatusType::BonusManaRegen: return "BONUS-MANA-REGEN";
             case StatusType::AbilityPower: return "AP%";
             case StatusType::SpellShield: return "SPELL-SHIELD";
+            case StatusType::Blind: return "BLIND";
+            case StatusType::DamageTaken: return "DMG-TAKEN%";
+            case StatusType::BonusMaxMana: return "BONUS-MAX-MANA";
+            case StatusType::ExecuteBelow: return "EXECUTE-BELOW%";
+            case StatusType::HpPerSecond: return "HP-PER-SECOND%";
+            case StatusType::EmpoweredAttack: return "EMPOWERED-ATTACKS";
         }
         return "?";
     }
@@ -157,7 +163,13 @@ int main(int argc, char** argv) {
         return 2;
     }
     std::printf("Loaded %zu items from %s\n", items->All().size(), itemsPath.c_str());
-    auto db = sample::MakeCombatDatabase(dataPath);
+    // W2F_ROSTER_ONLY=1: the shop sells only the real roster (all 30 champions, real synergies) instead of the roster plus 25 generic fillers.
+    // The CI determinism check runs both.
+    auto db = std::getenv("W2F_ROSTER_ONLY") != nullptr ? w2f::LoadChampionDatabaseFromFile(dataPath, &loadError) : sample::MakeCombatDatabase(dataPath);
+    if (!db) {
+        std::fprintf(stderr, "Cannot start: %s\n", loadError.c_str());
+        return 2;
+    }
     const std::string pvePath = argc > 5 ? argv[5] : sample::ProductionPvePath();
     auto encounters = w2f::LoadEncounterDatabaseFromFile(pvePath, db.get(), items.get(), &loadError);
     if (!encounters) {

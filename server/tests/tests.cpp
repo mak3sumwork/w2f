@@ -1355,7 +1355,7 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
     struct V { HexCoord pos; int hp = 0; int team = 0; int star = 1; bool alive = true;
                int lastAttack = -1000000, lastMove = -1000000, lockedUntil = 0, stunnedUntil = 0, rootedUntil = 0, immuneUntil = 0, shieldPool = 0,
                untargetableUntil = 0, aggroDropUntil = 0;
-               bool everShielded = false, everStatus = false; int manaMax = 0; const ChampionDefinition* def = nullptr; bool summon = false; };
+               bool everShielded = false, everStatus = false; int blindUntil = 0; int manaMax = 0; const ChampionDefinition* def = nullptr; bool summon = false; };
     std::map<UnitId, V> units;
     std::map<std::pair<int, int>, UnitId> occupied;
     int lastTick = 0;
@@ -1415,6 +1415,7 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 if (e.tick < t->second.untargetableUntil) return fail("attack: on an untargetable unit", e);
                 if (e.tick < t->second.aggroDropUntil) return fail("attack: on a unit that dropped aggro", e);
                 if (e.tick < a.stunnedUntil || e.tick < a.lockedUntil) return fail("attack: while stunned / casting", e);
+                if (e.tick < a.blindUntil) return fail("attack: while blind", e);
                 if (hex::Distance(a.pos, t->second.pos) > a.def->stats.attackRange) return fail("attack: out of range", e);
                 if (!a.everStatus && e.tick - a.lastAttack < a.def->stats.AttackIntervalTicks()) return fail("attack: faster than attack speed", e);
                 a.lastAttack = e.tick;
@@ -1472,6 +1473,8 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 if (sub == StatusType::CcImmunity && e.duration > 0) h.immuneUntil = std::max(h.immuneUntil, e.tick + e.duration);
                 if (sub == StatusType::Untargetable && e.duration > 0) h.untargetableUntil = std::max(h.untargetableUntil, e.tick + e.duration);
                 if (sub == StatusType::AggroDrop && e.duration > 0) h.aggroDropUntil = std::max(h.aggroDropUntil, e.tick + e.duration);
+                if (sub == StatusType::Blind && e.duration > 0) h.blindUntil = std::max(h.blindUntil, e.tick + e.duration);
+                if (sub == StatusType::BonusMaxMana && h.manaMax > 0) h.manaMax = std::max(1000, h.manaMax + e.amount * 1000);   // a longer mana bar
                 auto src = units.find(e.other);
                 if (src != units.end()) src->second.everStatus = true;
                 break;
@@ -2913,7 +2916,16 @@ static void TestProductionDataMatchesDesignerSpec() {
     auto db = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath(), &err);
     CHECK(db != nullptr);
     if (!db) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(db->All().size() == 11);   // Alesk, Baira, Cyla, Faire, Les, Lum + Astra, Lunis, Soul, Myna, Vega (Dyno was removed)
+    {   // The whole roster of the design doc: 30 champions (8 / 7 / 6 / 5 / 4 per cost tier) plus the two summons (Skeleton, Lost Soul).
+        int perTier[kMaxCostTier + 1] = {}, summons = 0;
+        for (const ChampionDefinition& c : db->All()) {
+            if (c.summon) ++summons;
+            else ++perTier[c.cost];
+        }
+        CHECK(db->All().size() == 32 && summons == 2);
+        CHECK(perTier[1] == 8 && perTier[2] == 7 && perTier[3] == 6 && perTier[4] == 5 && perTier[5] == 4);
+        CHECK(db->Find(9101) && db->Find(9101)->summon && db->Find(9102) && db->Find(9102)->summon && db->Find(9102)->stats.attackType == DamageType::Magic);
+    }
     CHECK(db->Find(kChampionDyno) == nullptr);
 
     auto trait = [](const ChampionDefinition* c, const char* name) {
@@ -3011,10 +3023,13 @@ static void TestProductionDataMatchesDesignerSpec() {
               hit->amount.terms[0].percent == StarValue({{15, 30, 100}}));
         CHECK(collide && collide->amount.terms[0].percent == StarValue({{7, 15, 50}}) && lum->ability.effects[1].target.mode == TargetMode::LineBehindTarget);
         CHECK(knock && knock->status == StatusType::Knockup && knock->duration.flat == StarValue({{30, 45, 150}}));   // 1 / 1.5 / 5 s
-        const auto* might = lum->passive.effects.empty() ? nullptr : std::get_if<StatusEffect>(&lum->passive.effects[0].payload);
-        CHECK(might && might->status == StatusType::BonusAttackDamage && might->permanent && might->value.terms.size() == 2 &&
-              might->value.terms[0].source == StatSource::SelfArmor && might->value.terms[0].percent == StarValue({{15, 30, 100}}) &&
-              might->value.terms[1].source == StatSource::SelfMagicResist);
+        // Passive (design doc): starts combat with 15 / 30 / 100% bonus Armor, Magic Resist and Attack Damage.
+        CHECK(lum->passive.effects.size() == 3);
+        const StatusType expected[3] = {StatusType::Armor, StatusType::MagicResist, StatusType::AttackDamage};
+        for (std::size_t i = 0; i < lum->passive.effects.size() && i < 3; ++i) {
+            const auto* might = std::get_if<StatusEffect>(&lum->passive.effects[i].payload);
+            CHECK(might && might->status == expected[i] && might->permanent && might->percent == StarValue({{15, 30, 100}}));
+        }
     }
 }
 
@@ -3918,15 +3933,15 @@ static void TestLumPunchAndPassive() {
     const FightResult r = CombatSimulator(cfg).RunFight(d.specs, 250);
     CheckValid(r, d, 250, cfg);
 
-    // Passive: bonus attack damage = 15% of armor 45 + 15% of magic resist 35 = 6 + 5 = 11 (each term floors).
+    // Passive: +15% attack damage of his base 40 = +6 (the status is a percent of the base, floored when it is used).
     std::vector<CombatEvent> bonus;
     for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, 1)) {
-        if (e.subtype == static_cast<std::uint8_t>(StatusType::BonusAttackDamage)) bonus.push_back(e);
+        if (e.subtype == static_cast<std::uint8_t>(StatusType::AttackDamage)) bonus.push_back(e);
     }
-    CHECK(bonus.size() == 1 && bonus[0].tick == 0 && bonus[0].amount == 11 && bonus[0].duration == 0);
-    // His basic attack now hits for 40 + 11 = 51.
+    CHECK(bonus.size() == 1 && bonus[0].tick == 0 && bonus[0].amount == 15 && bonus[0].duration == 0);
+    // His basic attack now hits for 40 + 6 = 46.
     const auto hits = Events(r.log, CombatEventType::Damage, 10);
-    CHECK(!hits.empty() && hits[0].tick == 0 && hits[0].amount == 51);
+    CHECK(!hits.empty() && hits[0].tick == 0 && hits[0].amount == 46);
 
     const auto casts = Events(r.log, CombatEventType::SpellCast, 1);
     CHECK(!casts.empty() && casts[0].ability == 7);
@@ -3940,8 +3955,8 @@ static void TestLumPunchAndPassive() {
     for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied)) {
         if (e.tick == tc && e.subtype == static_cast<std::uint8_t>(StatusType::Knockup)) { knocked.insert(e.unit); CHECK(e.duration == 30); }
     }
-    // Target: 15% of AD 51 = 7. Units in the line behind it: 7% of 51 = 3 and knocked up for 1 s. Bystanders: nothing.
-    CHECK(punch[10] == 7 && punch[11] == 3 && punch[12] == 3 && punch.count(13) == 0);
+    // Target: 15% of AD 46 = 6. Units in the line behind it: 7% of 46 = 3 and knocked up for 1 s. Bystanders: nothing.
+    CHECK(punch[10] == 6 && punch[11] == 3 && punch[12] == 3 && punch.count(13) == 0);
     CHECK((knocked == std::set<UnitId>{11, 12}));
     // Knocked-up units really cannot act for those 30 ticks (unit 13 is the control: it keeps attacking).
     for (const CombatEvent& e : Events(r.log, CombatEventType::Attack, 13)) (void)e;
@@ -3992,10 +4007,12 @@ static void TestProtectorSynergy() {
     CHECK(traitAt > lastSpawn && firstStatus > traitAt && aleskPassive > firstStatus);
 
     // Protectors (Les, Lum) get the ally buff AND the holder bonus: two +10% statuses each, i.e. +20%.
+    // (Lum's own passive adds a third one, +15% at 1 star, after the synergy's.)
     for (UnitId holder : {UnitId{1}, UnitId{2}}) {
+        const std::vector<int> own = holder == 2 ? std::vector<int>{10, 10, 15} : std::vector<int>{10, 10};
         CHECK((statusesOn(r, holder, StatusType::DamageAmp) == std::vector<int>{10, 10}));
-        CHECK((statusesOn(r, holder, StatusType::Armor) == std::vector<int>{10, 10}));
-        CHECK((statusesOn(r, holder, StatusType::MagicResist) == std::vector<int>{10, 10}));
+        CHECK((statusesOn(r, holder, StatusType::Armor) == own));
+        CHECK((statusesOn(r, holder, StatusType::MagicResist) == own));
     }
     // Every other ally (Alesk) gets only the +10%. His passive's +5% armor comes after and is a separate status.
     CHECK((statusesOn(r, 3, StatusType::DamageAmp) == std::vector<int>{10}));
@@ -4322,7 +4339,7 @@ static void TestFullRosterBrawlWithSynergies() {
         ++count[e.type];
         if (e.type == CombatEventType::StatusApplied) ++statuses[e.subtype];
     }
-    CHECK(count[CombatEventType::TraitActivated] == 2);   // Protector, once per team
+    CHECK(count[CombatEventType::TraitActivated] == 4);   // per team: Protector (Les + Lum) and Hexagon 2 (Faire + Cyla)
     CHECK(count[CombatEventType::SpellCast] > 0 && count[CombatEventType::Heal] >= 0);
     auto st = [&](StatusType t) { return statuses[static_cast<int>(t)]; };
     CHECK(st(StatusType::DamageAmp) == 6 * 2 + 2 * 2 * 0 + 0 || st(StatusType::DamageAmp) > 0);
@@ -7993,7 +8010,9 @@ static void TestPhase10Loader() {
         CHECK(!w2f::ValidateSummonReferences(*noGhoul, nullptr, traits.get(), &err) && err.find("9101") != std::string::npos);
     }
     const char* badTraits[][2] = {
-        {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2, "effects": [ { "scope": "Team", "type": "Status", "status": "Armor", "percent": 5, "permanent": true } ] } ] } ]})", "scope Team only applies to Summon"},
+        {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2, "effects": [ { "scope": "Team", "type": "Status", "target": "CurrentTarget", "status": "Armor", "percent": 5, "permanent": true } ] } ] } ]})", "scope-Team effect targets Self, AllEnemies or AllAllies"},
+        {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "target": "AllEnemies", "status": "Armor", "percent": 5, "permanent": true } ] } ] } ]})", "apply to each unit itself"},
+        {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2, "effects": [ { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow", "percent": 80, "permanent": true } ] } ] } ]})", "ExecuteBelow"},
         {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 20, "name": "p", "trigger": "StartOfCombat", "effects": [ { "type": "Status", "target": "Self", "status": "BonusArmor", "value": 1, "permanent": true } ] } } ] } ] } ]})", "must be hooks"},
         {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2, "triggers": [ { "scope": "Team", "ability": { "id": 20, "name": "p", "trigger": "OnCast", "effects": [ { "type": "Status", "target": "Self", "status": "BonusArmor", "value": 1, "permanent": true } ] } } ] } ] } ]})", "AllAllies or TraitHolders"},
         {R"({"version": 1, "traits": [ { "id": 1, "name": "T", "breakpoints": [ { "count": 2 } ] } ]})", "effects"},
@@ -8374,8 +8393,9 @@ struct BotMatchListener : IMatchListener {
     void OnUnitMerged(PlayerId p, const UnitMerge& m) override { units.OnUnitMerged(p, m); }
 };
 
-static BotMatchRun PlayBotMatch(const ChampionDatabase& db, std::uint64_t seed, int hashEvery = 1, bool highTierShop = false) {
+static BotMatchRun PlayBotMatch(const ChampionDatabase& db, std::uint64_t seed, int hashEvery = 1, bool highTierShop = false, int copiesPerChampion = 0) {
     TestGameConfig cfg;
+    if (copiesPerChampion > 0) cfg.pool.copiesPerTier = {{copiesPerChampion, copiesPerChampion, copiesPerChampion, copiesPerChampion, copiesPerChampion}};
     cfg.player.startingGold = 10;
     cfg.player.limitBoardToLevel = true;
     cfg.match.planningTicks = 90;   // planning/draft/resolution shortened; combat keeps its real length
@@ -8493,6 +8513,712 @@ static void TestFullMatchWithBots() {
                 cast(kAbilityExploit), a.crits, a.stuns, a.burns, a.shields);
     std::printf("  seed 2024: %d rounds, %d fights (%d decisive), %d combat events, %d path searches; units bought %d merged %d moved %d\n",
                 a.rounds, a.fights, a.decisive, a.totalEvents, a.totalPathSearches, a.bought, a.merged, a.moved);
+}
+
+// ================================================================================================
+// Phase 11: the full 30-champion roster and the design doc's synergies, exercised one mechanic at a time.
+// ================================================================================================
+
+// A production champion that starts the fight with a full mana bar, so its ability fires on tick 0.
+static ChampionDefinition Primed(const ChampionDatabase& prod, ChampionId id, int range = -1) {
+    ChampionDefinition d = *prod.Find(id);
+    d.stats.startMana = d.stats.maxMana;
+    if (range > 0) d.stats.attackRange = range;
+    return d;
+}
+// Adds a Duel unit for a production champion, plus every summon the roster defines (the Duel's database must contain them).
+static void AddPrimed(Duel& d, const ChampionDatabase& prod, ChampionId id, UnitId unit, int team, HexCoord pos, int range = -1) {
+    d.Add(Primed(prod, id, range), unit, team, pos);
+}
+static void AddSummonDefs(Duel& d, const ChampionDatabase& prod) {
+    for (ChampionId id : {ChampionId{9101}, ChampionId{9102}}) d.defs.push_back(*prod.Find(id));
+}
+static FightResult RunDuel(Duel& d, int ticks, const CombatConfig& cfg, const TraitDatabase* traits = nullptr, const ItemDatabase* items = nullptr,
+                           std::uint64_t seed = 1) {
+    d.Finish();
+    const FightResult r = CombatSimulator(cfg, traits, items, d.db.get()).RunFight(d.specs, ticks, seed);
+    std::string why;
+    const bool valid = ValidateCombatLog(r.log, *d.db, cfg, ticks, &why);
+    if (!valid) std::printf("  validator: %s\n", why.c_str());
+    CHECK(valid);
+    return r;
+}
+// The Damage events an ability's cast made on `tick` (flagged as ability damage), by victim.
+static std::map<UnitId, int> DamageAt(const FightResult& r, int tick, std::uint8_t flag = kFlagAbility) {
+    std::map<UnitId, int> out;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::Damage)) {
+        if (e.tick == tick && (e.flags & flag) != 0) out[e.unit] += e.amount;
+    }
+    return out;
+}
+static CombatConfig NoManaConfig() {
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;   // casts happen only when the test primes them
+    cfg.rawDamagePerMana = 1000000;   // ...and damage taken does not refill the bar either
+    return cfg;
+}
+
+static void TestNewChampionAbilitiesPart1() {
+    auto prod = ProdDb();
+    CHECK(prod != nullptr);
+    if (!prod) return;
+    const CombatConfig cfg = NoManaConfig();
+
+    {   // IGNIS: a 200 shield for 4 s. PYRA: 120 to the target and to the unit 1 hex behind it, none to a bystander.
+        Duel d;
+        AddPrimed(d, *prod, 9013, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        d.Finish();
+        const FightResult r = RunDuel(d, 10, cfg);
+        const auto shield = Events(r.log, CombatEventType::ShieldApplied, 1);
+        CHECK(shield.size() == 1 && shield[0].amount == 200 && shield[0].duration == 120);
+    }
+    {
+        Duel d;
+        AddPrimed(d, *prod, 9014, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});    // the target
+        d.Add(Dummy(11, 100000), 11, 1, {2, 5});    // 1 hex behind it (straight line from the caster)
+        d.Add(Dummy(12, 100000), 12, 1, {4, 5});    // beside the line
+        const FightResult r = RunDuel(d, 10, cfg);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit[10] == 120 && hit[11] == 120 && hit.count(12) == 0);
+    }
+    {   // VEX: blinks to the LOWEST-HP enemy (not the one she is fighting), hits it for 150, and keeps fighting it.
+        Duel d;
+        AddPrimed(d, *prod, 9015, 1, 0, {3, 3});
+        d.Add(Dummy(10, 5000), 10, 1, {3, 4});   // adjacent: the one she casts at
+        d.Add(Dummy(11, 400), 11, 1, {1, 7});    // far away and the weakest
+        const FightResult r = RunDuel(d, 60, cfg);
+        const auto tp = Events(r.log, CombatEventType::Teleport, 1);
+        CHECK(tp.size() == 1 && tp[0].tick == 0 && tp[0].subtype == 0 && hex::Distance(tp[0].to, HexCoord{1, 7}) == 1);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit[11] == 150 && hit.count(10) == 0);
+        for (const CombatEvent& a : Events(r.log, CombatEventType::Attack, 1)) CHECK(a.other == 11);   // it fights the victim from then on (the tick-0 swing is at 11 too)
+    }
+    {   // RAA: the highest-HP enemy takes 350 physical after the leap.
+        Duel d;
+        AddPrimed(d, *prod, 9028, 1, 0, {3, 3});
+        d.Add(Dummy(10, 5000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 90000), 11, 1, {1, 7});
+        const FightResult r = RunDuel(d, 60, cfg);
+        const auto tp = Events(r.log, CombatEventType::Teleport, 1);
+        CHECK(tp.size() == 1 && hex::Distance(tp[0].to, HexCoord{1, 7}) == 1);
+        CHECK(DamageAt(r, 0)[11] == 350);
+    }
+    {   // BIT: dashes through the target to the far side of it, 120 physical.
+        Duel d;
+        AddPrimed(d, *prod, 9019, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg);
+        const auto tp = Events(r.log, CombatEventType::Teleport, 1);
+        CHECK(tp.size() == 1 && hex::Distance(tp[0].to, HexCoord{3, 4}) == 1 && hex::Distance(tp[0].to, HexCoord{3, 3}) == 2);
+        CHECK(DamageAt(r, 0)[10] == 120);
+    }
+    {   // BONE: 100 physical + a 1.5 s stun.  ROT: 90 magic over 3 s, a tick every 0.5 s (6 x 15).
+        Duel d;
+        AddPrimed(d, *prod, 9017, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg);
+        CHECK(DamageAt(r, 0)[10] == 100);
+        bool stun = false;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, 10)) stun = stun || (e.subtype == static_cast<std::uint8_t>(StatusType::Stun) && e.duration == 45);
+        CHECK(stun);
+    }
+    {
+        Duel d;
+        AddPrimed(d, *prod, 9018, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 120, cfg);
+        std::vector<int> ticks, amounts;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 10)) {
+            if (e.flags & kFlagDot) { ticks.push_back(e.tick); amounts.push_back(e.amount); }
+        }
+        CHECK((amounts == std::vector<int>{15, 15, 15, 15, 15, 15}));
+        CHECK(!ticks.empty() && ticks.front() == 15 && ticks.back() == 90);
+    }
+    {   // NULL (range 3, so the target is not already adjacent): 80 magic and a pull 1 hex toward it.
+        CHECK(prod->Find(9016)->stats.attackRange == 3);
+        Duel d;
+        AddPrimed(d, *prod, 9016, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 6});   // 3 hexes away
+        const FightResult r = RunDuel(d, 10, cfg);
+        CHECK(DamageAt(r, 0)[10] == 80);
+        const auto moved = Events(r.log, CombatEventType::Teleport, 10);
+        CHECK(moved.size() == 1 && moved[0].subtype == 1 && hex::Distance(moved[0].from, HexCoord{3, 3}) == 3 && hex::Distance(moved[0].to, HexCoord{3, 3}) == 2);
+    }
+    {   // ORION: 180 physical and a knock-back 1 hex away -- unless the hex behind the target is taken.
+        Duel d;
+        AddPrimed(d, *prod, 9024, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg);
+        CHECK(DamageAt(r, 0)[10] == 180);
+        const auto moved = Events(r.log, CombatEventType::Teleport, 10);
+        CHECK(moved.size() == 1 && moved[0].subtype == 1 && hex::Distance(moved[0].to, HexCoord{3, 3}) == 2);
+        Duel blocked;
+        AddPrimed(blocked, *prod, 9024, 1, 0, {3, 3});
+        blocked.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        blocked.Add(Dummy(11, 100000), 11, 1, {2, 5});   // directly behind unit 10
+        blocked.Add(Dummy(12, 100000), 12, 1, {3, 5});
+        const FightResult rb = RunDuel(blocked, 10, cfg);
+        CHECK(Events(rb.log, CombatEventType::Teleport, 10).empty());   // nowhere to go: no move, no event
+    }
+    {   // SOLIS: the cast arms ONE charge; the next attack after it carries 150 bonus physical and shreds 20% of the target's armor for 3 s.
+        Duel d;
+        AddPrimed(d, *prod, 9020, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 140, cfg);
+        int bonusHits = 0, shreds = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 10)) {
+            if ((e.flags & kFlagTriggered) && (e.flags & kFlagAbility) && e.other == 1) { ++bonusHits; CHECK(e.amount == 150); }
+        }
+        for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, 10)) {
+            if (e.subtype == static_cast<std::uint8_t>(StatusType::Armor) && e.amount == -20 && e.duration == 90) ++shreds;
+        }
+        CHECK(bonusHits == 1 && shreds == 1);
+    }
+    {   // MORTIS: the next 3 basic attacks each carry 150 bonus physical that ignores half the armor. Armor 100: 150 * 100/(100+50) = 100 per bonus hit.
+        Duel d;
+        AddPrimed(d, *prod, 9030, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000, 100), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 170, cfg);
+        int bonusHits = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 10)) {
+            if ((e.flags & kFlagTriggered) && (e.flags & kFlagAbility)) { ++bonusHits; CHECK(e.amount == 100); }
+        }
+        CHECK(bonusHits == 3);
+    }
+}
+
+static void TestNewChampionAbilitiesPart2() {
+    auto prod = ProdDb();
+    CHECK(prod != nullptr);
+    if (!prod) return;
+    const CombatConfig cfg = NoManaConfig();
+
+    {   // XUL: 150 magic to the target and it BOUNCES to exactly one adjacent enemy (of two candidates: the lower UnitId).
+        Duel d;
+        AddPrimed(d, *prod, 9021, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 100000), 11, 1, {2, 5});
+        d.Add(Dummy(12, 100000), 12, 1, {3, 5});
+        const FightResult r = RunDuel(d, 10, cfg);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit.size() == 2 && hit[10] == 150 && hit[11] == 150 && hit.count(12) == 0);
+    }
+    {   // GRAVE: a Skeleton (300 HP at 1 star, 30 AD) next to her; it fights and vanishes with the fight.
+        Duel d;
+        AddPrimed(d, *prod, 9022, 1, 0, {3, 3});
+        AddSummonDefs(d, *prod);
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 100, cfg);
+        const auto skeletons = Spawned(r);
+        CHECK(skeletons.size() == 1 && skeletons[0].champion == 9101 && skeletons[0].amount == 300 && skeletons[0].other == 1 && skeletons[0].team == 0);
+        CHECK(!skeletons.empty() && hex::Distance(skeletons[0].to, HexCoord{3, 3}) == 1);
+        int swings = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Attack, skeletons.empty() ? 0 : skeletons[0].unit)) { ++swings; (void)e; }
+        CHECK(swings > 0);
+        CHECK(r.log.survivors[0] == 1);   // the skeleton is not a survivor
+    }
+    {   // BYTE: 200 shield for 4 s to the LOWEST-HP ally (not herself).
+        Duel d;
+        AddPrimed(d, *prod, 9023, 1, 0, {3, 3});
+        d.Add(Dummy(2, 60), 2, 0, {2, 3});
+        d.Add(Dummy(3, 9000), 3, 0, {4, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg);
+        const auto shield = Events(r.log, CombatEventType::ShieldApplied);
+        CHECK(shield.size() == 1 && shield[0].unit == 2 && shield[0].amount == 200 && shield[0].duration == 120);
+    }
+    {   // NYX: 150 to every ADJACENT enemy, none to one 2 hexes away.
+        Duel d;
+        AddPrimed(d, *prod, 9025, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 100000), 11, 1, {4, 3});
+        d.Add(Dummy(12, 100000), 12, 1, {3, 5});   // two away
+        const FightResult r = RunDuel(d, 10, cfg);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit.size() == 2 && hit[10] == 150 && hit[11] == 150);
+    }
+    {   // FLARE: 200 magic within 1 hex of its TARGET (the target and a neighbour of it), not a unit 2 hexes from the target.
+        Duel d;
+        AddPrimed(d, *prod, 9026, 1, 0, {3, 0});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 3});
+        d.Add(Dummy(11, 100000), 11, 1, {3, 4});
+        d.Add(Dummy(12, 100000), 12, 1, {3, 6});
+        const FightResult r = RunDuel(d, 10, cfg);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit.size() == 2 && hit[10] == 200 && hit[11] == 200);
+    }
+    {   // LICH: 250 magic over 2 s (4 ticks of the drain), and every tick heals him for exactly the damage it did (while he is hurt).
+        Duel d;
+        AddPrimed(d, *prod, 9027, 1, 0, {3, 3});
+        d.Add(Fighter(10, 100000, 0, 300, 1000, 1), 10, 1, {3, 4});   // hits him hard every second, so there is always HP to restore
+        const FightResult r = RunDuel(d, 70, cfg);
+        int drained = 0, healed = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 10)) {
+            if ((e.flags & kFlagDot) && e.other == 1) drained += e.amount;
+        }
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Heal, 1)) healed += e.amount + e.reduced;
+        CHECK(drained == 250 && healed == 250);
+    }
+    {   // KRYX: frenzy for 5 s: +50% attack speed, and every hit taken is 10% bigger (armor 45: 100 -> 68, and 74 during the frenzy).
+        Duel d;
+        AddPrimed(d, *prod, 9029, 1, 0, {3, 3});
+        d.Add(Fighter(10, 100000, 0, 100, 1000, 1), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 220, cfg);
+        bool speed = false, taken = false;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, 1)) {
+            speed = speed || (e.subtype == static_cast<std::uint8_t>(StatusType::AttackSpeed) && e.amount == 50 && e.duration == 150);
+            taken = taken || (e.subtype == static_cast<std::uint8_t>(StatusType::DamageTaken) && e.amount == 10 && e.duration == 150);
+        }
+        CHECK(speed && taken);
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 1)) CHECK(e.amount == (e.tick < 150 ? 74 : 68));
+    }
+    {   // UMBRA: 300 magic to everything within 2 hexes and a 3 s blind (no basic attacks; the blinded enemy attacked once, on tick 0, before it landed).
+        Duel d;
+        AddPrimed(d, *prod, 9031, 1, 0, {3, 3});
+        d.Add(Fighter(10, 100000, 0, 5, 1000, 1), 10, 1, {3, 4});   // adjacent
+        d.Add(Fighter(11, 100000, 0, 5, 1000, 1), 11, 1, {3, 5});   // 2 hexes: inside
+        d.Add(Fighter(12, 100000, 0, 5, 1000, 4), 12, 1, {3, 6});   // 3 hexes: outside
+        const FightResult r = RunDuel(d, 120, cfg);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit.size() == 2 && hit[10] == 300 && hit[11] == 300);
+        for (UnitId blinded : {UnitId{10}, UnitId{11}}) {
+            bool blind = false;
+            for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, blinded)) {
+                blind = blind || (e.subtype == static_cast<std::uint8_t>(StatusType::Blind) && e.duration == 90);
+            }
+            CHECK(blind);
+            int early = 0;
+            for (const CombatEvent& e : Events(r.log, CombatEventType::Attack, blinded)) early += (e.tick > 0 && e.tick < 90) ? 1 : 0;
+            CHECK(early == 0);
+        }
+        int outside = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Attack, 12)) outside += (e.tick > 0 && e.tick < 90) ? 1 : 0;
+        CHECK(outside > 0);   // the unit outside the blast keeps attacking
+    }
+}
+
+static const ChampionDefinition* Prod(const ChampionDatabase& db, ChampionId id) { return db.Find(id); }
+
+// Builds a fight of production champions against one dummy enemy; `mine` are champion ids, unit ids 1..n, packed at the back-left.
+struct SynergyFight {
+    std::unique_ptr<ChampionDatabase> db;
+    FightResult result;
+    std::vector<UnitId> ids;
+};
+static SynergyFight RunSynergy(const ChampionDatabase& prod, const TraitDatabase& traits, const std::vector<ChampionId>& mine,
+                               const ChampionDefinition& enemy, int ticks, const ItemDatabase* items = nullptr,
+                               const std::vector<std::vector<const ItemDefinition*>>& gear = {}, int enemyCount = 1) {
+    SynergyFight out;
+    Duel d;
+    AddSummonDefs(d, prod);
+    const HexCoord slots[8] = {{3, 1}, {2, 1}, {4, 1}, {1, 1}, {5, 1}, {3, 0}, {2, 0}, {4, 0}};
+    for (std::size_t i = 0; i < mine.size(); ++i) {
+        d.Add(*Prod(prod, mine[i]), static_cast<UnitId>(i + 1), 0, slots[i]);
+        out.ids.push_back(static_cast<UnitId>(i + 1));
+    }
+    for (int e = 0; e < enemyCount; ++e) d.Add(enemy, static_cast<UnitId>(100 + e), 1, HexCoord{3 + (e % 3) - 1, 5 + e / 3});
+    d.Finish();
+    for (std::size_t i = 0; i < gear.size() && i < d.specs.size(); ++i) d.specs[i].items = gear[i];
+    const CombatConfig cfg;
+    out.result = CombatSimulator(cfg, &traits, items, d.db.get()).RunFight(d.specs, ticks, 3);
+    std::string why;
+    const bool valid = ValidateCombatLog(out.result.log, *d.db, cfg, ticks, &why);
+    if (!valid) std::printf("  validator: %s\n", why.c_str());
+    CHECK(valid);
+    out.db = std::move(d.db);
+    return out;
+}
+
+static std::vector<CombatEvent> TraitEvents(const FightResult& r, TraitId trait, int team = 0) {
+    std::vector<CombatEvent> out;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::TraitActivated)) {
+        if (e.traitId == trait && e.team == team) out.push_back(e);
+    }
+    return out;
+}
+
+static void TestHeliosPhaisaHexagonSeliniNajmi() {
+    auto prod = ProdDb();
+    auto traits = sample::LoadProductionTraits();
+    CHECK(prod != nullptr && traits != nullptr);
+    if (!prod || !traits) return;
+    ChampionDefinition wall = Dummy(9999, 1000000);   // an enemy nothing can kill
+    wall.stats.attackRange = 1;
+
+    {   // HELIOS 3: every basic attack of a Helios unit burns its target for 2% of ITS max HP over 3 s (a tick a second); at 6 it is 5%.
+        for (int tier = 1; tier <= 2; ++tier) {
+            const std::vector<ChampionId> team = tier == 1 ? std::vector<ChampionId>{9013, 9014, 9020}
+                                                            : std::vector<ChampionId>{9013, 9014, 9020, 9026, 9028, 9001};
+            const SynergyFight f = RunSynergy(*prod, *traits, team, wall, 80);
+            const auto act = TraitEvents(f.result, 1);
+            CHECK(act.size() == 1 && act[0].subtype == tier && act[0].amount == static_cast<int>(team.size()));
+            // Ignis (unit 1) attacks on tick 0; its first burn hits at ticks 30, 60, 90 for a third each of 2% / 5% of 1,000,000.
+            std::vector<int> burn;
+            for (const CombatEvent& e : Events(f.result.log, CombatEventType::Damage, 100)) {
+                if ((e.flags & kFlagDot) && e.other == 1 && e.subtype == static_cast<std::uint8_t>(DamageType::True)) burn.push_back(e.amount);
+            }
+            const int total = tier == 1 ? 20000 : 50000;
+            CHECK(!burn.empty() && burn[0] == total / 3);
+        }
+        const SynergyFight two = RunSynergy(*prod, *traits, {9013, 9014}, wall, 80);
+        CHECK(TraitEvents(two.result, 1).empty());
+    }
+    {   // PHAISA 3: whenever ANY unit dies, each Phaisa unit gets +4% attack damage and +4% ability power (permanent). Two enemies die -> two of each.
+        ChampionDefinition weak = Dummy(9998, 10);
+        const SynergyFight f = RunSynergy(*prod, *traits, {9015, 9016, 9021}, weak, 200, nullptr, {}, 2);
+        CHECK(TraitEvents(f.result, 2).size() == 1 && TraitEvents(f.result, 2)[0].subtype == 1);
+        int deaths = 0;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Death)) deaths += e.unit >= 100 ? 1 : 0;
+        CHECK(deaths == 2);
+        for (UnitId phaisa : f.ids) {
+            int ad = 0, ap = 0;
+            for (const CombatEvent& e : Events(f.result.log, CombatEventType::StatusApplied, phaisa)) {
+                ad += (e.subtype == static_cast<std::uint8_t>(StatusType::AttackDamage) && e.amount == 4 && e.duration == 0) ? 1 : 0;
+                ap += (e.subtype == static_cast<std::uint8_t>(StatusType::AbilityPower) && e.amount == 4 && e.duration == 0) ? 1 : 0;
+            }
+            CHECK(ad == 2 && ap == 2);
+        }
+    }
+    {   // HEXAGON 2: a 300 shield each; HEXAGON 4: 600, and the first shield to break explodes for 200 magic on the enemies adjacent to the holder.
+        const SynergyFight two = RunSynergy(*prod, *traits, {9019, 9003}, wall, 30);
+        int shields300 = 0;
+        for (UnitId u : two.ids) {
+            for (const CombatEvent& e : Events(two.result.log, CombatEventType::ShieldApplied, u)) shields300 += (e.amount == 300 && e.duration == 0) ? 1 : 0;
+        }
+        CHECK(shields300 == 2);
+        ChampionDefinition basher = Dummy(9997, 10000000);
+        basher.stats.attackDamage = Same(1000);
+        basher.stats.attackSpeedMilli = 1000;
+        basher.stats.attackRange = 1;   // it walks up to them, so the holder it breaks has it adjacent
+        const SynergyFight four = RunSynergy(*prod, *traits, {9019, 9003, 9005, 9023}, basher, 250);
+        CHECK(TraitEvents(four.result, 3).size() == 1 && TraitEvents(four.result, 3)[0].subtype == 2);
+        int shields600 = 0;
+        for (UnitId u : four.ids) {
+            for (const CombatEvent& e : Events(four.result.log, CombatEventType::ShieldApplied, u)) shields600 += (e.amount == 600 && e.duration == 0) ? 1 : 0;
+        }
+        CHECK(shields600 == 4);
+        std::set<UnitId> exploders;
+        int explosions = 0;
+        for (const CombatEvent& e : Events(four.result.log, CombatEventType::Damage, 100)) {
+            if ((e.flags & kFlagTriggered) && e.subtype == static_cast<std::uint8_t>(DamageType::Magic) && e.amount == 200) { ++explosions; exploders.insert(e.other); }
+        }
+        CHECK(explosions >= 1 && exploders.size() == static_cast<std::size_t>(explosions));   // at most one detonation per Hexagon unit
+    }
+    {   // SELINI 3: the first time a Selini unit falls below 50% it drops aggro for 2 s and heals 20% of its max HP -- once.
+        ChampionDefinition basher = Dummy(9997, 10000000);
+        basher.stats.attackDamage = Same(300);
+        const SynergyFight f = RunSynergy(*prod, *traits, {9031, 9009, 9011}, basher, 300);
+        CHECK(TraitEvents(f.result, 6).size() == 1);
+        int aggro = 0, heals = 0;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::StatusApplied)) {
+            if (e.subtype == static_cast<std::uint8_t>(StatusType::AggroDrop) && e.duration == 60 && e.other == e.unit) ++aggro;
+        }
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Heal)) heals += (e.amount == 180 && e.unit == 1) ? 1 : 0;   // 20% of Umbra's 900
+        CHECK(aggro >= 1);
+        CHECK(heals == 1);
+    }
+    {   // NAJMI 3: when a Najmi unit casts, the allies ADJACENT to it gain 15 mana.
+        Duel d;
+        const CombatConfig cfg = NoManaConfig();
+        AddPrimed(d, *prod, 9024, 1, 0, {3, 3});   // Orion, primed
+        d.Add(*prod->Find(9008), 2, 0, {2, 3});    // Astra beside him
+        d.Add(*prod->Find(9012), 3, 0, {4, 3});    // Vega beside him
+        d.Add(Dummy(4, 100000), 4, 0, {0, 0});     // far away, not Najmi
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg, traits.get());
+        CHECK(TraitEvents(r, 7).size() == 1);
+        std::map<UnitId, int> mana;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::ManaChanged)) {
+            if (e.tick == 0) mana[e.unit] = e.amount;
+        }
+        CHECK(mana[2] == 15000 && mana[3] == 15000 && mana.count(4) == 0);
+    }
+}
+
+static const std::vector<ChampionId> kSixCoregons = {9017, 9018, 9022, 9027, 9010, 9030};   // Bone, Rot, Grave, Lich, Soul, Mortis
+
+static void TestCoregonsFromTheDesignDoc() {
+    auto prod = ProdDb();
+    auto traits = sample::LoadProductionTraits();
+    CHECK(prod != nullptr && traits != nullptr);
+    if (!prod || !traits) return;
+    std::string err;
+    auto emblems = w2f::LoadItemDatabaseFromJson(R"({"version": 1, "items": [ {"id": 1, "name": "Emblem", "grantsTraits": ["Coregons"]} ]})", &err);
+    CHECK(emblems != nullptr);
+    if (!emblems) return;
+    ChampionDefinition enemy = Fighter(9999, 100000, 0, 60, 1000, 1);
+    enemy.stats.maxMana = 60;   // a caster: the zone's +15 mana applies
+    auto spawnsOf = [](const FightResult& r) { return Spawned(r); };
+
+    // ---- 3 Coregons: Bone, Rot, Grave (+ Null as the tankiest ally, 550 HP): 3 Lost Souls, no zone ----
+    {
+        const SynergyFight f = RunSynergy(*prod, *traits, {9017, 9018, 9022, 9016}, enemy, 150);
+        const auto act = TraitEvents(f.result, 8);
+        CHECK(act.size() == 1 && act[0].subtype == 1 && act[0].amount == 3);
+        const auto souls = spawnsOf(f.result);
+        CHECK(souls.size() == 3);
+        for (const CombatEvent& s : souls) CHECK(s.champion == 9102 && s.tick == 0 && s.star == 1 && s.amount == 137 && s.other == 1);   // 25% of Null / Grave's 550, cast by the lowest-id holder
+        // They are untargetable: the enemy never swings at one.
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Attack, 100)) CHECK(e.other < kSummonUnitBase);
+        // They hit with magic damage and echo 5% of their team's hits (Bone hits for 40 -> 2).
+        int magicBasics = 0, echoes = 0;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Damage, 100)) {
+            if (e.other < kSummonUnitBase) continue;
+            if (e.flags & kFlagBasic) { ++magicBasics; CHECK(e.subtype == static_cast<std::uint8_t>(DamageType::Magic) && e.amount == 30); }
+            else if (e.flags & kFlagTriggered) ++echoes;
+        }
+        CHECK(magicBasics > 0 && echoes > 0);
+        // Coregons heal for 10% of the damage they deal (Bone's basic attack: 40 -> 4).
+        int boneHeal = 0;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Heal, 1)) boneHeal += e.amount == 4 ? 1 : 0;
+        CHECK(boneHeal > 0);
+        // No zone yet.
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::StatusApplied)) {
+            const auto s = static_cast<StatusType>(e.subtype);
+            CHECK(s != StatusType::BonusMaxMana && s != StatusType::HpPerSecond && s != StatusType::ExecuteBelow);
+        }
+    }
+    // ---- 6 Coregons: the Lost Soul Zone ----
+    {
+        const SynergyFight f = RunSynergy(*prod, *traits, kSixCoregons, enemy, 200);
+        const auto act = TraitEvents(f.result, 8);
+        CHECK(act.size() == 1 && act[0].subtype == 2 && act[0].amount == 6);
+        const auto souls = spawnsOf(f.result);
+        CHECK(souls.size() == 3);
+        for (const CombatEvent& s : souls) CHECK(s.star == 2 && s.amount == 260);   // 40% of the tankiest ally (Mortis, 650)
+        // Enemy casters need 15 more mana; enemies lose 2% max HP a second; are executed below 5%.
+        std::map<int, int> onEnemy;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::StatusApplied, 100)) {
+            if (e.duration != 0) continue;
+            onEnemy[e.subtype] = e.amount;
+        }
+        CHECK(onEnemy[static_cast<int>(StatusType::BonusMaxMana)] == 15 && onEnemy[static_cast<int>(StatusType::HpPerSecond)] == -2 &&
+              onEnemy[static_cast<int>(StatusType::ExecuteBelow)] == 5);
+        // Allies gain +2 mana / second and heal 2% max HP a second.
+        std::map<int, int> onAlly;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::StatusApplied, 1)) {
+            if (e.duration == 0 && e.tick == 0) onAlly[e.subtype] = e.amount;
+        }
+        CHECK(onAlly[static_cast<int>(StatusType::BonusManaRegen)] == 2000 && onAlly[static_cast<int>(StatusType::HpPerSecond)] == 2);
+        // Once a second the enemy takes 2% of its 100,000 max HP as true damage (credited to the zone's caster, unit 1) -- and the +15 mana bar shows.
+        std::vector<int> ticks;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Damage, 100)) {
+            if ((e.flags & kFlagTriggered) && e.subtype == static_cast<std::uint8_t>(DamageType::True) && e.other == 1) {
+                CHECK(e.amount == 2000);
+                ticks.push_back(e.tick);
+            }
+        }
+        CHECK(ticks.size() >= 5 && ticks[0] == 30 && ticks[1] == 60);
+        // Allies that are hurt are healed 2% of their max HP each second by the zone (the enemy keeps hitting them).
+        int zoneHeals = 0;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Heal)) {
+            if (e.unit <= 6 && e.tick % 30 == 0 && e.tick > 0 && e.other == 1) ++zoneHeals;
+        }
+        CHECK(zoneHeals > 0);
+    }
+    // ---- 8 Coregons (6 + two emblem carriers): the Underworld ----
+    {
+        const std::vector<ChampionId> team = {9017, 9018, 9022, 9027, 9010, 9030, 9013, 9014};   // + Ignis and Pyra carrying Coregons Emblems
+        const ItemDefinition* emblem = emblems->Find(1);
+        const std::vector<std::vector<const ItemDefinition*>> gear = {{}, {}, {}, {}, {}, {}, {emblem}, {emblem}};
+        const SynergyFight f = RunSynergy(*prod, *traits, team, enemy, 200, emblems.get(), gear);
+        const auto act = TraitEvents(f.result, 8);
+        CHECK(act.size() == 1 && act[0].subtype == 3 && act[0].amount == 8);
+        const auto souls = spawnsOf(f.result);
+        CHECK(souls.size() == 3);
+        for (const CombatEvent& s : souls) CHECK(s.star == 3 && s.amount > 0);
+        std::map<int, int> onEnemy;
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::StatusApplied, 100)) {
+            if (e.duration == 0) onEnemy[e.subtype] = e.amount;
+        }
+        CHECK(onEnemy[static_cast<int>(StatusType::HpPerSecond)] == -4 && onEnemy[static_cast<int>(StatusType::ExecuteBelow)] == 10);
+        for (const CombatEvent& e : Events(f.result.log, CombatEventType::Damage, 100)) {
+            if ((e.flags & kFlagTriggered) && e.subtype == static_cast<std::uint8_t>(DamageType::True) && e.other == 1) { CHECK(e.amount == 4000); break; }
+        }
+        // 60% / 40% / 25% of the tankiest ally: the Soul HP grows with the breakpoint.
+        const SynergyFight six = RunSynergy(*prod, *traits, kSixCoregons, enemy, 5);
+        const auto sixSouls = spawnsOf(six.result);
+        CHECK(!sixSouls.empty() && !souls.empty() && souls[0].amount * 2 == sixSouls[0].amount * 3);   // 60 : 40
+    }
+}
+
+static void TestZoneStatusesAndExecute() {
+    // ExecuteBelow: a unit under the threshold dies at once, past its shield; HpPerSecond damage is credited to the source but is NOT damage the
+    // source "dealt" for formulas.
+    const char* traitJson = R"({"version": 1, "traits": [ { "id": 1, "name": "Z", "breakpoints": [ { "count": 1, "effects": [
+        { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow", "percent": 10, "permanent": true },
+        { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "HpPerSecond", "percent": -5, "permanent": true } ] } ] } ]})";
+    std::string err;
+    auto traits = w2f::LoadTraitDatabaseFromJson(traitJson, &err);
+    CHECK(traits != nullptr);
+    if (!traits) { std::printf("  %s\n", err.c_str()); return; }
+    ChampionDefinition holder = Fighter(1, 1000, 0, 95, 1000, 1);
+    holder.traits = {"Z"};
+    ChampionDefinition victim = Fighter(2, 100, 0, 0, 1000, 1);
+    Duel d;
+    d.Add(holder, 1, 0, {3, 3});
+    d.Add(victim, 2, 1, {3, 4});
+    const CombatConfig cfg;
+    const FightResult r = RunDuel(d, 100, cfg, traits.get());
+    // 95 damage leaves 5 HP (< 10%): executed on the same tick, the remaining 5 dealt as a "triggered" true hit credited to the zone's holder.
+    const auto hits = Events(r.log, CombatEventType::Damage, 2);
+    CHECK(hits.size() == 2 && hits[0].amount == 95 && hits[1].amount == 5 && hits[1].hpAfter == 0 && (hits[1].flags & kFlagTriggered) != 0 && hits[1].other == 1);
+    CHECK(r.winner == CombatWinner::Home && r.log.endTick == 0);
+
+    // HpPerSecond -5% of 100000 = 5000 a second, true damage, and it never counts as damage dealt by the holder.
+    ChampionDefinition tank = Fighter(3, 100000, 0, 0, 1000, 1);
+    Duel d2;
+    d2.Add(holder, 1, 0, {3, 3});
+    d2.Add(tank, 2, 1, {3, 4});
+    const FightResult r2 = RunDuel(d2, 70, cfg, traits.get());
+    std::vector<int> zone;
+    for (const CombatEvent& e : Events(r2.log, CombatEventType::Damage, 2)) {
+        if ((e.flags & kFlagTriggered) && e.other == 1) zone.push_back(e.tick * 1000000 + e.amount);
+    }
+    CHECK((zone == std::vector<int>{30 * 1000000 + 5000, 60 * 1000000 + 5000}));
+}
+
+static void TestPhase11PrimitiveLoaderErrors() {
+    std::string err;
+    const auto bad = [&](const char* json, const char* mention) {
+        const bool loaded = w2f::LoadChampionDatabaseFromJson(json, &err) != nullptr;
+        const bool ok = !loaded && err.find(mention) != std::string::npos;
+        if (!ok) std::printf("  wanted an error mentioning '%s', got %s'%s'\n", mention, loaded ? "NO ERROR " : "", err.c_str());
+        CHECK(ok);
+    };
+    const std::string head = R"({"version": 1, "champions": [ { "id": 1, "name": "A", "cost": 1, "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 1, "attackSpeed": 1, "range": 1, "maxMana": 10 }, )";
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Displace", "target": "CurrentTarget", "direction": "Sideways" } ] } } ]})").c_str(), "direction");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Displace", "target": "CurrentTarget", "direction": "Away", "hexes": 99 } ] } } ]})").c_str(), "hexes");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 5, "armorPenPercent": 101 } ] } } ]})").c_str(), "armorPenPercent");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "requiresCharge": true, "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 5 } ] } } ]})").c_str(), "requiresCharge");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Status", "target": "Self", "status": "BonusMaxMana", "value": 5, "durationSeconds": 3 } ] } } ]})").c_str(), "permanent");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Status", "target": "Self", "status": "ExecuteBelow", "percent": 80, "permanent": true } ] } } ]})").c_str(), "ExecuteBelow");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Status", "target": "Self", "status": "EmpoweredAttack", "percent": 0, "durationSeconds": 3 } ] } } ]})").c_str(), "charges");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Teleport", "target": "Self", "destination": "Sideways" } ] } } ]})").c_str(), "destination");
+    bad((head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Damage", "target": { "mode": "CurrentTarget", "count": 2 }, "damageType": "Physical", "amount": 5 } ] } } ]})").c_str(), "count");
+    bad((head + R"("passive": { "id": 1, "name": "x", "effects": [ { "type": "Teleport", "target": "Self", "destination": "BehindCurrentTarget" } ] } } ]})").c_str(), "current target");
+    // ...and the same things written correctly load, and land in the definition.
+    auto ok = w2f::LoadChampionDatabaseFromJson((head + R"("stats2": 0 } ]})").c_str(), &err);
+    (void)ok;
+    const std::string good = head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [
+        { "type": "Displace", "target": "CurrentTarget", "direction": "Toward", "hexes": 2 },
+        { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false, "count": 1 }, "damageType": "Magic", "amount": 5, "armorPenPercent": 40 },
+        { "type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": 9, "amountIsTotal": true, "durationSeconds": 2, "intervalSeconds": 0.5, "healPercent": 100 },
+        { "type": "Teleport", "target": "Self", "destination": "NextToLowestHpEnemy" },
+        { "type": "Damage", "target": "HighestHpEnemy", "damageType": "Physical", "amount": 5 } ] },
+      "triggers": [ { "id": 2, "name": "hit", "trigger": "OnBasicAttack", "requiresCharge": true, "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "True", "amount": 1 } ] } ] } ]})";
+    auto db = w2f::LoadChampionDatabaseFromJson(good, &err);
+    CHECK(db != nullptr);
+    if (!db) { std::printf("  %s\n", err.c_str()); return; }
+    const ChampionDefinition* a = db->Find(1);
+    CHECK(a && a->ability.effects.size() == 5 && a->triggers.size() == 1 && a->triggers[0].requiresCharge);
+    if (a && a->ability.effects.size() == 5) {
+        const auto* displace = std::get_if<DisplaceEffect>(&a->ability.effects[0].payload);
+        CHECK(displace && displace->direction == DisplaceDirection::TowardCaster && displace->hexes == 2);
+        CHECK(a->ability.effects[1].target.count == 1);
+        const auto* dot = std::get_if<DotEffect>(&a->ability.effects[2].payload);
+        CHECK(dot && dot->healPercent == 100);
+        CHECK(a->ability.effects[4].target.mode == TargetMode::HighestHpEnemy);
+    }
+    // The new primitives change the data hash (a snapshot must not restore against retuned shapes).
+    auto plain = w2f::LoadChampionDatabaseFromJson(head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Displace", "target": "CurrentTarget", "direction": "Toward", "hexes": 1 } ] } } ]})", &err);
+    auto other = w2f::LoadChampionDatabaseFromJson(head + R"("ability": { "id": 1, "name": "x", "trigger": "Mana", "effects": [ { "type": "Displace", "target": "CurrentTarget", "direction": "Away", "hexes": 1 } ] } } ]})", &err);
+    CHECK(plain && other && plain->ContentHash() != other->ContentHash());
+}
+
+static void TestShopPoolExhaustionFallback() {
+    // When the tiers a level can roll run dry, the shop rolls a DIFFERENT tier (the nearest one with copies) instead of leaving slots empty
+    // while the pool still has stock; only a completely empty pool leaves empty slots. Never a crash, a hang, or a phantom copy.
+    {   // Level 1 rolls tier 1 only. Tier 1 has 2 copies, tier 2 has 5: two slots show tier 1, the other three fall back to tier 2.
+        auto db = ChampionDatabase::Create({Def(1, "Cheap", 1), Def(2, "Dear", 2)});
+        TestGameConfig cfg;
+        cfg.pool.copiesPerTier = {{2, 5, 1, 1, 1}};
+        for (auto& row : cfg.shop.dropRatesByLevel) row = {{100, 0, 0, 0, 0}};
+        SharedChampionPool pool(*db, cfg.pool);
+        PlayerState p(0, cfg.player, cfg.shop, pool, 5);
+        p.Shop().Refresh();
+        int cheap = 0, dear = 0, empty = 0;
+        for (const ChampionDefinition* slot : p.Shop().Slots()) {
+            if (slot == nullptr) ++empty;
+            else if (slot->cost == 1) ++cheap;
+            else ++dear;
+        }
+        CHECK(cheap == 2 && dear == 3 && empty == 0);
+        CHECK(pool.Remaining(1) == 0 && pool.Remaining(2) == 2);
+        // Rerolling puts the old offer back first and deals again: same totals.
+        p.Shop().Refresh();
+        int shown = 0;
+        for (const ChampionDefinition* slot : p.Shop().Slots()) shown += slot != nullptr ? 1 : 0;
+        CHECK(shown == 5 && pool.Remaining(1) + pool.Remaining(2) == 2);
+    }
+    {   // The whole pool empty: every slot empty, buying answers EmptySlot, rerolling still works and costs its gold.
+        auto db = ChampionDatabase::Create({Def(1, "Only", 1)});
+        TestGameConfig cfg;
+        cfg.pool.copiesPerTier = {{2, 1, 1, 1, 1}};
+        SharedChampionPool pool(*db, cfg.pool);
+        PlayerState hog(0, cfg.player, cfg.shop, pool, 5);
+        hog.Shop().Refresh();                     // takes both copies
+        PlayerState p(1, cfg.player, cfg.shop, pool, 6);
+        p.Shop().Refresh();
+        for (const ChampionDefinition* slot : p.Shop().Slots()) CHECK(slot == nullptr);
+        CHECK(p.Shop().TryBuy(0) == ActionResult::EmptySlot);
+        p.AddGold(10);
+        const int before = p.Gold();
+        CHECK(p.Shop().TryReroll() == ActionResult::Ok && p.Gold() == before - p.Shop().RerollCost());
+        for (const ChampionDefinition* slot : p.Shop().Slots()) CHECK(slot == nullptr);
+    }
+    {   // Eight players hammering a pool with ONE copy of each of the 30 real champions: copies are conserved through hundreds of rerolls,
+        // no shop ever holds a copy the pool does not have, and no slot is empty while the pool has stock.
+        auto roster = ProdDb();
+        CHECK(roster != nullptr);
+        if (!roster) return;
+        TestGameConfig cfg;
+        cfg.pool.copiesPerTier = {{1, 1, 1, 1, 1}};
+        SharedChampionPool pool(*roster, cfg.pool);
+        std::vector<std::unique_ptr<PlayerState>> players;
+        for (int i = 0; i < kMaxPlayers; ++i) players.push_back(std::make_unique<PlayerState>(static_cast<PlayerId>(i), cfg.player, cfg.shop, pool, 100 + i));
+        int totalCopies = 0;
+        for (const ChampionDefinition& c : roster->All()) totalCopies += c.summon ? 0 : 1;
+        CHECK(totalCopies == 30);
+        Rng chooser(9);
+        bool conserved = true, noStarvation = true;
+        for (int step = 0; step < 600; ++step) {
+            PlayerState& p = *players[chooser.NextBelow(kMaxPlayers)];
+            p.Shop().Refresh();
+            int shown = 0, emptySlots = 0;
+            for (const auto& q : players) {
+                for (const ChampionDefinition* slot : q->Shop().Slots()) {
+                    shown += slot != nullptr ? 1 : 0;
+                    if (&*q == &p && slot == nullptr) ++emptySlots;
+                }
+            }
+            int remaining = 0;
+            for (int tier = 1; tier <= kMaxCostTier; ++tier) remaining += pool.RemainingInTier(tier);
+            conserved = conserved && shown + remaining == totalCopies;
+            noStarvation = noStarvation && (emptySlots == 0 || remaining == 0);
+        }
+        CHECK(conserved && noStarvation);
+        int shownAtEnd = 0;
+        for (const auto& q : players) for (const ChampionDefinition* slot : q->Shop().Slots()) shownAtEnd += slot != nullptr ? 1 : 0;
+        CHECK(shownAtEnd == 30);   // 8 shops x 5 slots = 40 slots for 30 copies: all of them are out on display
+        for (auto& q : players) q->Shop().ReturnShopToPool();
+        int back = 0;
+        for (int tier = 1; tier <= kMaxCostTier; ++tier) back += pool.RemainingInTier(tier);
+        CHECK(back == 30);
+    }
+    {   // A whole match with a pool this small (1 copy each): bots buy out tiers all game long, shops keep falling back, and the match still finishes
+        // with every integrity check holding and a replay that is identical tick for tick.
+        auto roster = ProdDb();
+        CHECK(roster != nullptr);
+        if (!roster) return;
+        const BotMatchRun a = PlayBotMatch(*roster, 2024, 1, false, 1);
+        const BotMatchRun b = PlayBotMatch(*roster, 2024, 1, false, 1);
+        CHECK(a.finished && a.winner != kInvalidPlayerId && a.integrity && a.layouts && a.logsValid);
+        CHECK(a.hashes == b.hashes && a.winner == b.winner);
+        std::printf("  1-copy pool match: %d rounds, %d fights, units bought %d\n", a.rounds, a.fights, a.bought);
+    }
 }
 
 int main() {
@@ -8613,6 +9339,13 @@ int main() {
         {"Full bench still buys a merge (match API)", TestFullBenchMergeViaMatchApi},
         {"Full match: 7 bots + 1 player, real combat", TestFullMatchWithBots},
         {"Full match: roster-only shop, synergies in play", TestRosterOnlyMatchWithSynergies},
+        {"Shop: exhausted tiers fall back, never crash", TestShopPoolExhaustionFallback},
+        {"Roster: champions 1-2 cost abilities (30-champion doc)", TestNewChampionAbilitiesPart1},
+        {"Roster: the rest of the abilities", TestNewChampionAbilitiesPart2},
+        {"Synergies: Helios, Phaisa, Hexagon, Selini, Najmi", TestHeliosPhaisaHexagonSeliniNajmi},
+        {"Synergy: Coregons 3 / 6 / 8 from the design doc", TestCoregonsFromTheDesignDoc},
+        {"Zone statuses: ExecuteBelow, HpPerSecond", TestZoneStatusesAndExecute},
+        {"Phase 11 primitives: loader errors + data hash", TestPhase11PrimitiveLoaderErrors},
     };
     for (const auto& [name, fn] : tests) {
         std::printf("[ RUN  ] %s\n", name);

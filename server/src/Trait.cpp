@@ -42,12 +42,17 @@ std::unique_ptr<TraitDatabase> TraitDatabase::Create(std::vector<TraitDefinition
                                      std::holds_alternative<SummonEffect>(te.effect.payload) ||
                                      std::holds_alternative<ManaEffect>(te.effect.payload);
                 if (!allowed) return fail("trait '" + trait.name + "': synergy effects may only be Status, Shield, Heal, Mana or Summon");
-                if (te.effect.target.mode != TargetMode::Self) {
+                if (te.scope == TraitScope::Team) {
+                    // Applied once, cast by the lowest-UnitId holder, so the effect may aim itself at a whole side.
+                    const TargetMode mode = te.effect.target.mode;
+                    if (mode != TargetMode::Self && mode != TargetMode::AllEnemies && mode != TargetMode::AllAllies) {
+                        return fail("trait '" + trait.name + "': a scope-Team effect targets Self, AllEnemies or AllAllies");
+                    }
+                    if (std::holds_alternative<SummonEffect>(te.effect.payload) && mode != TargetMode::Self) {
+                        return fail("trait '" + trait.name + "': a Summon effect targets Self");
+                    }
+                } else if (te.effect.target.mode != TargetMode::Self) {
                     return fail("trait '" + trait.name + "': synergy effects apply to each unit itself (target Self); use \"scope\" to pick who");
-                }
-                if ((te.scope == TraitScope::Team) != std::holds_alternative<SummonEffect>(te.effect.payload) &&
-                    te.scope == TraitScope::Team) {
-                    return fail("trait '" + trait.name + "': scope Team only applies to Summon effects");
                 }
                 wrapper.effects.push_back(te.effect);
             }

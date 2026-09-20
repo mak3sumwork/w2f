@@ -75,15 +75,33 @@ const ChampionDefinition* ShopManager::DrawOne() {
         weights[t] = pool_.RemainingInTier(t + 1) > 0 ? odds[static_cast<std::size_t>(t)] : 0;
         totalWeight += static_cast<std::uint32_t>(weights[t]);
     }
-    if (totalWeight == 0) return nullptr;  // Every tier this level can roll is sold out.
-
-    std::uint32_t roll = rng_.NextBelow(totalWeight);
-    for (int t = 0; t < kMaxCostTier; ++t) {
-        const std::uint32_t weight = static_cast<std::uint32_t>(weights[t]);
-        if (roll < weight) return pool_.DrawFromTier(t + 1, rng_);
-        roll -= weight;
+    if (totalWeight > 0) {
+        std::uint32_t roll = rng_.NextBelow(totalWeight);
+        for (int t = 0; t < kMaxCostTier; ++t) {
+            const std::uint32_t weight = static_cast<std::uint32_t>(weights[t]);
+            if (roll < weight) {
+                if (const ChampionDefinition* drawn = pool_.DrawFromTier(t + 1, rng_)) return drawn;
+                break;  // (cannot happen: the tier had copies) -- fall back rather than hand out a hole
+            }
+            roll -= weight;
+        }
     }
-    assert(false && "roll exceeded total weight");
+
+    // Every tier this level can roll is sold out. Rather than leave the slot empty while the pool still holds copies, roll a different tier:
+    // the nearest one with stock to the level's most likely tier (the cheaper one on a tie). Only when the WHOLE pool is empty is the slot
+    // left empty -- and an empty slot is a valid, buyable-as-nothing state (TryBuy answers EmptySlot), never a crash or a wait.
+    int favourite = 0;
+    for (int t = 1; t < kMaxCostTier; ++t) {
+        if (odds[static_cast<std::size_t>(t)] > odds[static_cast<std::size_t>(favourite)]) favourite = t;
+    }
+    for (int distance = 0; distance < kMaxCostTier; ++distance) {
+        for (int direction : {-1, +1}) {
+            if (distance == 0 && direction == +1) continue;
+            const int t = favourite + direction * distance;
+            if (t < 0 || t >= kMaxCostTier || pool_.RemainingInTier(t + 1) <= 0) continue;
+            if (const ChampionDefinition* drawn = pool_.DrawFromTier(t + 1, rng_)) return drawn;
+        }
+    }
     return nullptr;
 }
 

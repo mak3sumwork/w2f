@@ -36,7 +36,9 @@ constexpr EnumName<StatusType> kStatusTypes[] = {
     {"BonusArmor", StatusType::BonusArmor}, {"BonusMagicResist", StatusType::BonusMagicResist}, {"BonusMaxHp", StatusType::BonusMaxHp},
     {"BonusAbilityDamage", StatusType::BonusAbilityDamage}, {"BonusCritChance", StatusType::BonusCritChance},
     {"AbilityCrit", StatusType::AbilityCrit}, {"CritDamage", StatusType::CritDamage}, {"CritDamageTakenReduction", StatusType::CritDamageTakenReduction},
-    {"BonusManaRegen", StatusType::BonusManaRegen}, {"AbilityPower", StatusType::AbilityPower}, {"SpellShield", StatusType::SpellShield}};
+    {"BonusManaRegen", StatusType::BonusManaRegen}, {"AbilityPower", StatusType::AbilityPower}, {"SpellShield", StatusType::SpellShield},
+    {"Blind", StatusType::Blind}, {"DamageTaken", StatusType::DamageTaken}, {"BonusMaxMana", StatusType::BonusMaxMana},
+    {"ExecuteBelow", StatusType::ExecuteBelow}, {"HpPerSecond", StatusType::HpPerSecond}, {"EmpoweredAttack", StatusType::EmpoweredAttack}};
 constexpr EnumName<StatSource> kSources[] = {
     {"SelfMaxHp", StatSource::SelfMaxHp},
     {"SelfCurrentHp", StatSource::SelfCurrentHp},
@@ -66,9 +68,17 @@ constexpr EnumName<TargetMode> kTargetModes[] = {{"Self", TargetMode::Self},
                                                  {"RandomEnemy", TargetMode::RandomEnemy},
                                                  {"ConeTowardTarget", TargetMode::ConeTowardTarget},
                                                  {"TriggerAttacker", TargetMode::TriggerAttacker},
-                                                 {"TriggerVictim", TargetMode::TriggerVictim}};
+                                                 {"TriggerVictim", TargetMode::TriggerVictim},
+                                                 {"LowestHpEnemy", TargetMode::LowestHpEnemy},
+                                                 {"HighestHpEnemy", TargetMode::HighestHpEnemy},
+                                                 {"AllEnemies", TargetMode::AllEnemies},
+                                                 {"AllAllies", TargetMode::AllAllies}};
 constexpr EnumName<TeleportDestination> kDestinations[] = {{"BehindFarthestEnemy", TeleportDestination::BehindFarthestEnemy},
-                                                           {"BehindClosestEnemy", TeleportDestination::BehindClosestEnemy}};
+                                                           {"BehindClosestEnemy", TeleportDestination::BehindClosestEnemy},
+                                                           {"NextToLowestHpEnemy", TeleportDestination::NextToLowestHpEnemy},
+                                                           {"NextToHighestHpEnemy", TeleportDestination::NextToHighestHpEnemy},
+                                                           {"BehindCurrentTarget", TeleportDestination::BehindCurrentTarget}};
+constexpr EnumName<DisplaceDirection> kDisplaceDirections[] = {{"Toward", DisplaceDirection::TowardCaster}, {"Away", DisplaceDirection::AwayFromCaster}};
 constexpr EnumName<PveDropType> kDropTypes[] = {{"Gold", PveDropType::Gold}, {"Champion", PveDropType::Champion}, {"Item", PveDropType::Item}};
 constexpr EnumName<TraitScope> kScopes[] = {{"AllAllies", TraitScope::AllAllies}, {"TraitHolders", TraitScope::TraitHolders}, {"Team", TraitScope::Team}};
 constexpr EnumName<DamageFilter> kDamageFilters[] = {{"Any", DamageFilter::Any}, {"Basic", DamageFilter::Basic}, {"Ability", DamageFilter::Ability}};
@@ -84,7 +94,9 @@ constexpr EnumName<CastTrigger> kTriggers[] = {{"Mana", CastTrigger::Mana},
                                                {"OnDealDamage", CastTrigger::OnDealDamage},
                                                {"OnCritTaken", CastTrigger::OnCritTaken},
                                                {"OnHpDropBelowPercent", CastTrigger::OnHpDropBelowPercent},
-                                               {"OnAllyDealDamage", CastTrigger::OnAllyDealDamage}};
+                                               {"OnAllyDealDamage", CastTrigger::OnAllyDealDamage},
+                                               {"OnAnyUnitDeath", CastTrigger::OnAnyUnitDeath},
+                                               {"OnShieldBreak", CastTrigger::OnShieldBreak}};
 
 constexpr long long kMaxStat = 10'000'000;
 constexpr long long kMaxTicks = 1'000'000;
@@ -417,6 +429,10 @@ private:
                 case TargetMode::HighestDamageAlly: out = TargetSpec::HighestDamageAlly(); return true;
                 case TargetMode::TriggerAttacker: out = TargetSpec::TriggerAttacker(); return true;
                 case TargetMode::TriggerVictim: out = TargetSpec::TriggerVictim(); return true;
+                case TargetMode::LowestHpEnemy:
+                case TargetMode::HighestHpEnemy:
+                case TargetMode::AllEnemies: out.side = TargetSide::Enemies; return true;
+                case TargetMode::AllAllies: out.side = TargetSide::Allies; return true;
                 default: break;
             }
             return Fail(path, v, "this target needs the long form, e.g. {\"mode\": \"AreaAroundTarget\", \"radius\": 3}");
@@ -440,6 +456,7 @@ private:
             case TargetMode::Self: out.side = TargetSide::All; break;
             case TargetMode::AlliesInStartLine:
             case TargetMode::HighestDamageAlly:
+            case TargetMode::AllAllies:
             case TargetMode::LowestHpAlly: out.side = TargetSide::Allies; break;
             default: out.side = TargetSide::Enemies; break;
         }
@@ -448,8 +465,8 @@ private:
         if (includeCenter && !area) return Fail(path, v, "\"includeCenter\" only applies to the Area modes");
         if (out.mode == TargetMode::ClosestEnemies) {
             if (!count) return Missing(o, "count");
-        } else if (count) {
-            return Fail(path, v, "\"count\" only applies to ClosestEnemies");
+        } else if (count && !area) {
+            return Fail(path, v, "\"count\" only applies to ClosestEnemies and the Area modes (at most that many, nearest first)");
         }
         const bool lineLike = out.mode == TargetMode::LineBehindTarget || out.mode == TargetMode::ConeTowardTarget;
         if (lineLike) {
@@ -502,7 +519,7 @@ private:
             }
         }
         if (percent && !ReadStarInts(*percent, path + ".percent", kMinPercent, kMaxPercent, s.percent)) return false;
-        const bool durationOnly = s.status == StatusType::Stun || s.status == StatusType::Root || s.status == StatusType::Knockup ||
+        const bool durationOnly = s.status == StatusType::Blind || s.status == StatusType::Stun || s.status == StatusType::Root || s.status == StatusType::Knockup ||
                                   s.status == StatusType::CcImmunity || s.status == StatusType::Untargetable || s.status == StatusType::AggroDrop ||
                                   s.status == StatusType::AbilityCrit || s.status == StatusType::SpellShield;
         if (IsFlatBonusStatus(s.status)) {
@@ -577,12 +594,14 @@ private:
             if (!Require(o, "amount", amount)) return false;
             const Value* multiplier = Take(o, "multiplierPercent");
             const Value* canCrit = Take(o, "canCrit");
+            const Value* armorPen = Take(o, "armorPenPercent");
             const Value* onKill = Take(o, "onKill");
             if (!RejectUnknown(o)) return false;
             if (!damageType) return Missing(o, "damageType");
             if (!ReadEnum(*damageType, path + ".damageType", kDamageTypes, d.type) || !ReadAmount(*amount, path + ".amount", d.amount)) return false;
             if (multiplier && !ReadInt(*multiplier, path + ".multiplierPercent", 0, kMaxPercent, d.multiplierPercent)) return false;
             if (canCrit && !ReadBool(*canCrit, path + ".canCrit", d.canCrit)) return false;
+            if (armorPen && !ReadInt(*armorPen, path + ".armorPenPercent", 0, 100, d.armorPenPercent)) return false;
             if (onKill) {   // statuses the killer gains: [ {"status": "AggroDrop", "durationSeconds": 1.5}, ... ]
                 if (!onKill->IsArray()) return Fail(path + ".onKill", *onKill, std::string("expected an array, found ") + Value::TypeName(onKill->type()));
                 for (std::size_t i = 0; i < onKill->Items().size(); ++i) {
@@ -658,6 +677,14 @@ private:
             if (maxHp && !ReadAmount(*maxHp, path + ".maxHp", sm.maxHp)) return false;
             if (attackDamage && !ReadAmount(*attackDamage, path + ".attackDamage", sm.attackDamage)) return false;
             out.payload = sm;
+        } else if (kind == "Displace") {
+            DisplaceEffect dp;
+            const Value* direction = nullptr;
+            const Value* hexes = Take(o, "hexes");
+            if (!Require(o, "direction", direction) || !RejectUnknown(o)) return false;
+            if (!ReadEnum(*direction, path + ".direction", kDisplaceDirections, dp.direction)) return false;
+            if (hexes && !ReadInt(*hexes, path + ".hexes", 1, 8, dp.hexes)) return false;
+            out.payload = dp;
         } else if (kind == "Heal") {
             HealEffect h;
             const Value* amount = nullptr;
@@ -671,6 +698,7 @@ private:
             if (!Require(o, "amount", amount)) return false;
             const Value* isTotal = Take(o, "amountIsTotal");
             const Value* stack = Take(o, "stackBonusPercent");
+            const Value* drain = Take(o, "healPercent");
             int interval = 0;
             bool haveInterval = false;
             if (!ReadScalarTime(o, "interval", interval, haveInterval)) return false;
@@ -679,12 +707,13 @@ private:
             if (!ReadEnum(*damageType, path + ".damageType", kDamageTypes, d.type) || !ReadAmount(*amount, path + ".amount", d.amount)) return false;
             if (isTotal && !ReadBool(*isTotal, path + ".amountIsTotal", d.amountIsTotal)) return false;
             if (stack && !ReadStarInts(*stack, path + ".stackBonusPercent", 0, kMaxPercent, d.stackBonusPercent)) return false;
+            if (drain && !ReadInt(*drain, path + ".healPercent", 0, 1000, d.healPercent)) return false;
             if (!haveInterval) return Missing(o, "intervalTicks (or intervalSeconds)");
             if (interval < 1) return Fail(path + ".interval", v, "the interval must be at least 1 tick");
             d.intervalTicks = interval;
             out.payload = d;
         } else {
-            return Fail(path + ".type", *type, "unknown effect type \"" + kind + "\"; expected one of: Damage, Shield, Status, DoT, Heal, Teleport, Mana, Summon");
+            return Fail(path + ".type", *type, "unknown effect type \"" + kind + "\"; expected one of: Damage, Shield, Status, DoT, Heal, Teleport, Displace, Mana, Summon");
         }
         return true;
     }
@@ -705,6 +734,7 @@ private:
         const Value* maxTriggers = Take(o, "maxTriggers");
         const Value* resetOnTargetChange = Take(o, "resetOnTargetChange");
         const Value* castOnDeath = Take(o, "castOnDeath");
+        const Value* requiresCharge = Take(o, "requiresCharge");
         int lock = 0;
         bool haveLock = false;
         int channel = 0;
@@ -730,6 +760,7 @@ private:
         if (maxTriggers && !ReadInt(*maxTriggers, path + ".maxTriggers", 1, 1000, out.maxTriggers)) return false;
         if (resetOnTargetChange && !ReadBool(*resetOnTargetChange, path + ".resetOnTargetChange", out.resetCountOnTargetChange)) return false;
         if (castOnDeath && !ReadBool(*castOnDeath, path + ".castOnDeath", out.castOnDeath)) return false;
+        if (requiresCharge && !ReadBool(*requiresCharge, path + ".requiresCharge", out.requiresCharge)) return false;
         out.castLockTicks = lock;
         out.channelTicks = channel;
 
@@ -999,6 +1030,7 @@ private:
         const Value* maxMana = Take(o, "maxMana");
         const Value* startMana = Take(o, "startMana");
         const Value* manaRegen = Take(o, "manaRegen");
+        const Value* attackType = Take(o, "attackType");
         int spread = 0;
         bool haveSpread = false;
         if (!ReadScalarTime(o, "attackSpread", spread, haveSpread) || !RejectUnknown(o)) return false;
@@ -1015,6 +1047,7 @@ private:
         if (maxMana && !ReadInt(*maxMana, path + ".maxMana", 0, 100'000, out.maxMana)) return false;
         if (startMana && !ReadInt(*startMana, path + ".startMana", 0, 100'000, out.startMana)) return false;
         if (manaRegen && !ReadMilli(*manaRegen, path + ".manaRegen", 0, 1'000'000, out.manaRegenMilli)) return false;
+        if (attackType && !ReadEnum(*attackType, path + ".attackType", kDamageTypes, out.attackType)) return false;
         out.attackSpreadTicks = spread;
         return true;
     }

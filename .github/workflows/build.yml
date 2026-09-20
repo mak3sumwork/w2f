@@ -1,0 +1,138 @@
+# W2F server CI: build the C++ engine + network server on Linux, macOS and Windows, run the whole test suite (engine + network, 5,000+
+# checks) under sanitizers, and prove the game is DETERMINISTIC across compilers and operating systems: every job plays the same seeded
+# 8-player matches and writes a fingerprint (state hashes, snapshot checksums, spell counts, placements); the last job requires all the
+# fingerprints to be byte-identical.
+#
+# Everything lives in server/ (see server/CMakeLists.txt). Locally on a Mac the Makefile does the same job:  cd server && make test
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -Werror on the toolchains the code is developed with (clang); gcc and MSVC report warnings without failing until they have
+          # been seen clean once -- flip `werror` to ON for them when they are.
+          - { id: ubuntu-clang,  name: "Ubuntu / clang (ASan + UBSan)", os: ubuntu-latest,  cxx: clang++, werror: "ON" }
+          - { id: ubuntu-gcc,    name: "Ubuntu / gcc (ASan + UBSan)",   os: ubuntu-latest,  cxx: g++,     werror: "OFF" }
+          - { id: macos-clang,   name: "macOS / clang (ASan + UBSan)",  os: macos-latest,   cxx: clang++, werror: "ON" }
+          - { id: windows-msvc,  name: "Windows / MSVC (ASan)",         os: windows-latest, cxx: cl,      werror: "OFF" }
+    defaults:
+      run:
+        shell: bash
+    env:
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: command -v ninja >/dev/null || choco install ninja -y --no-progress
+
+      - name: ASan needs a smaller address-space randomisation on new Linux kernels
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Toolchain
+        run: |
+          cmake --version | head -1
+          if [ "${{ runner.os }}" = "Windows" ]; then cl 2>&1 | head -1; else "$CXX" --version | head -1; fi
+
+      # ---- 1. Debug + sanitizers: the full test suite ----
+      - name: Configure (Debug, sanitizers)
+        run: |
+          gen=(); if [ "${{ runner.os }}" = "Windows" ]; then gen=(-G Ninja); fi
+          cmake -S server -B build "${gen[@]}" -DCMAKE_BUILD_TYPE=Debug -DW2F_SANITIZE=ON -DW2F_WERROR=${{ matrix.werror }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test (engine + network, sanitizers on)
+        run: ctest --test-dir build --output-on-failure --timeout 2400
+
+      - name: Fingerprint of seeded matches (sanitized build)
+        run: |
+          exe=""; if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          server/scripts/fingerprint.sh "build/w2f_demo$exe" > fingerprint-sanitized.txt
+          cat fingerprint-sanitized.txt
+
+      # ---- 2. Release (optimised, no sanitizers, asserts off): must play the identical game ----
+      - name: Configure + build (Release)
+        run: |
+          gen=(); if [ "${{ runner.os }}" = "Windows" ]; then gen=(-G Ninja); fi
+          cmake -S server -B build-release "${gen[@]}" -DCMAKE_BUILD_TYPE=Release -DW2F_SANITIZE=OFF -DW2F_WERROR=${{ matrix.werror }}
+          cmake --build build-release --parallel
+
+      - name: Test (Release)
+        run: ctest --test-dir build-release --output-on-failure --timeout 1200
+
+      - name: Fingerprint of seeded matches (Release) must equal the sanitized build's
+        run: |
+          exe=""; if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          server/scripts/fingerprint.sh "build-release/w2f_demo$exe" > fingerprint.txt
+          diff fingerprint-sanitized.txt fingerprint.txt && echo "sanitized == release"
+
+      - name: Keep the fingerprint for the cross-platform comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: fingerprint-${{ matrix.id }}
+          path: fingerprint.txt
+
+  # Unreal Engine builds game code without C++ exceptions and without RTTI. The engine is meant to live inside a UE module one day, so the
+  # entire code base (tests included) is built and run that way here.
+  ue5-flags:
+    name: "UE5 build flags (no exceptions, no RTTI)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - name: Configure
+        run: cmake -S server -B build -DCMAKE_BUILD_TYPE=Debug -DW2F_SANITIZE=ON -DW2F_WERROR=ON -DW2F_UE_COMPAT=ON
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure --timeout 2400
+
+  determinism:
+    name: "Determinism across platforms"
+    needs: test
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fingerprint-*
+          path: fingerprints
+      - name: Every platform played the same games
+        run: |
+          set -e
+          files=(fingerprints/*/fingerprint.txt)
+          echo "compared: ${files[*]}"
+          [ "${#files[@]}" -ge 2 ] || { echo "need at least two platforms to compare (did the test jobs fail?)"; exit 1; }
+          ref="${files[0]}"
+          status=0
+          for f in "${files[@]}"; do
+            if cmp -s "$ref" "$f"; then echo "identical: $f"; else echo "MISMATCH: $f differs from $ref"; diff "$ref" "$f" || true; status=1; fi
+          done
+          { echo "### Fingerprint (identical on ${#files[@]} platforms)"; echo '```'; cat "$ref"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status

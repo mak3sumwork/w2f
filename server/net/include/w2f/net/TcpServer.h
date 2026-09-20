@@ -11,7 +11,7 @@
 // vanishes mid-frame costs nothing; the number of open sockets is capped. Malformed WebSocket input is answered with the
 // close code the RFC prescribes, never with a crash.
 //
-// POSIX (Linux, macOS) is tested. A Winsock branch exists behind _WIN32 but has not been compiled or run.
+// POSIX (Linux, macOS) is tested locally; the Winsock branch (Windows) is built and run by the windows-latest job of CI (.github/workflows/build.yml).
 
 #include <atomic>
 #include <cstdint>

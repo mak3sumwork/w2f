@@ -41,6 +41,17 @@ bool ValidateStatus(const StatusEffect& status, const std::string& name, std::st
     } else if (!status.value.terms.empty()) {
         return Fail(error, name + ": \"value\" only applies to the flat bonus statuses (BonusAttackDamage, BonusArmor, ...)");
     }
+    if (status.status == StatusType::BonusMaxMana && !status.permanent) return Fail(error, name + ": BonusMaxMana must be permanent");
+    if (status.status == StatusType::ExecuteBelow) {
+        for (int pct : status.percent) {
+            if (pct < 1 || pct > 50) return Fail(error, name + ": ExecuteBelow is a threshold of 1..50% of max HP");
+        }
+    }
+    if (status.status == StatusType::EmpoweredAttack) {
+        for (int charges : status.percent) {
+            if (charges < 1 || charges > 20) return Fail(error, name + ": EmpoweredAttack needs 1..20 charges (\"percent\")");
+        }
+    }
     if (status.status == StatusType::Tether) {
         for (int pct : status.percent) {
             if (pct < 1 || pct > 100) return Fail(error, name + ": a Tether redirects 1..100% of the damage");
@@ -82,6 +93,8 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         case CastTrigger::OnCritTaken:
         case CastTrigger::OnHpDropBelowPercent:
         case CastTrigger::OnAllyDealDamage:
+        case CastTrigger::OnAnyUnitDeath:
+        case CastTrigger::OnShieldBreak:
             if (ability.castLockTicks != 0 || ability.channelTicks != 0 || ability.castOnDeath || ability.resetCountOnTargetChange) {
                 return Fail(error, name + " is a hook: it cannot have a cast lock, a channel, cast on death, or reset-on-target-change");
             }
@@ -98,6 +111,9 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         return Fail(error, name + ": damageFilter only applies to OnDealDamage and OnAllyDealDamage");
     }
     if (ability.maxTriggers != 0 && !IsHook(ability.trigger)) return Fail(error, name + ": maxTriggers only applies to hook triggers");
+    if (ability.requiresCharge && ability.trigger != CastTrigger::OnBasicAttack && ability.trigger != CastTrigger::EveryNthAttack) {
+        return Fail(error, name + ": requiresCharge only applies to OnBasicAttack / EveryNthAttack hooks");
+    }
     if (ability.channelTicks < 0) return Fail(error, name + " has a negative channel time");
     if (ability.channelTicks > 0 && ability.castLockTicks != 0) return Fail(error, name + ": a channel is its own lock; leave castLock at 0");
     if (ability.resetCountOnTargetChange && ability.trigger != CastTrigger::EveryNthAttack) {
@@ -125,6 +141,15 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         if (effect.target.mode == TargetMode::ClosestEnemies && (effect.target.count < 1 || effect.target.count > 16)) {
             return Fail(error, name + ": ClosestEnemies needs a count of 1..16");
         }
+        if (effect.target.count < 0 || effect.target.count > 16) return Fail(error, name + ": a target count must be 0..16");
+        if (const auto* displace = std::get_if<DisplaceEffect>(&effect.payload)) {
+            if (displace->hexes < 1 || displace->hexes > 8) return Fail(error, name + ": a Displace moves 1..8 hexes");
+        }
+        if (const auto* teleport = std::get_if<TeleportEffect>(&effect.payload)) {
+            if (teleport->destination == TeleportDestination::BehindCurrentTarget && ability.trigger == CastTrigger::StartOfCombat) {
+                return Fail(error, name + ": a passive has no current target to dash through");
+            }
+        }
         if ((effect.target.mode == TargetMode::LineBehindTarget || effect.target.mode == TargetMode::ConeTowardTarget) && effect.target.radius < 1) {
             return Fail(error, name + ": a line / cone target needs a length of at least 1");
         }
@@ -133,7 +158,7 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         }
         if ((effect.target.mode == TargetMode::TriggerAttacker || effect.target.mode == TargetMode::TriggerVictim) &&
             !IsDamageHook(ability.trigger) && ability.trigger != CastTrigger::OnBasicAttack) {
-            return Fail(error, name + ": TriggerAttacker / TriggerVictim only exist for damage hooks (OnTake*, OnDealDamage, OnCritTaken, OnHpDropBelowPercent, OnAllyDealDamage) and OnBasicAttack");
+            return Fail(error, name + ": TriggerAttacker / TriggerVictim only exist for damage hooks (OnTake*, OnDealDamage, OnCritTaken, OnHpDropBelowPercent, OnAllyDealDamage, OnShieldBreak) and OnBasicAttack");
         }
         {
             bool badSource = false;
@@ -165,6 +190,7 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
             if (!ValidateAmount(mana->amount, name, error)) return false;
         } else if (const auto* damage = std::get_if<DamageEffect>(&effect.payload)) {
             if (damage->multiplierPercent < 0) return Fail(error, name + ": negative damage multiplier");
+            if (damage->armorPenPercent < 0 || damage->armorPenPercent > 100) return Fail(error, name + ": armorPenPercent must be 0..100");
             if (!ValidateAmount(damage->amount, name, error)) return false;
             for (const StatusEffect& k : damage->onKill) {
                 if (!ValidateStatus(k, name + " (on kill)", error)) return false;
@@ -186,6 +212,7 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
             if (!ValidateAmount(heal->amount, name, error)) return false;
         } else if (const auto* dot = std::get_if<DotEffect>(&effect.payload)) {
             if (dot->intervalTicks < 1) return Fail(error, name + ": DoT interval must be >= 1 tick");
+            if (dot->healPercent < 0 || dot->healPercent > 1000) return Fail(error, name + ": DoT healPercent must be 0..1000");
             if (!ValidateAmount(dot->amount, name, error) || !ValidateAmount(dot->duration, name, error)) return false;
         }
     }
@@ -204,6 +231,7 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
     h.AddInt(a.castLockTicks);
     h.AddInt(a.channelTicks);
     h.Add(a.castOnDeath ? 1 : 0);
+    if (a.requiresCharge) h.Add(0xC4A26Eull);   // (only hashed when set, so data that predates it hashes as before)
     h.AddInt(static_cast<std::int64_t>(a.effects.size()));
     for (const AbilityEffect& e : a.effects) {
         h.Add(static_cast<std::uint64_t>(e.payload.index()));
@@ -219,6 +247,11 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
             h.AddInt(summon->starLevel);
         }
         if (const auto* status = std::get_if<StatusEffect>(&e.payload)) h.Add(static_cast<std::uint64_t>(status->status));
+        if (const auto* teleport = std::get_if<TeleportEffect>(&e.payload)) h.Add(static_cast<std::uint64_t>(teleport->destination));
+        if (const auto* displace = std::get_if<DisplaceEffect>(&e.payload)) {
+            h.Add(static_cast<std::uint64_t>(displace->direction));
+            h.AddInt(displace->hexes);
+        }
     }
 }
 

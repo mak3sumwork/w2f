@@ -71,22 +71,24 @@ each run **re-resolves its targets** — Vega's eight pulses each pick a new ran
   `"LowestHpAlly"` (least current HP, the caster included), `"HighestDamageAlly"` (the ally — never the caster — that dealt the most damage recently — Astra's "highest DPS"; ties go to
   the higher attack damage, then the lower unit id; long form `{ "mode": "HighestDamageAlly", "windowSeconds": 5 }` sets the look-back window), `"RandomEnemy"` (uniform,
   from the fight's own seeded generator, so replays agree);
-* `{ "mode": "AreaAroundTarget" | "AreaAroundSelf", "radius": N, "includeCenter": true|false, "side": "Enemies"|"Allies"|"All" }`
-  ("adjacent hexes" = radius 1, `includeCenter` false; the whole board is radius 15);
+* `{ "mode": "AreaAroundTarget" | "AreaAroundSelf", "radius": N, "includeCenter": true|false, "side": "Enemies"|"Allies"|"All", "count": N }`
+  ("adjacent hexes" = radius 1, `includeCenter` false; the whole board is radius 15; the optional `count` keeps only the N units nearest the centre, ties to the lowest unit id — Xul's bolt "bounces to 1 adjacent enemy");
 * `{ "mode": "ClosestEnemies", "count": N }` (nearest first; ties go to the lowest unit id);
 * `{ "mode": "LineBehindTarget", "length": N }` (the N hexes in a straight line behind the target, as seen from the caster);
 * `{ "mode": "ConeTowardTarget", "length": N }` (a 120° cone opening from the caster toward its target: 3 hexes at length 1, 8 at length 2, 15 at length 3; the caster's own hex is not in it);
-* `{ "mode": "HighestHpEnemyNearTarget", "radius": N }` (the enemy with the most current HP among those within N hexes of the cast target — a "targeted zone").
+* `{ "mode": "HighestHpEnemyNearTarget", "radius": N }` (the enemy with the most current HP among those within N hexes of the cast target — a "targeted zone");
+* `"LowestHpEnemy"` / `"HighestHpEnemy"` (the whole board, not just near the target; ties go to the lowest unit id), `"AllEnemies"`, `"AllAllies"` (every living ally, the caster and summons included).
 
 Enemies that are **Untargetable** are never picked by any of these, area effects included.
 
 | type | keys |
 |---|---|
-| `Damage` | `damageType` (`Physical`/`Magic`/`True`), `amount`, `multiplierPercent` (default 100), `canCrit`, `onKill` (statuses the **caster** gains if this damage kills: `[ { "status": "AggroDrop", "durationSeconds": 1.5 } ]`, same keys as a `Status` effect) |
+| `Damage` | `damageType` (`Physical`/`Magic`/`True`), `amount`, `multiplierPercent` (default 100), `armorPenPercent` (ignores that % of the victim's armor / magic resist), `canCrit`, `onKill` (statuses the **caster** gains if this damage kills: `[ { "status": "AggroDrop", "durationSeconds": 1.5 } ]`, same keys as a `Status` effect) |
 | `Shield` | `amount`, a duration **or** `"permanent": true`, `damageReductionPercent` (per star; also cuts damage taken while the shield holds), `cap` (a permanent shield can be refilled by later shield effects, never above this total) |
-| `Teleport` | `destination` (`BehindFarthestEnemy` / `BehindClosestEnemy`); target must be `Self`. Lands on a free hex next to that enemy, on the side away from where it started; stays put if nothing is free |
+| `Teleport` | `destination` (`BehindFarthestEnemy` / `BehindClosestEnemy` / `NextToLowestHpEnemy` / `NextToHighestHpEnemy` / `BehindCurrentTarget`); target must be `Self`. Lands on a free hex next to that enemy, on the side away from where it started; stays put if nothing is free. The first two leave the unit without a target; the others make that enemy its target (Vex, Raa, Bit) |
+| `Displace` | `direction` (`Toward` / `Away` from the caster), `hexes` (1-8, default 1): slides each target in a straight line and stops at the first blocked or off-board hex (Null's pull, Orion's knock-back). Reported as a `Teleport` event with `subtype` 1 |
 | `Status` | `status`, `percent` (per star, signed; not for Stun/Root/Knockup/CcImmunity), a duration **or** `"permanent": true`, `multiplierPercent` (scales the duration), `"stacking": "add"\|"refresh"`, and `value` (BonusAttackDamage only) |
-| `DoT` | `damageType`, `amount`, `amountIsTotal` (amount is the total over the duration, split evenly), a duration, `intervalSeconds`/`intervalTicks`, `stackBonusPercent` |
+| `DoT` | `damageType`, `amount`, `amountIsTotal` (amount is the total over the duration, split evenly), a duration, `intervalSeconds`/`intervalTicks`, `stackBonusPercent`, `healPercent` (a drain: the caster heals this % of the damage each tick actually deals — Lich) |
 | `Heal` | `amount` (flat, or a formula such as 5% of `TargetMaxHp`). Reduced by the target's Wound; capped at max HP |
 
 **status**: `Stun`, `AttackDamage`, `AttackSpeed`, `Armor`, `MagicResist`, `MaxHp` (percent of base max HP; current HP moves with it),
@@ -236,5 +238,26 @@ Events: `OnItemEquipped` for the second component, then `OnItemsCombined(player,
 An item can also carry `abilities` (hooks or `StartOfCombat` passives - an item has no mana, so no `Mana` trigger) and `auras`; see `docs/item-coverage.md` for how the design doc's items map onto these.
 
 ## Synergies: `Team` scope and `triggers`
-A breakpoint may have `effects`, `triggers`, or both. `"scope": "Team"` (Summon effects only) applies **once for the whole team**, cast by its first (lowest UnitId) trait holder: "summon 3 souls", not "3 souls per holder".
+A breakpoint may have `effects`, `triggers`, or both. `"scope": "Team"` applies **once for the whole team**, cast by its first (lowest UnitId) trait holder: "summon 3 souls", not "3 souls per holder". A Team effect may aim itself with `"target": "AllEnemies"` / `"AllAllies"` (default `Self`): that is how a synergy changes a whole side of the arena (the Coregons zone). The caster is the *source* of what the effect does (a status's source, the credit for damage).
 `"triggers": [ { "scope": "TraitHolders", "ability": { ...an ability with a hook trigger... } } ]` hands a hook to every unit in scope for the fight ("holders heal for 10% of damage dealt" is an `OnDealDamage` hook). Summons get no synergy effects.
+
+## Phase 11 additions (the 30-champion roster and the design doc's synergies)
+New **statuses**: `Blind` (cannot basic attack; can still walk and cast), `DamageTaken` (± % on every hit the holder suffers, after armor / resist; frenzy uses +10),
+`BonusMaxMana` (flat family, `value` in whole mana: the holder needs that much more to cast; **permanent only**, no effect on a unit without a mana bar; the client sees the new bar size in the `StatusApplied` event),
+`ExecuteBelow` (`percent` 1-50: the holder dies the moment its HP is below that % of its max HP, past any shield; checked every tick), `HpPerSecond` (`percent`, signed: once a second the holder heals that % of its max HP, or — negative — takes that % as **true damage** credited to the status's source;
+this damage is never counted as "damage the source dealt" by formulas / ally ranking) and `EmpoweredAttack` (`percent` = the number of charges).
+
+**Empowered attacks** (Solis, Mortis): a cast applies `EmpoweredAttack` with N charges (use `"stacking": "refresh"`, and give it a duration so unused charges lapse); a champion `trigger` with `"trigger": "OnBasicAttack"` and `"requiresCharge": true` fires only while the holder has a charge and spends one each time.
+The rider's effects then hit the unit that attack just hit (`CurrentTarget`).
+
+New **hook triggers**: `OnAnyUnitDeath` (any unit on the board dies, either team; fires once per death for every unit still alive that holds it — Phaisa) and `OnShieldBreak` (one of the holder's shields is used up by damage, not by expiring; `TriggerAttacker` = who broke it — Hexagon's detonation).
+
+**Basic attack damage type**: champion `stats` may set `"attackType": "Magic"` (default `"Physical"`): the Lost Souls' basic attacks are magic damage.
+
+Every `Teleport` / `Displace` shows up in the combat stream as a `Teleport` event (`from`, `to`); `subtype` is 0 for a blink and 1 for a forced move, so a viewer can play a dash or a knock-back animation.
+
+## The Coregons synergy (traits.json id 8), as data
+* every breakpoint (3 / 6 / 8): an `OnDealDamage` hook heals each Coregons unit for 10 / 15 / 25 % of the damage it deals (`TriggerDamage`), and a `Team` `Summon` of **3 Lost Souls** (champion 9102) at star 1 / 2 / 3 with `maxHp` = 25 / 40 / 60 % of `HighestAllyMaxHp`;
+* the Lost Soul is a `summon` champion: `Untargetable` passive, `attackType: Magic`, and an `OnAllyDealDamage` echo whose percent is per star (**5 / 8 / 12 %** of the hit, as magic damage to the same victim) — the breakpoint picks the star, so the summon's own data carries the echo;
+* from 6 the **Lost Soul Zone**, all `Team` effects: `AllEnemies` get `BonusMaxMana` 15, `HpPerSecond` −2 % (−4 % at 8) and `ExecuteBelow` 5 % (10 % at 8); `AllAllies` get `BonusManaRegen` 2 mana/s and `HpPerSecond` +2 % (+4 %).
+  The client shows the blue floor when it receives the trait's `TraitActivated` event with tier 2 or 3.

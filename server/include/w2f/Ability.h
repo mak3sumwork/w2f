@@ -17,7 +17,8 @@
 //       StatusEffect   Stun, or a +/- percent change to AD / attack speed / armor / MR ...
 //       DotEffect      damage over time (Burn), with a stacking bonus
 //       HealEffect     restores HP (reduced by the target's Wound status)
-//       TeleportEffect an assassin jump
+//       TeleportEffect an assassin jump / blink / dash
+//       DisplaceEffect pull or knock back
 //       ManaEffect     grants mana
 //       SummonEffect   spawns units for the caster's team in the middle of a fight
 //
@@ -76,11 +77,18 @@ enum class StatusType : std::uint8_t {
     BonusManaRegen,      // flat family: + thousandths of a mana per second (1000 = +1 mana/s)
     AbilityPower,        // +/- percent of the holder's ability power (multiplies its ability damage stat, like a +30% AP item)
     SpellShield,         // the next enemy ABILITY hit on the holder is blocked completely; the status is used up
+    Blind,               // the holder cannot BASIC ATTACK (it can still walk and cast)
+    DamageTaken,         // +/- percent damage TAKEN: every hit the holder suffers is multiplied after armor / resist (frenzy: +10)
+    BonusMaxMana,        // flat family: + whole mana on the holder's mana bar (a cast needs that much more). Permanent only; no mana bar = no effect
+    ExecuteBelow,        // holder-side: the holder dies when its HP is below `percent` of its max HP (checked every tick, shields do not help)
+    HpPerSecond,         // every second the holder heals `percent`% of its max HP (negative: takes that much TRUE damage, credited to the
+                         // status's source without counting as damage dealt for formulas)
+    EmpoweredAttack,     // charges (`percent` = how many) that riders marked `requiresCharge` spend, one per basic attack
 };
 constexpr bool IsFlatBonusStatus(StatusType t) {
     return t == StatusType::BonusAttackDamage || t == StatusType::BonusArmor || t == StatusType::BonusMagicResist ||
            t == StatusType::BonusMaxHp || t == StatusType::BonusAbilityDamage || t == StatusType::BonusCritChance ||
-           t == StatusType::BonusManaRegen;
+           t == StatusType::BonusManaRegen || t == StatusType::BonusMaxMana;
 }
 // New values are only ever appended: the numbers appear in the event stream.
 
@@ -161,6 +169,10 @@ enum class TargetMode : std::uint8_t {
     ConeTowardTarget,  // enemies in a 120-degree cone from the caster toward the cast target, `radius` hexes long
     TriggerAttacker,   // hook triggers only: the unit that dealt the damage that fired the trigger (for OnDealDamage, the holder)
     TriggerVictim,     // hook triggers only: the unit that was damaged (for OnTake* / OnCritTaken / OnHpDropBelowPercent, the holder)
+    LowestHpEnemy,     // the living, targetable enemy with the least current HP (ties: lowest UnitId)
+    HighestHpEnemy,    // ... with the most current HP
+    AllEnemies,        // every living, targetable enemy
+    AllAllies,         // every living ally, the caster and summons included
 };
 
 enum class TargetSide : std::uint8_t { Enemies, Allies, All };
@@ -170,7 +182,7 @@ struct TargetSpec {
     int radius = 0;             // area modes: hex distance from the centre, inclusive
     bool includeCenter = true;  // area modes: also hit the unit standing on the centre hex
     TargetSide side = TargetSide::Enemies;
-    int count = 0;              // ClosestEnemies: how many
+    int count = 0;              // ClosestEnemies: how many. Area modes: at most this many, nearest to the centre first (0 = all): "bounces to 1 adjacent enemy"
     int windowTicks = 0;        // HighestDamageAlly: how far back "damage dealt" looks (0 = 150 ticks)
 
     static TargetSpec Self() { return {TargetMode::Self, 0, true, TargetSide::All}; }
@@ -218,6 +230,7 @@ struct DamageEffect {
     DamageType type = DamageType::Magic;
     Amount amount;                // raw damage before mitigation
     int multiplierPercent = 100;  // final scale, e.g. 63 for a splash hit
+    int armorPenPercent = 0;      // ignores this % of the victim's armor (Physical) or magic resist (Magic)
     bool canCrit = false;         // rolls the caster's crit chance (once per target hit). A caster with the AbilityCrit status crits regardless.
     // Statuses the CASTER gains if this hit is the one that kills its victim (e.g. Lunis drops aggro on a kill).
     // Formulas in them can read the victim as the "cast target" (CastTargetArmor ...).
@@ -247,6 +260,7 @@ struct DotEffect {
     // new stack deal this much % more (Baira: +25/35/45%). Stacks run independently.
     StarValue stackBonusPercent{};
     StatusType visual = StatusType::Burn;  // how the client shows it
+    int healPercent = 0;            // the caster heals this % of the damage each hit actually deals (a drain)
 };
 
 struct HealEffect {
@@ -256,6 +270,9 @@ struct HealEffect {
 enum class TeleportDestination : std::uint8_t {
     BehindFarthestEnemy,  // lands on the free hex next to the FARTHEST enemy that is furthest from where it started (an assassin dive)
     BehindClosestEnemy,
+    NextToLowestHpEnemy,   // blink to the enemy with the least HP, land on its far side, and make it the caster's target
+    NextToHighestHpEnemy,
+    BehindCurrentTarget,   // "dash through": land on the far side of the cast target and keep fighting it
 };
 
 struct TeleportEffect {
@@ -281,7 +298,15 @@ struct SummonEffect {
     Amount attackDamage;
 };
 
-using EffectPayload = std::variant<DamageEffect, ShieldEffect, StatusEffect, DotEffect, HealEffect, TeleportEffect, ManaEffect, SummonEffect>;
+// Moves the targets up to `hexes` hexes along the straight line from / to the caster, stopping at the first blocked or off-board hex.
+// (A pull stops next to the caster.) The event stream reports it as a Teleport event with subtype 1.
+enum class DisplaceDirection : std::uint8_t { TowardCaster, AwayFromCaster };
+struct DisplaceEffect {
+    DisplaceDirection direction = DisplaceDirection::AwayFromCaster;
+    int hexes = 1;
+};
+
+using EffectPayload = std::variant<DamageEffect, ShieldEffect, StatusEffect, DotEffect, HealEffect, TeleportEffect, ManaEffect, SummonEffect, DisplaceEffect>;
 
 struct AbilityEffect {
     TargetSpec target;
@@ -314,6 +339,8 @@ struct AbilityEffect {
 //    OnCritTaken              the holder is hit by a critical strike
 //    OnHpDropBelowPercent     the holder's HP falls below `thresholdPercent` of its max (re-arms if it heals back above)
 //    OnAllyDealDamage         an ally OF the holder (not the holder itself) deals damage
+//    OnAnyUnitDeath           any unit on the board dies (either team; the holder must still be alive). Fires once per death
+//    OnShieldBreak            one of the holder's shields is used up by damage (not by expiring); TriggerAttacker = who broke it
 //
 // For the counted triggers `attackCount` = N means "every Nth occurrence" (0 or 1 = every one) and `maxTriggers` caps the number of
 // firings per fight (0 = no cap; 1 = "once"). Damage that comes from a hook's own effects never fires hooks again: no chain reactions.
@@ -330,17 +357,21 @@ enum class EventTrigger : std::uint8_t {
     OnCritTaken,
     OnHpDropBelowPercent,
     OnAllyDealDamage,
+    OnAnyUnitDeath,
+    OnShieldBreak,
 };
 using CastTrigger = EventTrigger;   // the original name, kept so existing code and data keep working
 
 // Hook triggers carry a trigger context (attacker, victim, damage) and are counted / capped.
 constexpr bool IsDamageHook(EventTrigger t) {
     return t == EventTrigger::OnTakeBasicAttackDamage || t == EventTrigger::OnTakeAbilityDamage || t == EventTrigger::OnDealDamage ||
-           t == EventTrigger::OnCritTaken || t == EventTrigger::OnHpDropBelowPercent || t == EventTrigger::OnAllyDealDamage;
+           t == EventTrigger::OnCritTaken || t == EventTrigger::OnHpDropBelowPercent || t == EventTrigger::OnAllyDealDamage ||
+           t == EventTrigger::OnShieldBreak;
 }
 // Everything that can live in a unit's trigger list (as opposed to a champion's cast slots): riders and hooks.
 constexpr bool IsHook(EventTrigger t) {
-    return IsDamageHook(t) || t == EventTrigger::OnBasicAttack || t == EventTrigger::EveryNthAttack || t == EventTrigger::OnCast;
+    return IsDamageHook(t) || t == EventTrigger::OnBasicAttack || t == EventTrigger::EveryNthAttack || t == EventTrigger::OnCast ||
+           t == EventTrigger::OnAnyUnitDeath;
 }
 
 enum class DamageFilter : std::uint8_t { Any, Basic, Ability };   // OnDealDamage / OnAllyDealDamage: which damage counts
@@ -364,6 +395,9 @@ struct AbilityDefinition {
     int thresholdPercent = 0;   // OnHpDropBelowPercent: 1..99
     DamageFilter damageFilter = DamageFilter::Any;   // OnDealDamage / OnAllyDealDamage
     int maxTriggers = 0;        // hooks: at most this many firings per fight (0 = unlimited, 1 = once)
+    // Attack riders / attack hooks only: fires only while the holder has an EmpoweredAttack status, and spends one charge each time
+    // ("your next 3 basic attacks deal bonus damage").
+    bool requiresCharge = false;
     // EveryNthAttack: forget the attack count whenever the caster switches target (or its target dies).
     bool resetCountOnTargetChange = false;
     // After casting, the caster is locked (cannot attack or move) for this many ticks and its

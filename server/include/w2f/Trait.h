@@ -27,13 +27,14 @@ namespace w2f {
 
 using TraitId = std::uint32_t;
 
-// AllAllies / TraitHolders: applied to each qualifying unit. Team: applied ONCE for the whole team (cast by its lowest-UnitId trait holder);
-// only for Summon effects ("summon 3 souls", not "3 souls per holder").
+// AllAllies / TraitHolders: applied to each qualifying unit. Team: applied ONCE for the whole team (cast by its lowest-UnitId trait holder),
+// aimed by the effect's own `target` (Self, AllEnemies or AllAllies): "summon 3 souls" (not "3 souls per holder"), or a zone that changes the
+// whole enemy side. The caster is the source of whatever the effect does (a status's source, damage credit).
 enum class TraitScope : std::uint8_t { AllAllies, TraitHolders, Team };
 
 struct TraitEffect {
     TraitScope scope = TraitScope::AllAllies;
-    AbilityEffect effect;  // target must be Self
+    AbilityEffect effect;  // target must be Self, except for scope Team (see above)
 };
 
 // A hook (see EventTrigger in Ability.h) the synergy attaches to every unit in scope for the fight: "Coregons heal for 10% of the

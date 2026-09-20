@@ -204,13 +204,13 @@
           { "type": "Status", "target": { "mode": "LineBehindTarget", "length": 2 }, "status": "Knockup", "durationSeconds": [1, 1.5, 5] }
         ]
       },
-      // Passive: bonus attack damage worth 15/30/100% of his Armor and 15/30/100% of his Magic Resist
-      // (read as: each of the two counts at that percentage).
+      // Passive (per the design doc): starts combat with 15/30/100% bonus Armor, Magic Resist and Attack Damage.
       "passive": {
         "id": 107, "name": "Omnilium Might",
         "effects": [
-          { "type": "Status", "target": "Self", "status": "BonusAttackDamage", "permanent": true,
-            "value": { "terms": [ { "source": "SelfArmor", "percent": [15, 30, 100] }, { "source": "SelfMagicResist", "percent": [15, 30, 100] } ] } }
+          { "type": "Status", "target": "Self", "status": "Armor",        "percent": [15, 30, 100], "permanent": true },
+          { "type": "Status", "target": "Self", "status": "MagicResist",  "percent": [15, 30, 100], "permanent": true },
+          { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": [15, 30, 100], "permanent": true }
         ]
       }
     }
@@ -353,6 +353,319 @@
             "damageType": "Magic", "amount": [500, 800, 2000], "delaySeconds": 4 }
         ]
       }
+    }
+    ,
+
+    // ================================================================ PHASE 11 ROSTER (the other 19 of the 30)
+    // Source: W2F_GameDesignDocument.md section 3. Mana is the doc's "0/N": starts at 0, casts at N, fills from attacks and damage
+    // taken (no passive regen). Roles: Bruiser / Tank -> Tank (front row), everyone else -> Damage (back row for bots).
+    // Anything the doc does not say is marked ASSUMED (cast animation 0.5 s, DoT tick 0.5 s, buff lengths, ...).
+
+    // ================================================================ TIER 1
+    // ---------------------------------------------------------------- IGNIS (1-cost tank) [Helios]
+    {
+      "id": 9013, "name": "Ignis", "cost": 1, "role": "Tank",
+      "traits": ["Helios"],
+      "stats": { "hp": [500, 900, 1620], "armor": 30, "magicResist": 30, "attackDamage": 30, "attackSpeed": 0.60, "range": 1, "maxMana": 50 },
+      "ability": {
+        "id": 20, "name": "Ember Ward", "trigger": "Mana", "castLockTicks": 15,   // lock ASSUMED
+        "effects": [ { "type": "Shield", "target": "Self", "amount": [200, 300, 450], "durationSeconds": 4 } ]
+      }
+    },
+
+    // ---------------------------------------------------------------- PYRA (1-cost marksman) [Helios]
+    {
+      "id": 9014, "name": "Pyra", "cost": 1, "role": "Damage",
+      "traits": ["Helios"],
+      "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 40, "attackSpeed": 0.70, "range": 4, "maxMana": 60 },
+      // A piercing arrow: the target and the unit standing 1 hex behind it.
+      "ability": {
+        "id": 21, "name": "Piercing Arrow", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [120, 180, 270] },
+          { "type": "Damage", "target": { "mode": "LineBehindTarget", "length": 1 }, "damageType": "Physical", "amount": [120, 180, 270] }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- VEX (1-cost assassin) [Phaisa]
+    {
+      "id": 9015, "name": "Vex", "cost": 1, "role": "Damage",
+      "traits": ["Phaisa"],
+      "stats": { "hp": [450, 810, 1458], "armor": 20, "magicResist": 20, "attackDamage": 45, "attackSpeed": 0.75, "range": 1, "maxMana": 40 },
+      // Blinks next to the enemy with the least HP (landing on its far side, and fighting it from then on) and hits it.
+      "ability": {
+        "id": 22, "name": "Cull", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Teleport", "target": "Self", "destination": "NextToLowestHpEnemy" },
+          { "type": "Damage", "target": "LowestHpEnemy", "damageType": "Physical", "amount": [150, 225, 350] }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- NULL (1-cost tank) [Phaisa]
+    {
+      "id": 9016, "name": "Null", "cost": 1, "role": "Tank",
+      "traits": ["Phaisa"],
+      // Range 3 (the design doc says 1, but a pull needs a target that is not already adjacent: the designer chose 3).
+      "stats": { "hp": [550, 990, 1782], "armor": 35, "magicResist": 35, "attackDamage": 30, "abilityDamage": 20, "attackSpeed": 0.55, "range": 3, "maxMana": 70 },
+      // Magic damage and a pull 1 hex toward Null.
+      "ability": {
+        "id": 23, "name": "Gravity Well", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [80, 120, 200] },
+          { "type": "Displace", "target": "CurrentTarget", "direction": "Toward", "hexes": 1 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- BONE (1-cost bruiser) [Coregons]
+    {
+      "id": 9017, "name": "Bone", "cost": 1, "role": "Tank",
+      "traits": ["Coregons"],
+      "stats": { "hp": [500, 900, 1620], "armor": 25, "magicResist": 25, "attackDamage": 40, "attackSpeed": 0.65, "range": 1, "maxMana": 60 },
+      "ability": {
+        "id": 24, "name": "Skull Bash", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [100, 150, 225] },
+          { "type": "Status", "target": "CurrentTarget", "status": "Stun", "durationSeconds": 1.5 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- ROT (1-cost mage) [Coregons]
+    {
+      "id": 9018, "name": "Rot", "cost": 1, "role": "Damage",
+      "traits": ["Coregons"],
+      "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 20, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 50 },
+      // Poison: the damage is the TOTAL over 3 s, one tick every 0.5 s (ASSUMED). (Shown to the client as the generic damage-over-time status.)
+      "ability": {
+        "id": 25, "name": "Blight", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": [90, 140, 220], "amountIsTotal": true,
+            "durationSeconds": 3, "intervalSeconds": 0.5 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- BIT (1-cost bruiser) [Hexagon]
+    {
+      "id": 9019, "name": "Bit", "cost": 1, "role": "Tank",
+      "traits": ["Hexagon"],
+      "stats": { "hp": [500, 900, 1620], "armor": 25, "magicResist": 25, "attackDamage": 45, "attackSpeed": 0.65, "range": 1, "maxMana": 50 },
+      // Dashes through the target (lands on its far side, keeps fighting it) and hits it.
+      "ability": {
+        "id": 26, "name": "Breakthrough", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Teleport", "target": "Self", "destination": "BehindCurrentTarget" },
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [120, 180, 270] }
+        ]
+      }
+    },
+
+    // ================================================================ TIER 2
+    // ---------------------------------------------------------------- SOLIS (2-cost bruiser) [Helios]
+    {
+      "id": 9020, "name": "Solis", "cost": 2, "role": "Tank",
+      "traits": ["Helios"],
+      "stats": { "hp": [600, 1080, 1944], "armor": 30, "magicResist": 30, "attackDamage": 50, "attackSpeed": 0.70, "range": 1, "maxMana": 50 },
+      // "Next attack deals 150/225/350 Physical Damage and shreds 20% Armor for 3 s": the cast arms ONE charge (it lapses after 8 s, ASSUMED); the
+      // next basic attack then carries the damage as a bonus hit on top of the normal attack (ASSUMED: the doc does not say "instead of").
+      "ability": {
+        "id": 27, "name": "Solar Strike", "trigger": "Mana", "castLockTicks": 0,
+        "effects": [ { "type": "Status", "target": "Self", "status": "EmpoweredAttack", "percent": 1, "durationSeconds": 8, "stacking": "refresh" } ]
+      },
+      "triggers": [
+        { "id": 28, "name": "Solar Strike (hit)", "trigger": "OnBasicAttack", "requiresCharge": true,
+          "effects": [
+            { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [150, 225, 350] },
+            { "type": "Status", "target": "CurrentTarget", "status": "Armor", "percent": -20, "durationSeconds": 3 }
+          ] }
+      ]
+    },
+
+    // ---------------------------------------------------------------- XUL (2-cost mage) [Phaisa]
+    {
+      "id": 9021, "name": "Xul", "cost": 2, "role": "Damage",
+      "traits": ["Phaisa"],
+      "stats": { "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 40, "attackSpeed": 0.65, "range": 4, "maxMana": 60 },
+      // A void bolt that bounces to 1 adjacent enemy (the one nearest the first target; the bounce hits as hard as the bolt).
+      "ability": {
+        "id": 29, "name": "Void Bolt", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [150, 225, 350] },
+          { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false, "count": 1 },
+            "damageType": "Magic", "amount": [150, 225, 350] }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- GRAVE (2-cost support) [Coregons]
+    {
+      "id": 9022, "name": "Grave", "cost": 2, "role": "Damage",
+      "traits": ["Coregons"],
+      "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 80 },
+      // A Skeleton (champion 9101, a summon) with 300/500/800 HP and 30 AD on the nearest free hex.
+      "ability": {
+        "id": 30, "name": "Raise Skeleton", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [ { "type": "Summon", "target": "Self", "champion": 9101, "count": 1, "maxHp": [300, 500, 800], "attackDamage": 30 } ]
+      }
+    },
+
+    // ---------------------------------------------------------------- BYTE (2-cost support) [Hexagon]
+    {
+      "id": 9023, "name": "Byte", "cost": 2, "role": "Damage",
+      "traits": ["Hexagon"],
+      "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 25, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 60 },
+      "ability": {
+        "id": 31, "name": "Firewall", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [ { "type": "Shield", "target": "LowestHpAlly", "amount": [200, 300, 500], "durationSeconds": 4 } ]
+      }
+    },
+
+    // ---------------------------------------------------------------- ORION (2-cost marksman) [Najmi]
+    {
+      "id": 9024, "name": "Orion", "cost": 2, "role": "Damage",
+      "traits": ["Najmi"],
+      "stats": { "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 55, "attackSpeed": 0.75, "range": 4, "maxMana": 70 },
+      // A heavy shot that knocks the target back 1 hex (away from Orion; stops at a blocked hex or the arena edge).
+      "ability": {
+        "id": 32, "name": "Concussive Shot", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [180, 270, 400] },
+          { "type": "Displace", "target": "CurrentTarget", "direction": "Away", "hexes": 1 }
+        ]
+      }
+    },
+
+    // ================================================================ TIER 3
+    // ---------------------------------------------------------------- NYX (3-cost bruiser) [Phaisa]
+    {
+      "id": 9025, "name": "Nyx", "cost": 3, "role": "Tank",
+      "traits": ["Phaisa"],
+      "stats": { "hp": [650, 1170, 2106], "armor": 35, "magicResist": 35, "attackDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 60 },
+      "ability": {
+        "id": 33, "name": "Cleave", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "damageType": "Physical", "amount": [150, 225, 350] } ]
+      }
+    },
+
+    // ---------------------------------------------------------------- FLARE (3-cost mage) [Helios]
+    {
+      "id": 9026, "name": "Flare", "cost": 3, "role": "Damage",
+      "traits": ["Helios"],
+      "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 50, "attackSpeed": 0.70, "range": 4, "maxMana": 80 },
+      // A sunbeam on the target: everything within 1 hex of it.
+      "ability": {
+        "id": 34, "name": "Sunbeam", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "damageType": "Magic", "amount": [200, 300, 500] } ]
+      }
+    },
+
+    // ---------------------------------------------------------------- LICH (3-cost mage) [Coregons]
+    {
+      "id": 9027, "name": "Lich", "cost": 3, "role": "Damage",
+      "traits": ["Coregons"],
+      "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 55, "attackSpeed": 0.65, "range": 3, "maxMana": 70 },
+      // Drain: 250/375/600 magic damage over 2 s (a tick every 0.5 s, ASSUMED); each tick heals Lich for 100% of the damage it does.
+      "ability": {
+        "id": 35, "name": "Soul Drain", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": [250, 375, 600], "amountIsTotal": true,
+            "durationSeconds": 2, "intervalSeconds": 0.5, "healPercent": 100 }
+        ]
+      }
+    },
+
+    // ================================================================ TIER 4
+    // ---------------------------------------------------------------- RAA (4-cost assassin) [Helios]
+    {
+      "id": 9028, "name": "Raa", "cost": 4, "role": "Damage",
+      "traits": ["Helios"],
+      "stats": { "hp": [700, 1260, 2268], "armor": 40, "magicResist": 40, "attackDamage": 70, "attackSpeed": 0.85, "range": 1, "maxMana": 70 },
+      "ability": {
+        "id": 36, "name": "Solar Leap", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Teleport", "target": "Self", "destination": "NextToHighestHpEnemy" },
+          { "type": "Damage", "target": "HighestHpEnemy", "damageType": "Physical", "amount": [350, 525, 1000] }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- KRYX (4-cost bruiser) [Phaisa]
+    {
+      "id": 9029, "name": "Kryx", "cost": 4, "role": "Tank",
+      "traits": ["Phaisa"],
+      "stats": { "hp": [800, 1440, 2592], "armor": 45, "magicResist": 45, "attackDamage": 65, "attackSpeed": 0.80, "range": 1, "maxMana": 50 },
+      // Frenzy for 5 s: +50/75/150% attack speed, and every hit he takes deals 10% more. Casting again refreshes it.
+      "ability": {
+        "id": 37, "name": "Frenzy", "trigger": "Mana", "castLockTicks": 0,
+        "effects": [
+          { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": [50, 75, 150], "durationSeconds": 5, "stacking": "refresh" },
+          { "type": "Status", "target": "Self", "status": "DamageTaken", "percent": 10, "durationSeconds": 5, "stacking": "refresh" }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- MORTIS (4-cost marksman) [Coregons]
+    {
+      "id": 9030, "name": "Mortis", "cost": 4, "role": "Damage",
+      "traits": ["Coregons"],
+      "stats": { "hp": [650, 1170, 2106], "armor": 30, "magicResist": 30, "attackDamage": 75, "attackSpeed": 0.80, "range": 4, "maxMana": 60 },
+      // "His next 3 basic attacks deal 150/225/400 bonus Physical Damage and ignore 50% Armor": the cast arms 3 charges (they lapse after
+      // 10 s, ASSUMED); each of the next 3 attacks carries a bonus hit that ignores half the victim's armor. (The armor bypass applies to the
+      // bonus hit, not to the normal attack itself.)
+      "ability": {
+        "id": 38, "name": "Death's Volley", "trigger": "Mana", "castLockTicks": 0,
+        "effects": [ { "type": "Status", "target": "Self", "status": "EmpoweredAttack", "percent": 3, "durationSeconds": 10, "stacking": "refresh" } ]
+      },
+      "triggers": [
+        { "id": 39, "name": "Death's Volley (hit)", "trigger": "OnBasicAttack", "requiresCharge": true,
+          "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [150, 225, 400], "armorPenPercent": 50 } ] }
+      ]
+    },
+
+    // ================================================================ TIER 5
+    // ---------------------------------------------------------------- UMBRA (5-cost tank) [Selini]
+    {
+      "id": 9031, "name": "Umbra", "cost": 5, "role": "Tank",
+      "traits": ["Selini"],
+      "stats": { "hp": [900, 1620, 2916], "armor": 50, "magicResist": 50, "attackDamage": 50, "abilityDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 100 },
+      // Eclipse: enemies within 2 hexes are blinded for 3 s (they cannot basic attack; they still walk and cast) and take 300/450/1000 magic damage.
+      "ability": {
+        "id": 40, "name": "Eclipse", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 2, "includeCenter": false }, "damageType": "Magic", "amount": [300, 450, 1000] },
+          { "type": "Status", "target": { "mode": "AreaAroundSelf", "radius": 2, "includeCenter": false }, "status": "Blind", "durationSeconds": 3 }
+        ]
+      }
+    },
+
+    // ================================================================ SUMMONS (never sold, never in the pool; see Grave and the Coregons synergy)
+    // ---------------------------------------------------------------- SKELETON (Grave's summon)
+    {
+      "id": 9101, "name": "Skeleton", "summon": true,
+      "stats": { "hp": [300, 500, 800], "armor": 0, "magicResist": 0, "attackDamage": 30, "attackSpeed": 0.70, "range": 1 }   // armor / MR / speed ASSUMED
+    },
+
+    // ---------------------------------------------------------------- LOST SOUL (the Coregons synergy's summon)
+    // Untargetable for the whole fight; its basic attack deals MAGIC damage. Its HP comes from the synergy (a % of your tankiest ally's max HP).
+    // Its echo: every hit another unit of its team deals makes it deal 5/8/12% of that hit to the same target as magic damage; the synergy
+    // summons it at star 1 / 2 / 3 for the 3 / 6 / 8 breakpoints, so the per-star percent below IS the breakpoint's echo. (AD / speed / range ASSUMED.)
+    {
+      "id": 9102, "name": "Lost Soul", "summon": true,
+      "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 30, "attackSpeed": 0.80, "range": 1, "attackType": "Magic" },
+      "passive": {
+        "id": 130, "name": "Incorporeal",
+        "effects": [ { "type": "Status", "target": "Self", "status": "Untargetable", "permanent": true } ]
+      },
+      "triggers": [
+        { "id": 131, "name": "Echo", "trigger": "OnAllyDealDamage",
+          "effects": [
+            { "type": "Damage", "target": "TriggerVictim", "damageType": "Magic",
+              "amount": { "terms": [ { "source": "TriggerDamage", "percent": [5, 8, 12] } ] } }
+          ] }
+      ]
     }
 
   ]

@@ -56,6 +56,7 @@ struct DotInst {
     int remainingRaw;       // raw damage still to deliver; each hit takes remainingRaw / hitsLeft
     std::uint8_t flags;
     bool visible;           // shown to the client as a status (burn); spread basic attacks are not
+    int healPercent = 0;    // a drain: the source heals this % of each hit's damage
 };
 
 struct DealtEntry {
@@ -72,6 +73,7 @@ struct Hit {
     std::uint8_t flags;
     const DamageEffect* effect = nullptr;  // the ability effect that made this hit (for its on-kill statuses); null for basic attacks / DoTs
     bool fromHook = false;                 // made by a hook trigger's effect: it fires no hooks of its own (no chain reactions)
+    int healPercent = 0;                   // a drain (DoT): the source heals this % of the damage the hit deals
 };
 
 struct CastRecord {
@@ -523,7 +525,7 @@ private:
                 DeclareCast(index, u.target, tick, false);
                 if (u.ability->castLockTicks > 0) return;  // locked in the animation; otherwise keep attacking
             }
-            if (tick >= u.nextAttackTick) DeclareAttack(index, tick);
+            if (tick >= u.nextAttackTick && !HasStatus(u, StatusType::Blind)) DeclareAttack(index, tick);
             return;
         }
 
@@ -594,7 +596,7 @@ private:
                 DotInst dot;
                 dot.source = index;
                 dot.key = kNoAbility;
-                dot.type = DamageType::Physical;
+                dot.type = u.champion->stats.attackType;
                 dot.start = tick;
                 dot.duration = spread;
                 dot.hitsTotal = dot.hitsLeft = std::max(1, spread / config_.dotSpreadIntervalTicks);
@@ -604,7 +606,7 @@ private:
                 dot.visible = false;
                 victim.dots.push_back(dot);
             } else {
-                hits_.push_back(Hit{index, u.target, DamageType::Physical, raw, flags});
+                hits_.push_back(Hit{index, u.target, u.champion->stats.attackType, raw, flags});
             }
         }
 
@@ -697,10 +699,49 @@ private:
         ExecuteCasts(tick);
         TickDots(tick);
         ApplyHits(tick);
+        ApplyStatusSweeps(tick);
         ProcessHooks(tick);
         ApplyManaFromDamage(tick);
         ReapDeathsAndDeathCasts(tick);
         EmitManaEvents(tick);
+    }
+
+    // Statuses that act on their own: HpPerSecond (a heal, or true damage, once a second) and ExecuteBelow (dies below the threshold).
+    void ApplyStatusSweeps(int tick) {
+        const bool secondBoundary = tick > 0 && tick % kTicksPerSecond == 0;
+        for (std::size_t i = 0; i < units_.size(); ++i) {
+            FightUnit& u = units_[i];
+            if (!u.alive || u.hp <= 0 || u.statuses.empty()) continue;
+            const int self = static_cast<int>(i);
+            if (secondBoundary) {
+                const std::vector<StatusInst> snapshot = u.statuses;   // damage / heals below never change the list, but stay safe
+                for (const StatusInst& st : snapshot) {
+                    if (st.type != StatusType::HpPerSecond || st.percent == 0 || u.hp <= 0) continue;
+                    const int amount = Clamp32(static_cast<long long>(u.maxHp) * (st.percent < 0 ? -st.percent : st.percent) / 100);
+                    const int source = st.source >= 0 ? st.source : self;
+                    if (st.percent > 0) HealUnit(source, self, amount, tick);
+                    else DealResolved(self, source, amount, amount, DamageType::True, 0, tick, nullptr, true, false);
+                }
+            }
+            int threshold = 0;
+            int source = self;
+            for (const StatusInst& st : u.statuses) {
+                if (st.type == StatusType::ExecuteBelow && st.percent > threshold) {
+                    threshold = st.percent;
+                    source = st.source >= 0 ? st.source : self;
+                }
+            }
+            if (u.hp > 0 && threshold > 0 && static_cast<long long>(u.hp) * 100 < static_cast<long long>(threshold) * u.maxHp) {
+                CombatEvent e = MakeEvent(tick, CombatEventType::Damage, u.id);   // executed: the rest of its HP, past shields
+                e.other = units_[static_cast<std::size_t>(source)].id;
+                e.amount = u.hp;
+                e.hpAfter = 0;
+                e.subtype = static_cast<std::uint8_t>(DamageType::True);
+                e.flags = kFlagTriggered;
+                log_.events.push_back(e);
+                u.hp = 0;
+            }
+        }
     }
 
     void EmitManaEvents(int tick) {
@@ -925,6 +966,29 @@ private:
                 if (!candidates.empty()) out.push_back(candidates[rng_.NextBelow(static_cast<std::uint32_t>(candidates.size()))]);
                 return;
             }
+            case TargetMode::LowestHpEnemy:
+            case TargetMode::HighestHpEnemy: {
+                int best = -1;
+                for (std::size_t i = 0; i < units_.size(); ++i) {
+                    const FightUnit& other = units_[i];
+                    if (!reachableEnemy(other)) continue;
+                    const bool better = best >= 0 && (spec.mode == TargetMode::LowestHpEnemy ? other.hp < units_[static_cast<std::size_t>(best)].hp
+                                                                                                : other.hp > units_[static_cast<std::size_t>(best)].hp);
+                    if (best < 0 || better) best = static_cast<int>(i);   // strict: ties keep the lowest UnitId
+                }
+                if (best >= 0) out.push_back(best);
+                return;
+            }
+            case TargetMode::AllEnemies:
+                for (std::size_t i = 0; i < units_.size(); ++i) {
+                    if (reachableEnemy(units_[i])) out.push_back(static_cast<int>(i));
+                }
+                return;
+            case TargetMode::AllAllies:
+                for (std::size_t i = 0; i < units_.size(); ++i) {
+                    if (units_[i].alive && units_[i].team == caster.team) out.push_back(static_cast<int>(i));
+                }
+                return;
             case TargetMode::TriggerAttacker:
             case TargetMode::TriggerVictim: {
                 const int who = spec.mode == TargetMode::TriggerAttacker ? cast.triggerAttacker : cast.triggerVictim;
@@ -939,6 +1003,13 @@ private:
                     if (!reachable(other) || !SideMatches(spec.side, caster, other)) continue;
                     const int d = hex::Distance(other.pos, center);
                     if (d <= spec.radius && (spec.includeCenter || d >= 1)) out.push_back(static_cast<int>(i));
+                }
+                if (spec.count > 0 && static_cast<int>(out.size()) > spec.count) {   // "at most N": the ones nearest the centre (ties: lowest UnitId)
+                    std::vector<std::pair<int, int>> ranked;
+                    for (int index : out) ranked.emplace_back(hex::Distance(units_[static_cast<std::size_t>(index)].pos, center), index);
+                    std::sort(ranked.begin(), ranked.end());
+                    out.clear();
+                    for (int k = 0; k < spec.count; ++k) out.push_back(ranked[static_cast<std::size_t>(k)].second);
                 }
                 return;
             }
@@ -1047,7 +1118,7 @@ private:
                     status->permanent ? 0 : Clamp32(Evaluate(status->duration, cast, t, tick) * status->multiplierPercent / 100);
                 if (!status->permanent && duration <= 0) continue;
                 const bool flat = IsFlatBonusStatus(status->status);
-                const bool durationOnly = status->status == StatusType::Stun || status->status == StatusType::Root ||
+                const bool durationOnly = status->status == StatusType::Blind || status->status == StatusType::Stun || status->status == StatusType::Root ||
                                           status->status == StatusType::Knockup || status->status == StatusType::CcImmunity ||
                                           status->status == StatusType::Untargetable || status->status == StatusType::AggroDrop ||
                                           status->status == StatusType::AbilityCrit || status->status == StatusType::SpellShield;
@@ -1057,6 +1128,9 @@ private:
                 if (!AddStatus(holder, t == cast.caster, status->status, percent,
                                status->permanent ? std::numeric_limits<int>::max() : tick + duration, status->refreshes, cast.caster)) {
                     continue;  // bounced off CC immunity: no status, no event
+                }
+                if (status->status == StatusType::BonusMaxMana && holder.maxMana > 0) {   // a longer bar (permanent: validated); no bar, no effect
+                    holder.maxMana = static_cast<int>(std::max<long long>(1000, static_cast<long long>(holder.maxMana) + static_cast<long long>(percent) * 1000));
                 }
                 CombatEvent e = MakeEvent(tick, CombatEventType::StatusApplied, holder.id);
                 e.other = caster.id;
@@ -1079,7 +1153,9 @@ private:
         } else if (const auto* summon = std::get_if<SummonEffect>(&effect.payload)) {
             SummonUnits(cast, *summon, tick);
         } else if (const auto* teleport = std::get_if<TeleportEffect>(&effect.payload)) {
-            for (int t : targets_) TeleportUnit(t, teleport->destination, tick);
+            for (int t : targets_) TeleportUnit(t, teleport->destination, cast.target, tick);
+        } else if (const auto* displace = std::get_if<DisplaceEffect>(&effect.payload)) {
+            for (int t : targets_) DisplaceUnit(cast.caster, t, *displace, tick);
         } else if (const auto* heal = std::get_if<HealEffect>(&effect.payload)) {
             for (int t : targets_) HealUnit(cast.caster, t, Clamp32(Evaluate(heal->amount, cast, t, tick)), tick);
         } else if (const auto* dot = std::get_if<DotEffect>(&effect.payload)) {
@@ -1107,6 +1183,7 @@ private:
                 inst.remainingRaw = Clamp32(dot->amountIsTotal ? amount : amount * hits);
                 inst.flags = static_cast<std::uint8_t>(kFlagDot | kFlagAbility);
                 inst.visible = true;
+                inst.healPercent = dot->healPercent;
                 holder.dots.push_back(inst);
 
                 CombatEvent e = MakeEvent(tick, CombatEventType::StatusApplied, holder.id);
@@ -1147,7 +1224,11 @@ private:
                 if (d.hitsLeft > 0) {
                     d.nextTick = d.start + static_cast<int>(static_cast<long long>(d.duration) * (d.hitsTotal - d.hitsLeft + 1) / d.hitsTotal);
                 }
-                if (raw > 0) hits_.push_back(Hit{d.source, static_cast<int>(i), d.type, raw, d.flags});
+                if (raw > 0) {
+                    Hit hit{d.source, static_cast<int>(i), d.type, raw, d.flags};
+                    hit.healPercent = d.healPercent;
+                    hits_.push_back(hit);
+                }
             }
             u.dots.erase(std::remove_if(u.dots.begin(), u.dots.end(), [](const DotInst& d) { return d.hitsLeft <= 0; }),
                          u.dots.end());
@@ -1175,11 +1256,14 @@ private:
             const int raw = ApplyPercent(h.raw, StatusPercent(attacker, StatusType::DamageAmp));
 
             int damage = raw;
+            const int penetration = h.effect != nullptr ? std::clamp(h.effect->armorPenPercent, 0, 100) : 0;
             switch (h.type) {
-                case DamageType::Physical: damage = MitigatedDamage(raw, EffectiveArmor(victim), config_.minDamage); break;
-                case DamageType::Magic: damage = MitigatedDamage(raw, EffectiveMagicResist(victim), config_.minDamage); break;
+                case DamageType::Physical: damage = MitigatedDamage(raw, EffectiveArmor(victim) * (100 - penetration) / 100, config_.minDamage); break;
+                case DamageType::Magic: damage = MitigatedDamage(raw, EffectiveMagicResist(victim) * (100 - penetration) / 100, config_.minDamage); break;
                 case DamageType::True: break;
             }
+            const int takenPercent = StatusPercent(victim, StatusType::DamageTaken);   // "takes 10% more damage"
+            if (takenPercent != 0 && damage > 0) damage = ApplyPercent(damage, takenPercent);
 
             // A tether sends its share of the (already mitigated) hit to the tether's source, as true damage.
             int redirected = 0;
@@ -1195,6 +1279,7 @@ private:
             damage -= redirected;
 
             DealResolved(h.target, h.source, damage, raw, h.type, h.flags, tick, h.effect, h.fromHook);
+            if (h.healPercent > 0 && attacker.alive) HealUnit(h.source, h.source, Clamp32(static_cast<long long>(damage) * h.healPercent / 100), tick);
             if (redirected > 0) {
                 const auto flags = static_cast<std::uint8_t>((h.flags & ~kFlagBasic) | kFlagRedirected);
                 DealResolved(tetherTo, h.source, redirected, 0, DamageType::True, flags, tick, nullptr, h.fromHook);
@@ -1206,7 +1291,7 @@ private:
     // The tail of a hit, once its final damage is known: shield reduction and absorption, HP, the event, and the
     // bookkeeping that formulas / mana / kill effects read. `raw` is the pre-mitigation damage (0 for a redirected share).
     void DealResolved(int victimIndex, int attackerIndex, int damage, int raw, DamageType type, std::uint8_t flags, int tick,
-                      const DamageEffect* effect, bool fromHook) {
+                      const DamageEffect* effect, bool fromHook, bool credit = true) {
         FightUnit& victim = units_[static_cast<std::size_t>(victimIndex)];
         FightUnit& attacker = units_[static_cast<std::size_t>(attackerIndex)];
 
@@ -1235,14 +1320,21 @@ private:
         e.flags = static_cast<std::uint8_t>(flags | (fromHook ? kFlagTriggered : 0));
         log_.events.push_back(e);
 
-        // Shields that were fully used up end now.
+        // Shields that were fully used up end now (and count as "broken").
+        bool shieldBroke = false;
         for (std::size_t i = 0; i < victim.shields.size();) {
             if (victim.shields[i].amount <= 0) {
                 CombatEvent ended = MakeEvent(tick, CombatEventType::ShieldEnded, victim.id);
                 log_.events.push_back(ended);
                 victim.shields.erase(victim.shields.begin() + static_cast<std::ptrdiff_t>(i));
+                shieldBroke = true;
             } else {
                 ++i;
+            }
+        }
+        if (shieldBroke) {
+            for (TriggerSlot& slot : victim.triggers) {
+                if (slot.ability->trigger == EventTrigger::OnShieldBreak) FireHook(victimIndex, slot, attackerIndex, victimIndex, damage, false, tick);
             }
         }
 
@@ -1259,11 +1351,13 @@ private:
         }
 
         // Bookkeeping that later formulas / mana read.
-        attacker.dealt.push_back(DealtEntry{tick, damage, victimIndex});
-        while (!attacker.dealt.empty() && attacker.dealt.front().tick <= tick - kDealtHistoryTicks) {
-            attacker.dealt.erase(attacker.dealt.begin());
+        if (credit) {   // (a zone's per-second damage is not "damage this unit dealt": formulas and ally ranking do not see it)
+            attacker.dealt.push_back(DealtEntry{tick, damage, victimIndex});
+            while (!attacker.dealt.empty() && attacker.dealt.front().tick <= tick - kDealtHistoryTicks) {
+                attacker.dealt.erase(attacker.dealt.begin());
+            }
         }
-        if ((flags & kFlagBasic) != 0) {
+        if (credit && (flags & kFlagBasic) != 0) {
             if (attacker.rawCounterTarget != victimIndex) {
                 attacker.rawCounterTarget = victimIndex;
                 attacker.rawCounter = 0;
@@ -1282,9 +1376,10 @@ private:
 
     // Counts one occurrence of the hook's event and, if it is the Nth (and the cap allows), queues its effects. `immediate` hooks fire during
     // the Act phase and resolve with this tick's casts; the others (damage hooks) wait in a list until the tick's damage has landed.
-    void FireHook(int holder, TriggerSlot& slot, int attacker, int victim, int damage, bool immediate, int /*tick*/) {
+    void FireHook(int holder, TriggerSlot& slot, int attacker, int victim, int damage, bool immediate, int tick) {
         const AbilityDefinition& ability = *slot.ability;
         if (ability.maxTriggers > 0 && slot.fired >= ability.maxTriggers) return;
+        if (ability.requiresCharge && !SpendCharge(holder, tick)) return;
         if (ability.attackCount > 1) {
             if (++slot.counter < ability.attackCount) return;
             slot.counter = 0;
@@ -1295,7 +1390,8 @@ private:
         cast.caster = holder;
         // What "the current target" means: whoever hurt the holder, or whoever the holder / its ally hurt.
         const bool takeHook = ability.trigger == EventTrigger::OnTakeBasicAttackDamage || ability.trigger == EventTrigger::OnTakeAbilityDamage ||
-                              ability.trigger == EventTrigger::OnCritTaken || ability.trigger == EventTrigger::OnHpDropBelowPercent;
+                              ability.trigger == EventTrigger::OnCritTaken || ability.trigger == EventTrigger::OnHpDropBelowPercent ||
+                              ability.trigger == EventTrigger::OnShieldBreak;
         cast.target = takeHook ? attacker : victim;
         cast.center = cast.target >= 0 ? units_[static_cast<std::size_t>(cast.target)].pos : h.pos;
         cast.ability = &ability;
@@ -1305,6 +1401,23 @@ private:
         cast.fromHook = true;
         if (immediate) casts_.push_back(cast);
         else pendingHooks_.push_back(cast);
+    }
+
+    // "Your next N basic attacks ...": spends one EmpoweredAttack charge of the holder; false if it has none.
+    bool SpendCharge(int holder, int tick) {
+        FightUnit& u = units_[static_cast<std::size_t>(holder)];
+        for (std::size_t i = 0; i < u.statuses.size(); ++i) {
+            if (u.statuses[i].type != StatusType::EmpoweredAttack) continue;
+            if (--u.statuses[i].percent <= 0) {
+                u.statuses.erase(u.statuses.begin() + static_cast<std::ptrdiff_t>(i));
+                CombatEvent e = MakeEvent(tick, CombatEventType::StatusEnded, u.id);
+                e.subtype = static_cast<std::uint8_t>(StatusType::EmpoweredAttack);
+                e.hpAfter = u.hp;
+                log_.events.push_back(e);
+            }
+            return true;
+        }
+        return false;
     }
 
     // Called after every hit lands. Hits caused by a hook's own effects fire no hooks (no chain reactions) -- except that they can still
@@ -1595,21 +1708,47 @@ private:
         }
     }
 
-    // An assassin dive: land on the free hex next to the farthest (or closest) enemy, on the side away from where the
-    // unit started ("behind" it); try the ring of hexes at distance 1 first, then 2. Stays put if nothing is free.
-    void TeleportUnit(int index, TeleportDestination destination, int tick) {
+    // An assassin dive: land on the free hex next to the chosen enemy, on the side away from where the unit started ("behind"
+    // it); try the ring of hexes at distance 1 first, then 2. Stays put if nothing is free. The original destinations (farthest /
+    // closest enemy) leave the unit without a target; the new ones (lowest / highest HP, the cast target) make the enemy its target.
+    void TeleportUnit(int index, TeleportDestination destination, int castTarget, int tick) {
         FightUnit& u = units_[static_cast<std::size_t>(index)];
         if (!u.alive) return;
         int enemy = -1;
-        int enemyDistance = 0;
-        for (std::size_t i = 0; i < units_.size(); ++i) {
-            const FightUnit& other = units_[i];
-            if (!other.alive || other.team == u.team) continue;
-            const int d = hex::Distance(u.pos, other.pos);
-            const bool better = destination == TeleportDestination::BehindFarthestEnemy ? d > enemyDistance : d < enemyDistance;
-            if (enemy < 0 || better) {   // strict: ties keep the lowest UnitId
-                enemy = static_cast<int>(i);
-                enemyDistance = d;
+        bool retarget = true;
+        switch (destination) {
+            case TeleportDestination::BehindCurrentTarget: {
+                if (castTarget < 0) return;
+                const FightUnit& t = units_[static_cast<std::size_t>(castTarget)];
+                if (!t.alive || t.team == u.team || !CanBeAffectedByEnemies(t)) return;
+                enemy = castTarget;
+                break;
+            }
+            case TeleportDestination::NextToLowestHpEnemy:
+            case TeleportDestination::NextToHighestHpEnemy:
+                for (std::size_t i = 0; i < units_.size(); ++i) {
+                    const FightUnit& other = units_[i];
+                    if (!other.alive || other.team == u.team || !CanBeAffectedByEnemies(other)) continue;
+                    const bool better = enemy >= 0 && (destination == TeleportDestination::NextToLowestHpEnemy ? other.hp < units_[static_cast<std::size_t>(enemy)].hp
+                                                                                                              : other.hp > units_[static_cast<std::size_t>(enemy)].hp);
+                    if (enemy < 0 || better) enemy = static_cast<int>(i);   // strict: ties keep the lowest UnitId
+                }
+                break;
+            case TeleportDestination::BehindFarthestEnemy:
+            case TeleportDestination::BehindClosestEnemy: {
+                retarget = false;
+                int enemyDistance = 0;
+                for (std::size_t i = 0; i < units_.size(); ++i) {
+                    const FightUnit& other = units_[i];
+                    if (!other.alive || other.team == u.team) continue;
+                    const int d = hex::Distance(u.pos, other.pos);
+                    const bool better = destination == TeleportDestination::BehindFarthestEnemy ? d > enemyDistance : d < enemyDistance;
+                    if (enemy < 0 || better) {   // strict: ties keep the lowest UnitId
+                        enemy = static_cast<int>(i);
+                        enemyDistance = d;
+                    }
+                }
+                break;
             }
         }
         if (enemy < 0) return;
@@ -1639,7 +1778,34 @@ private:
         grid_.SetBlocked(u.pos, false);
         grid_.SetBlocked(best, true);
         u.pos = best;
-        SetTarget(u, -1);   // re-pick a target from the new position
+        SetTarget(u, retarget ? enemy : -1);   // -1: re-pick a target from the new position
+    }
+
+    // A pull or a knock-back: the target slides up to `hexes` hexes straight toward / away from the caster and stops at the first hex that is
+    // blocked or off the board. Reported as a Teleport event with subtype 1 (a forced move, not a blink).
+    void DisplaceUnit(int casterIndex, int targetIndex, const DisplaceEffect& effect, int tick) {
+        FightUnit& u = units_[static_cast<std::size_t>(targetIndex)];
+        const FightUnit& caster = units_[static_cast<std::size_t>(casterIndex)];
+        if (!u.alive || targetIndex == casterIndex) return;
+        const int direction = effect.direction == DisplaceDirection::TowardCaster ? hex::DirectionToward(u.pos, caster.pos)
+                                                                                   : hex::DirectionToward(caster.pos, u.pos);
+        HexCoord cursor = u.pos;
+        for (int step = 0; step < effect.hexes; ++step) {
+            const HexCoord next = hex::Neighbor(cursor, direction);
+            if (grid_.IsBlocked(next)) break;   // (also true off the board)
+            cursor = next;
+        }
+        if (cursor == u.pos) return;
+        CombatEvent e = MakeEvent(tick, CombatEventType::Teleport, u.id);
+        e.from = u.pos;
+        e.to = cursor;
+        e.subtype = 1;
+        log_.events.push_back(e);
+        grid_.SetBlocked(u.pos, false);
+        grid_.SetBlocked(cursor, true);
+        u.pos = cursor;
+        u.path.clear();   // whatever route it had started is stale
+        u.pathIndex = 0;
     }
 
     // Synergies. Per team: count the DIFFERENT champions (two copies of one count once) per trait, activate the
@@ -1778,7 +1944,16 @@ private:
                 DeclareCast(i, u.target, tick, true);
                 cast = true;
             }
-            if (!cast) return;
+            for (int i : dead) {   // "whenever any unit dies": one firing per death for every unit still standing that listens
+                for (std::size_t j = 0; j < units_.size(); ++j) {
+                    FightUnit& holder = units_[j];
+                    if (!holder.alive) continue;
+                    for (TriggerSlot& slot : holder.triggers) {
+                        if (slot.ability->trigger == EventTrigger::OnAnyUnitDeath) FireHook(static_cast<int>(j), slot, -1, i, 0, true, tick);
+                    }
+                }
+            }
+            if (!cast && casts_.empty()) return;
             ExecuteCasts(tick);
             ApplyHits(tick);
             ProcessHooks(tick);

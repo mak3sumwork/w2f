@@ -32,6 +32,7 @@ struct CombatStats {
     StarValue critChance{};     // percent chance for an attack to crit (needs RNG; 0 = never rolls)
     int attackSpeedMilli = 1000;  // attacks per second * 1000 (1000 = 1.00/s, 1180 = 1.18/s)
     int attackRange = 1;          // hexes; 1 = melee
+    DamageType attackType = DamageType::Physical;   // what a basic attack deals (Magic for the Souls)
     int abilityPower = 100;       // percent multiplier applied to abilityDamage (100 = x1.0)
 
     // Mana. maxMana is in whole mana; 0 means the champion does not use mana at all.

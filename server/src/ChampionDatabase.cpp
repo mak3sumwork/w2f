@@ -148,6 +148,7 @@ std::uint64_t ChampionDatabase::ContentHash() const {
         for (int v : {s.attackSpeedMilli, s.attackRange, s.abilityPower, s.maxMana, s.startMana, s.manaRegenMilli, s.attackSpreadTicks}) {
             h.AddInt(v);
         }
+        if (s.attackType != DamageType::Physical) h.Add(0xA77AC0ull + static_cast<std::uint64_t>(s.attackType));   // (only when set: old data hashes as before)
         HashAbility(h, d.ability);
         HashAbility(h, d.passive);
         HashAbility(h, d.onAttack);

@@ -98,6 +98,9 @@ void WriteFileAtomically(const std::string& path, const std::vector<std::uint8_t
         out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         if (!out) { std::fprintf(stderr, "autosave: cannot write %s\n", temp.c_str()); return; }
     }
+#ifdef _WIN32
+    std::remove(path.c_str());   // (rename does not replace an existing file on Windows; this leaves a tiny window without the old file)
+#endif
     if (std::rename(temp.c_str(), path.c_str()) != 0) std::fprintf(stderr, "autosave: cannot rename %s\n", temp.c_str());
 }
 

@@ -1,0 +1,18 @@
+# The engine (src/ and include/w2f/) must stay free of anything network-related: no socket headers, no reference to the net layer.
+# (Same rule as `make check-isolation`.) Run with: cmake -DSOURCE_DIR=<server dir> -P check_isolation.cmake
+file(GLOB_RECURSE _files "${SOURCE_DIR}/src/*.cpp" "${SOURCE_DIR}/src/*.h" "${SOURCE_DIR}/include/w2f/*.h")
+if(NOT _files)
+  message(FATAL_ERROR "isolation check found no engine files under ${SOURCE_DIR}")
+endif()
+set(_bad "")
+foreach(_file IN LISTS _files)
+  file(READ "${_file}" _text)
+  if(_text MATCHES "sys/socket|netinet|arpa/inet|winsock|WinSock|<poll\\.h>|w2f/net/|w2f::net")
+    list(APPEND _bad "${_file}")
+  endif()
+endforeach()
+if(_bad)
+  message(FATAL_ERROR "ISOLATION VIOLATION: the engine refers to networking in:\n${_bad}")
+endif()
+list(LENGTH _files _count)
+message(STATUS "isolation ok: ${_count} engine files contain no networking")

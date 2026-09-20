@@ -16,13 +16,17 @@
 #include <thread>
 #include <vector>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+#include <chrono>
 
 #include "SampleData.h"
 #include "w2f/ChampionLoader.h"
@@ -1319,8 +1323,41 @@ static void TestGameServerFuzz() {
 
 // ==== the real TCP server over loopback sockets ===================================================
 
-#ifndef _WIN32
 namespace {
+
+// Loopback client sockets: POSIX and Winsock behind a few tiny shims, so the same tests run on every platform.
+#ifdef _WIN32
+using SockFd = SOCKET;
+constexpr SockFd kBadSock = INVALID_SOCKET;
+void SockClose(SockFd fd) { closesocket(fd); }
+void SockNonBlocking(SockFd fd) { u_long mode = 1; ioctlsocket(fd, FIONBIO, &mode); }
+bool SockWouldBlock() { return WSAGetLastError() == WSAEWOULDBLOCK; }
+struct WsaGuard {   // (the server starts Winsock too; it is reference-counted)
+    WsaGuard() { WSADATA data; WSAStartup(MAKEWORD(2, 2), &data); }
+    ~WsaGuard() { WSACleanup(); }
+} g_wsaGuard;
+#else
+using SockFd = int;
+constexpr SockFd kBadSock = -1;
+void SockClose(SockFd fd) { close(fd); }
+void SockNonBlocking(SockFd fd) { fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK); }
+bool SockWouldBlock() { return errno == EAGAIN || errno == EWOULDBLOCK; }
+#endif
+long long SockSend(SockFd fd, const char* data, std::size_t n) {
+#ifdef _WIN32
+    return send(fd, data, static_cast<int>(std::min<std::size_t>(n, 1u << 20)), 0);
+#else
+    return send(fd, data, n, 0);
+#endif
+}
+long long SockRecv(SockFd fd, char* buf, std::size_t n) {
+#ifdef _WIN32
+    return recv(fd, buf, static_cast<int>(std::min<std::size_t>(n, 1u << 20)), 0);
+#else
+    return recv(fd, buf, n, 0);
+#endif
+}
+void SleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 
 // A blocking-free test client: a plain TCP socket plus just enough WebSocket to talk to the server. Its frame READER is written
 // separately from the server's parser (it only has to understand unmasked server frames).
@@ -1331,7 +1368,7 @@ std::set<RawClient*>& LiveClients() {
 }
 
 struct RawClient {
-    int fd = -1;
+    SockFd fd = kBadSock;
     std::string in;
     bool closed = false;
 
@@ -1344,38 +1381,38 @@ struct RawClient {
     }
     bool Connect(std::uint16_t port) {
         fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) return false;
+        if (fd == kBadSock) return false;
         sockaddr_in addr;
         std::memset(&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
         inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
         if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) return false;
-        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+        SockNonBlocking(fd);
         return true;
     }
     void Drop() {
-        if (fd >= 0) close(fd);
-        fd = -1;
+        if (fd != kBadSock) SockClose(fd);
+        fd = kBadSock;
         closed = true;
     }
     void SendRaw(const std::string& bytes) {
         std::size_t off = 0;
-        while (off < bytes.size() && fd >= 0) {
-            const ssize_t n = send(fd, bytes.data() + off, bytes.size() - off, 0);
+        while (off < bytes.size() && fd != kBadSock) {
+            const long long n = SockSend(fd, bytes.data() + off, bytes.size() - off);
             if (n > 0) off += static_cast<std::size_t>(n);
-            else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+            else if (n < 0 && SockWouldBlock()) continue;
             else { closed = true; return; }
         }
     }
     void Read() {
-        if (fd < 0) return;
+        if (fd == kBadSock) return;
         char buf[65536];
         for (;;) {
-            const ssize_t n = recv(fd, buf, sizeof(buf), 0);
+            const long long n = SockRecv(fd, buf, sizeof(buf));
             if (n > 0) in.append(buf, static_cast<std::size_t>(n));
             else if (n == 0) { closed = true; return; }
-            else if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            else if (SockWouldBlock()) return;
             else { closed = true; return; }
         }
     }
@@ -1803,7 +1840,7 @@ static void TestSocketServerLoopRunsAndStops() {
     const auto readAll = [](RawClient& c, int ms) {
         for (int i = 0; i < ms; ++i) {
             c.Read();
-            usleep(1000);
+            SleepMs(1);
         }
     };
     CHECK(a.Connect(tcp.port()));
@@ -1830,18 +1867,6 @@ static void TestSocketServerLoopRunsAndStops() {
     CHECK(sawGoingAway || a.closed);
     CHECK(tcp.connectionCount() == 0);
 }
-#else
-static void TestSocketHandshakeAndMessages() {}
-static void TestSocketBadHandshakes() {}
-static void TestSocketProtocolViolations() {}
-static void TestSocketFragmentedDelivery() {}
-static void TestSocketAbruptDisconnects() {}
-static void TestSocketTimeouts() {}
-static void TestSocketConnectionCap() {}
-static void TestSocketSlowReaderIsDropped() {}
-static void TestSocketFullMatchFlow() {}
-static void TestSocketServerLoopRunsAndStops() {}
-#endif
 
 // ==== main =====================================================================================
 

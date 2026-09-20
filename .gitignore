@@ -1,0 +1,15 @@
+# build output
+server/build/
+build/
+build-*/
+cmake-build-*/
+*.dSYM/
+
+# OS / editor junk
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# saved matches written by `w2f_server --autosave`
+*.w2fsave
