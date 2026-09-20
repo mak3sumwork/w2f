@@ -77,7 +77,12 @@ jobs:
           ctest --test-dir build --output-on-failure --timeout 2400 2>&1 | tee test.log
           code=${PIPESTATUS[0]}
           # (the first failures as annotations: visible on the run page without opening the log)
-          if [ $code -ne 0 ]; then grep -E "FAIL|ERROR|error|wrong|ACCEPTED|validator|Assertion|runtime error|not found|cannot" test.log | head -14 | while IFS= read -r l; do echo "::error::${l:0:800}"; done; fi
+          if [ $code -ne 0 ]; then
+            grep -E "FAIL|ERROR|error|wrong|ACCEPTED|validator|Assertion|runtime error|not found|cannot" test.log | head -14 | while IFS= read -r l; do echo "::error::${l:0:800}"; done
+            # a sanitizer report with its stack, as ONE annotation (%0A = newline)
+            asan=$(awk '/ERROR: AddressSanitizer/ {c=16} c>0 {printf "%s%%0A", substr($0,1,240); c--}' test.log | head -c 3800)
+            if [ -n "$asan" ]; then echo "::error title=Sanitizer report::${asan}"; fi
+          fi
           exit $code
 
       - name: Fingerprint of seeded matches (sanitized build)
