@@ -632,7 +632,8 @@ std::uint64_t MatchManager::StateHash() const {
     h.Add(winner_);
     // Hidden state matters as much as visible state: two matches that look identical but hold different generators
     // or id counters would diverge on the next roll / purchase.
-    for (std::uint64_t word : rng_.GetState().words) h.Add(word);
+    const RngState matchRng = rng_.GetState();   // (a named copy: MSVC does not extend the temporary's life through `.words` in a range-for)
+    for (std::uint64_t word : matchRng.words) h.Add(word);
 
     for (int i = 0; i < players_.PlayerCount(); ++i) {
         const PlayerState* p = players_.Get(static_cast<PlayerId>(i));
@@ -667,7 +668,8 @@ std::uint64_t MatchManager::StateHash() const {
         }
         h.Add(0xFFFFFFFDull);  // separator
         h.Add(p->Roster().NextSerial());
-        for (std::uint64_t word : p->Shop().GetRngState().words) h.Add(word);
+        const RngState shopRng = p->Shop().GetRngState();
+        for (std::uint64_t word : shopRng.words) h.Add(word);
     }
     for (const ChampionDefinition& def : database_.All()) h.AddInt(pool_.Remaining(def.id));
     for (const Matchup& m : matchups_) {

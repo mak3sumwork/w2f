@@ -40,6 +40,7 @@ Run from `server/`.
 * **Separate simulation logic from state updates**: the combat tick runs in fixed phases — expire → act (only *declare*: attacks, casts, moves) → resolve (mana, scheduled effects, casts, DoTs, hits, status sweeps, hooks, deaths). Deciders read the world; only the resolve phase mutates HP/statuses/positions, in canonical order (ascending `UnitId`). Managers (`PlayerState`, `ShopManager`, `UnitRoster`, `MatchManager`) own state and validate every action; the simulator never touches economy state.
 * Every rejected action changes nothing (check before you spend/mutate). Every accepted action emits an event to `IMatchListener`.
 * Validate at the boundary: loaders reject bad data with the exact JSON path; the network layer rejects malformed commands before they reach the engine.
+* **MSVC-proof lifetimes** (CI runs MSVC + ASan): never range-`for` over a member or a returned reference of a temporary (`for (x : f().words)`, `for (x : Last(..).Find(..)->Items())`): copy to a named local first. GCC/clang extend the temporary, MSVC does not.
 * Write code that matches its surroundings (naming, comment density). Zero warnings. Add a test for every rule you add; prefer property/fuzz tests where inputs are large.
 
 ## Core Game Loop & State Rules
