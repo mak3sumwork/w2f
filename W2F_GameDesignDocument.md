@@ -15,6 +15,7 @@
 - **SELINI (3):** *The Moon's Shadow.* Once per combat, when falling below 50% HP, Selini units turn invisible (drop aggro) for 2 seconds and heal 20% of their Max HP.
 - **NAJMI (3):** *The Cosmic Link.* Whenever a Najmi unit casts their ability, they restore 15 Mana to all adjacent allies.
 - **PROTECTOR (2):** All allies gain 10% Damage Amplification and 10% bonus Armor/MR. Protectors (Les, Lum) gain an additional 10% on top of this.
+- **ASSASSIN (2/4):** *The Unseen Strike.* Assassins' abilities can critically strike. They gain +20% / +50% bonus Critical Strike Damage.
 
 ## 3. FULL CHAMPION ROSTER (30 / 30)
 
@@ -124,7 +125,7 @@
 - **Sayona's Casket (Helmet + Water):** +13 Armor, +13 MR, +2 Mana Regen. Enemies within 2 hexes have their Magic Resist reduced by 30%.
 - **Soldiers' Soul (Helmet + Sword):** +25 AD. Every 3rd attack user makes grants 7 Armor and 7 MR (stacks).
 - **Guardians Armor (Helmet + Vest):** +40 Armor, +17 MR. Every 6th attack taken grants 6 Armor and 8 MR.
-- **Gylachster (Helmet + Bow):** +12 Armor, +12 MR. On 25th attack, user becomes ghosted (CC immunity).
+- **Gylachster (Helmet + Bow):** +12 Armor, +12 MR. On 25th attack, user becomes ghosted (CC immunity) for the rest of combat.
 - **Mage Shield (Helmet + Stick):** +12 Armor, +30 MR, +12 AP. After 4 abilities are cast at the user, creates a shield for 10% Max HP. Shield absorbs damage and detonates, dealing (Stored Damage + 150% AP) to the attacker.
 - **Mother's Hands (Helmet + Heart):** +250 HP, +12 Armor, +12 MR. Grants 10% bonus Max HP.
 - **Big Helmet (Helmet + Helmet):** +30 Armor, +30 MR. User takes 50% less crit damage.
@@ -137,7 +138,7 @@
 - **Water Gun (Water + Bow):** +2 Mana Regen, +15% AS, +30 AP. Dealing damage shreds target's MR by 30% for 4s.
 - **Divine Magic (Water + Stick):** +3 Mana Regen, +30 AP. Every cast grants +1 Mana Regen and +3% AP.
 - **Blue Whale (Water + Heart):** +250 HP, +2 Mana Regen. Grants 10% bonus Max HP. When dropping below 30% HP, regens 30% Max HP over 2s and gains +1 Mana Regen.
-- **Fishscale (Water + Gloves):** +25% Crit Chance, +3 Mana Regen. Grants +25% bite(?) and 10% Max HP shield every cast.
+- **Fishscale (Water + Gloves):** +25% Crit Chance, +3 Mana Regen. Grants 25% Omnivamp (Heal for % of damage dealt) and a 10% Max HP shield every cast.
 
 **COREGONS SWORD COMBINATIONS (Physical Damage)**
 - **Soul's Sword (Sword + Sword):** +45 AD. Grants 20% bonus AD.
@@ -148,7 +149,7 @@
 - **Full Kit (Sword + Gloves):** +35 AD, +50% Crit Chance. Grants 30% bonus Crit Damage.
 
 **PHAISA'S BOW COMBINATIONS (Attack Speed / Utility)**
-- **Twin Snipers (Bow + Bow):** +45% AS. Applies Wound (30% reduced healing). Deals a % of target's Max HP as true damage every second.
+- **Twin Snipers (Bow + Bow):** +45% AS. Applies Wound (30% reduced healing). Deals 3% of target's Max HP as true damage every second.
 - **Phaisa's Magic (Bow + Stick):** +30% AS, +15 AP. Every attack grants +1% AS (max 60 stacks).
 - **Betrayed Heart (Bow + Heart):** +12% AS, +150 HP, +25 AP, +1 Mana Regen. 5% of all damage dealt is re-dealt as True Damage.
 - **Guardian Destroyer (Bow + Gloves):** +25% Crit Chance, +15 AD, +20% AS. Attacks ignore 30% of target's Armor for 4s.
