@@ -64,10 +64,21 @@ jobs:
           cmake -S server -B build "${gen[@]}" -DCMAKE_BUILD_TYPE=Debug -DW2F_SANITIZE=ON -DW2F_WERROR=${{ matrix.werror }}
 
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          set +e
+          cmake --build build --parallel 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ $code -ne 0 ]; then grep -E "error|Error" build.log | head -12 | while IFS= read -r l; do echo "::error::${l:0:800}"; done; fi
+          exit $code
 
       - name: Test (engine + network, sanitizers on)
-        run: ctest --test-dir build --output-on-failure --timeout 2400
+        run: |
+          set +e
+          ctest --test-dir build --output-on-failure --timeout 2400 2>&1 | tee test.log
+          code=${PIPESTATUS[0]}
+          # (the first failures as annotations: visible on the run page without opening the log)
+          if [ $code -ne 0 ]; then grep -E "FAIL|ERROR|error|wrong|ACCEPTED|validator|Assertion|runtime error|not found|cannot" test.log | head -14 | while IFS= read -r l; do echo "::error::${l:0:800}"; done; fi
+          exit $code
 
       - name: Fingerprint of seeded matches (sanitized build)
         run: |
@@ -83,7 +94,12 @@ jobs:
           cmake --build build-release --parallel
 
       - name: Test (Release)
-        run: ctest --test-dir build-release --output-on-failure --timeout 1200
+        run: |
+          set +e
+          ctest --test-dir build-release --output-on-failure --timeout 1200 2>&1 | tee test-release.log
+          code=${PIPESTATUS[0]}
+          if [ $code -ne 0 ]; then grep -E "FAIL|ERROR|error|wrong|ACCEPTED|validator|Assertion|runtime error" test-release.log | head -14 | while IFS= read -r l; do echo "::error::${l:0:800}"; done; fi
+          exit $code
 
       - name: Fingerprint of seeded matches (Release) must equal the sanitized build's
         run: |
@@ -110,8 +126,20 @@ jobs:
       - run: sudo sysctl -w vm.mmap_rnd_bits=28
       - name: Configure
         run: cmake -S server -B build -DCMAKE_BUILD_TYPE=Debug -DW2F_SANITIZE=ON -DW2F_WERROR=ON -DW2F_UE_COMPAT=ON
-      - run: cmake --build build --parallel
-      - run: ctest --test-dir build --output-on-failure --timeout 2400
+      - name: Build
+        run: |
+          set +e
+          cmake --build build --parallel 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ $code -ne 0 ]; then grep -E "error|Error" build.log | head -12 | while IFS= read -r l; do echo "::error::${l:0:800}"; done; fi
+          exit $code
+      - name: Test
+        run: |
+          set +e
+          ctest --test-dir build --output-on-failure --timeout 2400 2>&1 | tee test.log
+          code=${PIPESTATUS[0]}
+          if [ $code -ne 0 ]; then grep -E "FAIL|ERROR|error|wrong|ACCEPTED|validator|Assertion|runtime error" test.log | head -14 | while IFS= read -r l; do echo "::error::${l:0:800}"; done; fi
+          exit $code
 
   determinism:
     name: "Determinism across platforms"
