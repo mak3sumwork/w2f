@@ -1,0 +1,202 @@
+#pragma once
+
+// Top-level authority for one match: owns the pool and all players, and drives the phase
+// state machine. Fully headless -- advanced only by Tick() at kTicksPerSecond.
+//
+//   Start -> [Draft] -> Planning -> Combat -> Resolution -+-> next round (income, back to top)
+//            (only on draft rounds)                       +-> MatchOver (<= 1 player alive)
+//
+// All player actions go through the Try* methods below, which enforce phase rules and
+// return an ActionResult. Nothing here allocates per tick.
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "w2f/ChampionDatabase.h"
+#include "w2f/Combat.h"
+#include "w2f/Config.h"
+#include "w2f/PlayerEvents.h"
+#include "w2f/PlayerManager.h"
+#include "w2f/Pve.h"
+#include "w2f/Rng.h"
+#include "w2f/SharedChampionPool.h"
+#include "w2f/Snapshot.h"
+
+namespace w2f {
+
+
+constexpr const char* ToString(MatchPhase p) {
+    switch (p) {
+        case MatchPhase::NotStarted: return "NotStarted";
+        case MatchPhase::Draft: return "Draft";
+        case MatchPhase::Planning: return "Planning";
+        case MatchPhase::Combat: return "Combat";
+        case MatchPhase::Resolution: return "Resolution";
+        case MatchPhase::MatchOver: return "MatchOver";
+    }
+    return "Unknown";
+}
+
+// Observer hook for the eventual UE5 wrapper / network layer. All methods optional.
+// Also carries every per-player unit event (OnUnitBought / Sold / Moved / Merged) inherited
+// from IPlayerListener, so one registered listener sees the whole match.
+// Callbacks run synchronously inside Tick() or the Try* action that caused them; do not call
+// back into the MatchManager from them.
+class IMatchListener : public IPlayerListener {
+public:
+    ~IMatchListener() override = default;
+    // Fired after the phase's entry logic has run (shops refreshed, combat resolved, ...).
+    virtual void OnPhaseChanged(MatchPhase /*from*/, MatchPhase /*to*/, int /*round*/) {}
+    // Fired during Resolution entry, before OnPhaseChanged(Resolution).
+    virtual void OnPlayerEliminated(PlayerId /*player*/, int /*placement*/) {}
+    virtual void OnMatchEnded(PlayerId /*winner*/) {}
+    // Fired once per fight when the Combat phase begins, before OnPhaseChanged(Combat). The log
+    // holds the ENTIRE fight (combat-local ticks, tick 0 = start of the phase). A viewer just
+    // queues and plays it; it must not simulate or predict anything itself.
+    virtual void OnCombatSimulated(int /*round*/, const CombatOutcome& /*outcome*/) {}
+    // Fired during Resolution entry: a player lost a PvP round and took `damage` (health is what is left; <= 0 means
+    // they are about to be eliminated, and OnPlayerEliminated follows).
+    virtual void OnPlayerDamaged(PlayerId /*player*/, int /*damage*/, int /*healthAfter*/) {}
+    // Fired during Resolution entry: a player beat the monsters and was given `drop`. (A Champion drop is also announced
+    // through OnUnitBought with 0 gold spent, like any unit that enters a roster.)
+    virtual void OnPveDrop(PlayerId /*player*/, const PveDrop& /*drop*/) {}
+    // Fired when Planning begins (shops already refreshed, before OnPhaseChanged): the crash-recovery snapshot of the
+    // whole match as of the start of the round. Persist it; MatchManager::Restore turns it back into this exact moment.
+    virtual void OnAutoSnapshot(int /*round*/, const std::vector<std::uint8_t>& /*snapshot*/) {}
+};
+
+class MatchManager : private IPlayerListener {  // private: it only re-broadcasts player events
+public:
+    // Returns nullptr (and fills *error) if the config is invalid.
+    // `database` must outlive the match. `simulator` may be null: every fight is then a
+    // scoreless draw with an empty log (use CombatSimulator for real fights). Same (config, database, seed, simulator behaviour, inputs) => same match.
+    // `items` (optional, must outlive the match) validates item ids and gives units their equipment; the combat simulator
+    // needs the same database to apply it (see CombatSimulator's constructor).
+    // `encounters` (optional, must outlive the match) holds the PvE monster boards and drop tables. Without it a PvE round
+    // is a round nobody fights: no result, no drop.
+    static std::unique_ptr<MatchManager> Create(const GameConfig& config, const ChampionDatabase& database,
+                                                std::uint64_t seed, std::unique_ptr<ICombatSimulator> simulator,
+                                                std::string* error = nullptr, const ItemDatabase* items = nullptr,
+                                                const EncounterDatabase* encounters = nullptr);
+
+    // Owns objects that reference each other (players hold a pointer back to it), so it is pinned in memory.
+    MatchManager(const MatchManager&) = delete;
+    MatchManager& operator=(const MatchManager&) = delete;
+
+    void Start();  // NotStarted -> round 1
+    void Tick();   // Advance one fixed simulation step.
+
+    // ---- Observers (non-owning; must outlive the match or be removed) ----
+    void AddListener(IMatchListener* listener);
+    void RemoveListener(IMatchListener* listener);
+
+    // ---- State ----
+    MatchPhase Phase() const { return phase_; }
+    int Round() const { return round_; }
+    int TicksInPhase() const { return ticksInPhase_; }
+    int TicksRemainingInPhase() const;
+    bool IsFinished() const { return phase_ == MatchPhase::MatchOver; }
+    PlayerId Winner() const { return winner_; }  // kInvalidPlayerId until finished
+    const std::vector<Matchup>& CurrentMatchups() const { return matchups_; }
+    // This round's fights, logs included (valid from the start of Combat until the next Combat).
+    // Lets a reconnecting client fetch the stream it missed.
+    const std::vector<CombatOutcome>& CurrentCombatOutcomes() const { return outcomes_; }
+    bool IsPveRound() const { return config_.match.IsPveRound(round_); }
+    StageRound CurrentStageRound() const { return config_.match.StageOf(round_); }
+
+    // The crash-recovery snapshot taken when the current (or latest) Planning phase began -- empty until the first one, and
+    // always empty when GameConfig::snapshot.atPlanningStart is off. A match restored from such a snapshot starts with it.
+    const std::vector<std::uint8_t>& LastPlanningSnapshot() const { return autoSnapshot_; }
+    int LastPlanningSnapshotRound() const { return autoSnapshotRound_; }
+
+    const GameConfig& Config() const { return config_; }
+    const PlayerManager& Players() const { return players_; }
+    const SharedChampionPool& Pool() const { return pool_; }
+    // Bypasses phase rules. For server-internal systems, admin tools and tests only.
+    PlayerManager& PlayersMutable() { return players_; }
+
+    // ---- Player actions (Planning phase only) ----
+    ActionResult TryRerollShop(PlayerId player);
+    ActionResult TryBuyShopUnit(PlayerId player, std::size_t shopSlot);
+    ActionResult TryBuyXp(PlayerId player);
+    ActionResult TrySellUnit(PlayerId player, UnitId unit);
+    // Move to bench slot (x, 0) or board cell (x, y); swaps with whatever is there.
+    ActionResult TryMoveUnit(PlayerId player, UnitId unit, LocationType location, int x, int y);
+    // Put an item from the player's bag on a unit / take it off again.
+    ActionResult TryEquipItem(PlayerId player, UnitId unit, ItemId item);
+    ActionResult TryUnequipItem(PlayerId player, UnitId unit, int slot);
+
+    // ---- Snapshot / restore (see Snapshot.h) ----
+    // The whole match as bytes. Call between ticks / actions (which is the only time anything can call it).
+    std::vector<std::uint8_t> Snapshot() const;
+    // Rebuilds a match from Snapshot() output. `config`, `database`, `items` and the simulator must be equivalent to
+    // the ones the original ran with (their hashes are checked unless options say otherwise). No listeners are attached:
+    // add them after restoring. nullptr + *error when the buffer is not a valid snapshot of a consistent match.
+    static std::unique_ptr<MatchManager> Restore(const std::vector<std::uint8_t>& snapshot, const GameConfig& config,
+                                                 const ChampionDatabase& database, std::unique_ptr<ICombatSimulator> simulator,
+                                                 std::string* error = nullptr, const ItemDatabase* items = nullptr,
+                                                 const EncounterDatabase* encounters = nullptr, const RestoreOptions& options = RestoreOptions{});
+
+    // ---- Diagnostics ----
+    // Every champion copy must be in exactly one of: pool, a shop slot, a unit (a star-N unit
+    // stands for 3^(N-1) copies, so merging never changes the count).
+    bool VerifyPoolIntegrity() const;
+    // Every player's bench/board layout is internally consistent (see UnitRoster::CheckInvariants).
+    bool VerifyRosterLayouts() const;
+    // Hash of all authoritative state. Use to detect desyncs and to test determinism.
+    std::uint64_t StateHash() const;
+
+private:
+    MatchManager(const GameConfig& config, const ChampionDatabase& database, std::uint64_t seed,
+                 std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters);
+
+    int PhaseDuration(MatchPhase phase) const;
+    void BeginRound();
+    void AdvancePhase();
+    void EnterPhase(MatchPhase next);
+    void BuildMatchups();
+    void RunCombat();
+    void ApplyCombatOutcomes();
+    PveDrop GrantPveDrop(PlayerState& player, std::uint32_t encounterId, Rng& rng);
+    void TakeAutoSnapshot();
+    void EndMatch();
+    ActionResult ResolveActor(PlayerId id, PlayerState*& outPlayer);
+
+    // IPlayerListener: forward each player event to every registered IMatchListener.
+    void OnUnitBought(PlayerId player, const UnitInstance& unit, int goldSpent) override;
+    void OnUnitSold(PlayerId player, const UnitInstance& unit, int goldGained) override;
+    void OnUnitMoved(PlayerId player, const UnitMove& move) override;
+    void OnUnitMerged(PlayerId player, const UnitMerge& merge) override;
+    void OnItemEquipped(PlayerId player, const UnitInstance& unit, ItemId item) override;
+    void OnItemUnequipped(PlayerId player, const UnitInstance& unit, ItemId item) override;
+    void OnItemsCombined(PlayerId player, const UnitInstance& unit, const ItemCombination& combination) override;
+    void OnIncomeGranted(PlayerId player, int round, const IncomeBreakdown& income) override;
+
+    // Declaration order matters: pool_ before players_ (players hold a reference to it);
+    // listeners_ before players_ (players call back into this object).
+    GameConfig config_;
+    const ChampionDatabase& database_;
+    const ItemDatabase* items_;
+    const EncounterDatabase* encounters_;
+    std::uint64_t seed_;
+    Rng rng_;
+    std::vector<IMatchListener*> listeners_;
+    SharedChampionPool pool_;
+    PlayerManager players_;
+    std::unique_ptr<ICombatSimulator> simulator_;
+
+    MatchPhase phase_ = MatchPhase::NotStarted;
+    int round_ = 0;
+    int ticksInPhase_ = 0;
+    PlayerId winner_ = kInvalidPlayerId;
+    std::vector<Matchup> matchups_;
+    std::vector<CombatOutcome> outcomes_;
+
+    // Derived, not authoritative: never part of a snapshot or of StateHash().
+    std::vector<std::uint8_t> autoSnapshot_;
+    int autoSnapshotRound_ = 0;
+};
+
+}  // namespace w2f

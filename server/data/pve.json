@@ -1,0 +1,53 @@
+// W2F PvE rounds: monsters, the boards they stand on, and what a win drops.
+// Format: docs/champions-json.md (section "pve.json").
+//
+// PLACEHOLDERS: every number and every board here is for the lead designer to replace. What the ENGINE guarantees:
+//  * In a PvE round (1-1, 1-2, 1-3 and X-7 of every later stage, see MatchConfig) each player fights the encounter chosen for
+//    that round on their own copy of the board. Nobody takes damage and streaks do not change.
+//  * Winning drops exactly ONE thing, picked from the drop table by weight: gold, a champion from the shared pool, or an item.
+//  * Monsters are ordinary champion definitions in their own list: never sold in the shop, never in the pool. Ids must not
+//    clash with champions.json (monsters use 10000+).
+//  * Encounters stand on the same board a player does: x 0..6, y 0..3 with y = 3 the front row (nearest the player).
+//  * "stage" / "round" pick the encounter: 0 = any. The most specific match wins (stage+round > stage > round > any); if
+//    several tie, one is picked by the match seed.
+{
+  "version": 1,
+
+  "monsters": [
+    { "id": 10001, "name": "Gloop", "role": "Tank",
+      "stats": { "hp": [220, 400, 720], "armor": 10, "magicResist": 10, "attackDamage": [12, 20, 36], "attackSpeed": 0.6, "range": 1 } },
+    { "id": 10002, "name": "Spitter",
+      "stats": { "hp": [150, 270, 486], "armor": 5, "magicResist": 5, "attackDamage": [14, 25, 45], "attackSpeed": 0.7, "range": 3 } },
+    { "id": 10003, "name": "Boulder", "role": "Tank",
+      "stats": { "hp": [500, 900, 1620], "armor": 30, "magicResist": 20, "attackDamage": [20, 36, 65], "attackSpeed": 0.5, "range": 1 } },
+    // The X-7 boss: crushes everything around its target every ~10 attacks' worth of mana.
+    { "id": 10004, "name": "Elder Wraith", "role": "Tank",
+      "stats": { "hp": [1500, 2700, 4860], "armor": 40, "magicResist": 40, "attackDamage": [45, 80, 145], "attackSpeed": 0.6, "range": 1, "maxMana": 100 },
+      "ability": {
+        "id": 201, "name": "Crush", "trigger": "Mana", "castLockTicks": 20,
+        "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true },
+                       "damageType": "Physical", "amount": [90, 160, 290] } ]
+      } }
+  ],
+
+  // One drop per win. Lines that cannot pay out right now (no items loaded, every listed tier sold out) are skipped.
+  "defaultDrops": [
+    { "type": "Gold",     "weight": 40, "minGold": 2, "maxGold": 4 },
+    { "type": "Champion", "weight": 30, "tiers": [1, 2] },
+    { "type": "Item",     "weight": 30 }
+  ],
+
+  "encounters": [
+    { "id": 1, "name": "Gloop Nest", "stage": 1, "round": 1,
+      "units": [ { "monster": 10001, "x": 2, "y": 3 }, { "monster": 10001, "x": 4, "y": 3 } ] },
+    { "id": 2, "name": "Gloops and a Spitter", "stage": 1, "round": 2,
+      "units": [ { "monster": 10001, "x": 2, "y": 3 }, { "monster": 10001, "x": 4, "y": 3 }, { "monster": 10002, "x": 3, "y": 2 } ] },
+    { "id": 3, "name": "Boulder Pass", "stage": 1, "round": 3,
+      "units": [ { "monster": 10003, "x": 3, "y": 3 }, { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ] },
+    // X-7 of every stage from 2 on (stage 0 = any). The rewards here are better: items only.
+    { "id": 4, "name": "The Elder Wraith", "round": 7,
+      "units": [ { "monster": 10004, "x": 3, "y": 3 }, { "monster": 10003, "x": 1, "y": 3 }, { "monster": 10003, "x": 5, "y": 3 },
+                 { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ],
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ] }
+  ]
+}

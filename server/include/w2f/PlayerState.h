@@ -1,0 +1,155 @@
+#pragma once
+
+// Everything the server tracks for one player: health, level/XP, gold, streak, their units
+// (bench + board, via UnitRoster), and their attached ShopManager.
+//
+// PlayerState enforces the *rules* of the economy and unit management (can you afford it?
+// is there room? does it merge?) and keeps the shared pool balanced, but not *when* an
+// action is allowed -- phase gating is MatchManager's job.
+
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "w2f/ChampionDatabase.h"
+#include "w2f/Config.h"
+#include "w2f/Item.h"
+#include "w2f/PlayerEvents.h"
+#include "w2f/ShopManager.h"
+#include "w2f/SharedChampionPool.h"
+#include "w2f/Types.h"
+#include "w2f/Unit.h"
+#include "w2f/UnitRoster.h"
+
+namespace w2f {
+
+// Everything a snapshot stores about one player (champions already resolved to definitions).
+struct PlayerRestoreData {
+    int health = 0;
+    int level = 1;
+    int xp = 0;
+    int gold = 0;
+    int streak = 0;
+    bool eliminated = false;
+    int placement = 0;
+    std::vector<UnitInstance> units;   // roster order
+    std::uint32_t nextUnitSerial = 1;
+    std::vector<ItemId> itemBag;
+    std::vector<const ChampionDefinition*> shopSlots;
+    RngState shopRng;
+};
+
+class PlayerState {
+public:
+    // Creates the attached ShopManager. `pool` must outlive the player.
+    // `listener` (optional, non-owning) receives unit events.
+    PlayerState(PlayerId id, const PlayerConfig& playerConfig, const ShopConfig& shopConfig,
+                SharedChampionPool& pool, std::uint64_t matchSeed, IPlayerListener* listener = nullptr,
+                const ItemDatabase* items = nullptr);
+    ~PlayerState();
+
+    // Not copyable/movable: ShopManager holds a reference back to this object.
+    PlayerState(const PlayerState&) = delete;
+    PlayerState& operator=(const PlayerState&) = delete;
+
+    void SetListener(IPlayerListener* listener) { listener_ = listener; }
+
+    // ---- Queries ----
+    PlayerId Id() const { return id_; }
+    // May be <= 0 for a player that just took a killing blow and has not been processed yet.
+    int Health() const { return health_; }
+    int Level() const { return level_; }
+    int Xp() const { return xp_; }
+    int Gold() const { return gold_; }
+    bool IsMaxLevel() const { return level_ >= kMaxPlayerLevel; }
+    int XpToNextLevel() const;  // 0 at max level
+    int Streak() const { return streak_; }  // > 0 win streak, < 0 loss streak
+    bool IsAlive() const { return !eliminated_; }
+    int Placement() const { return placement_; }  // 0 until eliminated / match won; 1 = winner
+    const UnitRoster& Roster() const { return roster_; }
+    ShopManager& Shop() { return *shop_; }
+    const ShopManager& Shop() const { return *shop_; }
+
+    // ---- Leveling ----
+    // Spend buyXpCost gold for buyXpAmount XP (may cascade through several levels).
+    ActionResult TryBuyXp();
+    void AddXp(int amount);
+
+    // ---- Gold ----
+    void AddGold(int amount);
+    bool TrySpendGold(int amount);  // Atomic: deducts only if fully affordable.
+
+    // What this player would earn at the start of `round` (base + interest + streak, plus
+    // passive XP), based on their current gold and streak. Does not modify state.
+    IncomeBreakdown CalculateIncome(int round) const;
+    // Applies CalculateIncome: adds the gold and the passive XP. No-op for eliminated players.
+    IncomeBreakdown GrantRoundIncome(int round);
+
+    // ---- Combat aftermath ----
+    void ApplyDamage(int amount);
+    void RecordRoundResult(RoundResult result);  // Draws leave the streak untouched.
+
+    // ---- Units ----
+    // Can this champion be received right now? (free bench/board spot, or it completes a merge)
+    bool CanAcquire(const ChampionDefinition* champion, int starLevel = 1) const;
+    // Adds a unit: first free bench slot, else first free board cell, then merges immediately.
+    // Does NOT charge gold or touch the pool -- the caller (shop / carousel / award) already
+    // took the copy out of the pool and paid. `goldSpent` is only reported in the event.
+    ActionResult AcquireUnit(const ChampionDefinition* champion, int goldSpent = 0, int starLevel = 1);
+
+    // Bench<->board moves and swaps. See UnitRoster::Move for the exact rules.
+    ActionResult TryMoveUnit(UnitId unit, LocationType location, int x, int y);
+
+    // Removes the unit, pays out its sell value and returns its copies to the shared pool.
+    ActionResult SellUnit(UnitId unit);
+    // Value of a unit: its total cost in gold, minus 1 for merged units above 1 cost (TFT rule).
+    static int SellValue(int cost, int starLevel);
+
+    // ---- Items ----
+    // Items the player owns but has not put on a unit. (Where items COME from -- carousel, drops, shop -- is not built yet:
+    // AddItemToBag is the entry point for whatever does that.)
+    const std::vector<ItemId>& ItemBag() const { return itemBag_; }
+    // False (and nothing changes) for id 0 or, when an item database is attached, an id it does not know.
+    bool AddItemToBag(ItemId item);
+    // Moves an item from the bag onto a unit (ItemsFull if it carries 3; InvalidItem if not in the bag / unknown). If the unit holds an
+    // item this one combines with (a recipe in items.json), both are consumed at once and the finished item takes their place --
+    // even on a unit that is already full.
+    ActionResult TryEquipItem(UnitId unit, ItemId item);
+    // Takes the item in `slot` off the unit and puts it back in the bag.
+    ActionResult TryUnequipItem(UnitId unit, int slot);
+
+    // ---- Snapshot ----
+    // Overwrites this player with saved state. It does NOT touch the shared pool: the pool's counts are restored
+    // separately, and the caller then checks the two agree (MatchManager::VerifyPoolIntegrity). Validates ranges and
+    // layout; on failure returns false with *error set and leaves the player in an unspecified (discard it) state.
+    bool RestoreState(const PlayerRestoreData& data, std::string* error = nullptr);
+
+    // ---- Lifecycle ----
+    // Returns the shop and every owned unit to the pool and marks the player out of the match.
+    void Eliminate(int placement);
+    void SetPlacement(int placement) { placement_ = placement; }
+
+private:
+    void SyncBoardCapacity();
+
+    PlayerId id_;
+    PlayerConfig config_;
+    SharedChampionPool& pool_;
+    IPlayerListener* listener_;
+
+    int health_;
+    int level_ = 1;
+    int xp_ = 0;
+    int gold_;
+    int streak_ = 0;
+    bool eliminated_ = false;
+    int placement_ = 0;
+    UnitRoster roster_;
+    std::vector<ItemId> itemBag_;
+    const ItemDatabase* items_;
+
+    std::unique_ptr<ShopManager> shop_;  // Declared last: constructed after everything above.
+};
+
+}  // namespace w2f

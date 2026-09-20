@@ -1,0 +1,359 @@
+// W2F champion roster. Edited by the game designer; loaded by the server on start-up.
+// Format: docs/champions-json.md.  Comments (// and /* */) are allowed in this file.
+//
+// Conventions
+//   * Anything "per star" is either one number (same at every star) or exactly three: [1-star, 2-star, 3-star].
+//   * Times can be written in seconds ("durationSeconds": 1.75) or ticks ("durationTicks": 52). The server
+//     runs at 30 ticks/second; seconds are converted exactly and rounded half up (1.75 s = 52.5 -> 53 ticks).
+//   * attackSpeed / manaRegen are decimals (attacks per second / mana per second).
+//
+// Values I had to assume because the design notes don't give them are marked ASSUMED.
+{
+  "version": 1,
+  "champions": [
+
+    // ---------------------------------------------------------------- ALESK (4-cost tank)
+    {
+      "id": 9001, "name": "Alesk", "cost": 4, "role": "Tank",
+      "traits": ["Helios"],
+      "stats": {
+        "hp": [325, 475, 650], "armor": [31, 45, 63], "magicResist": [17, 24, 29], "attackDamage": [30, 35, 40],
+        "attackSpeed": 1.0, "range": 1,
+        "maxMana": 60, "manaRegen": 10.0     // 100-scale (was 6 and 1.0 on the old small scale: identical behaviour)
+      },
+      // Shield of 7/15/30% max HP for 1.75/2.0/2.25 s; while it holds, incoming damage is reduced by 5/12/25%.
+      "ability": {
+        "id": 1, "name": "AESA", "trigger": "Mana",
+        "castLockTicks": 15,                                    // ASSUMED: 0.5 s cast animation
+        "effects": [
+          {
+            "type": "Shield", "target": "Self",
+            "amount": { "terms": [ { "source": "SelfMaxHp", "percent": [7, 15, 30] } ] },
+            "durationSeconds": [1.75, 2.0, 2.25],
+            "damageReductionPercent": [5, 12, 25]
+          }
+        ]
+      },
+      // Passive: +5/10/20% max HP, Armor and Magic Resist for the whole fight
+      // (stand-in for "from items/buffs": a plain base-stat multiplier).
+      "passive": {
+        "id": 101, "name": "Helios Plating",
+        "effects": [
+          { "type": "Status", "target": "Self", "status": "MaxHp",       "percent": [5, 10, 20], "permanent": true },
+          { "type": "Status", "target": "Self", "status": "Armor",       "percent": [5, 10, 20], "permanent": true },
+          { "type": "Status", "target": "Self", "status": "MagicResist", "percent": [5, 10, 20], "permanent": true }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- BAIRA (3-cost marksman)
+    {
+      "id": 9002, "name": "Baira", "cost": 3, "role": "Damage",
+      "traits": ["Phaisa"],
+      "stats": {
+        "hp": [100, 150, 200], "armor": [10, 15, 20], "magicResist": [5, 9, 13], "attackDamage": [20, 25, 29],
+        "abilityDamage": [15, 21, 40],            // the sheet's "AP"
+        "attackSpeed": 0.5, "range": 4            // range ASSUMED (marksman)
+        // no maxMana: Baira does not use mana
+      },
+      // Every 5th attack (the count restarts when she changes target or her target dies):
+      //   * burns everything within 3 hexes of her target for 15/21/36 TOTAL over 2.5/2.0/1.75 s. The total scales with her
+      //     AP (abilityDamage 15/21/40, x abilityPowerPercent): 100% / 100% / 90% of it = 15 / 21 / 36. Stacks:
+      //     a burn landing on a running one deals more (+25/35/45% -- ASSUMED, carried over from the earlier design);
+      //   * grants her +20/25/35% attack speed for 5 s.
+      "ability": {
+        "id": 2, "name": "Ardeat's Destiny", "trigger": "EveryNthAttack", "attackCount": 5, "resetOnTargetChange": true,
+        "effects": [
+          {
+            "type": "DoT", "target": { "mode": "AreaAroundTarget", "radius": 3, "includeCenter": true },
+            "damageType": "Magic",
+            "amount": { "terms": [ { "source": "SelfAbilityDamage", "percent": [100, 100, 90] } ] }, "amountIsTotal": true,
+            "durationSeconds": [2.5, 2.0, 1.75], "intervalSeconds": 0.5,   // interval ASSUMED: a hit every 0.5 s
+            "stackBonusPercent": [25, 35, 45]
+          },
+          { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": [20, 25, 35], "durationSeconds": 5 }
+        ]
+      },
+      // Passive "Wound": her burns also reduce their victims' healing by 30% for as long as they burn.
+      // (There is no healing in the game yet; the status is applied and shown, and will bite once healing exists.)
+      "passive": {
+        "id": 102, "name": "Wound",
+        "effects": [ { "type": "Status", "target": "Self", "status": "InflictsWound", "percent": 30, "permanent": true } ]
+      }
+    },
+
+    // ---------------------------------------------------------------- CYLA (2-cost marksman)
+    {
+      "id": 9003, "name": "Cyla", "cost": 2, "role": "Damage",
+      "traits": ["Hexagon"],
+      "stats": {
+        "hp": [90, 140, 180], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [50, 60, 80],
+        "crit": [15, 25, 50],
+        "attackSpeed": 0.78, "range": 4,          // range ASSUMED (marksman)
+        "maxMana": 60, "manaRegen": 10.0
+      },
+      // Rocket: the target takes 100% of the damage Cyla dealt in the last 2 s; adjacent hexes take 25%.
+      // She keeps auto-attacking while casting (castLock 0). Physical damage (her damage is AD, not AP); both hits can crit.
+      "ability": {
+        "id": 3, "name": "Rocket Strike", "trigger": "Mana", "castLockTicks": 0,
+        "effects": [
+          {
+            "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "canCrit": true,
+            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": 100, "windowSeconds": 2 } ] }
+          },
+          {
+            "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false },
+            "damageType": "Physical", "canCrit": true, "multiplierPercent": 25,
+            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": 100, "windowSeconds": 2 } ] }
+          }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- FAIRE (3-cost control crowd mage, "Arm of the Future")
+    // Role changed to Damage because the sheet now calls her a mage (it only decides which row bots put her in).
+    {
+      "id": 9005, "name": "Faire", "cost": 3, "role": "Damage",
+      "traits": ["Hexagon"],
+      "stats": {
+        "hp": [225, 333, 427], "armor": [20, 32, 41], "magicResist": [15, 20, 25], "attackDamage": [25, 30, 35],
+        "abilityDamage": [28, 45, 60],
+        "attackSpeed": 0.75, "range": 3,          // range 3 (per the designer)
+        "maxMana": 50, "manaRegen": 10.0,
+        // Passive "Leeching Arm": her basic attacks don't hit at once; they are a damage-over-time dealing her attack
+        // damage over 1 second.
+        "attackSpreadSeconds": 1
+      },
+      // "Temporal Stun": magic damage of her AP + 10/15/20% of her AD to her target, and it is stunned 0.2 s for every
+      // 10 damage she has dealt to it in the last 5 s (= 60% of that damage, in ticks). Enemies in the adjacent hexes
+      // are stunned for 60% of the main stun.
+      // Passive "Final Stand": if she dies she casts it one last time, ignoring mana (castOnDeath).
+      "ability": {
+        "id": 5, "name": "Temporal Stun", "trigger": "Mana", "castLockTicks": 18, "castOnDeath": true,
+        "effects": [
+          {
+            "type": "Damage", "target": "CurrentTarget", "damageType": "Magic",
+            "amount": { "terms": [ { "source": "SelfAbilityDamage", "percent": 100 }, { "source": "SelfAttackDamage", "percent": [10, 15, 20] } ] }
+          },
+          {
+            "type": "Status", "target": "CurrentTarget", "status": "Stun",
+            "duration": { "terms": [ { "source": "DamageDealtToTargetInWindow", "percent": 60, "windowSeconds": 5 } ] }
+          },
+          {
+            "type": "Status", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false },
+            "status": "Stun", "multiplierPercent": 60,
+            "duration": { "terms": [ { "source": "DamageDealtToTargetInWindow", "percent": 60, "windowSeconds": 5 } ] }
+          }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- LES (5-cost tank, "Wall of Omnilium")
+    // Role Tank; range ASSUMED 1 (melee).
+    {
+      "id": 9006, "name": "Les", "cost": 5, "role": "Tank",
+      "traits": ["Omnilium", "Protector"],
+      "stats": {
+        "hp": [1000, 2000, 3500], "armor": [60, 80, 300], "magicResist": [50, 70, 285], "attackDamage": [40, 60, 70],
+        "attackSpeed": 1.0, "range": 1,
+        "maxMana": 70, "manaRegen": 10.0
+      },
+      // Casting: roots the closest 3 enemies for 1/1.5/3 s and enters WALL mode for 3/5/15 s. In wall mode Les
+      //   * has +30/50/100% more max HP, Armor and Magic Resist,
+      //   * roots himself and regenerates 10/10/20% of the damage dealt to him (his passive),
+      //   * protects his friends from crowd control: every ally that STARTED the fight in the team's busiest row
+      //     (the "line" with the most units) ignores Stun / Root / Knockup from other units.
+      // Wall mode is a MODE: casting again while it is up refreshes it ("stacking": "refresh") instead of stacking a second
+      // +30% on top. (Les refills mana quickly under fire, so this happens.) Remove "stacking" to let it stack.
+      "ability": {
+        "id": 6, "name": "Wall of Omnilium", "trigger": "Mana",
+        "castLockTicks": 15,                                                      // ASSUMED: 0.5 s cast animation
+        "effects": [
+          { "type": "Status", "target": { "mode": "ClosestEnemies", "count": 3 }, "status": "Root", "durationSeconds": [1, 1.5, 3] },
+          { "type": "Status", "target": "Self", "status": "MaxHp",       "percent": [30, 50, 100], "durationSeconds": [3, 5, 15], "stacking": "refresh" },
+          { "type": "Status", "target": "Self", "status": "Armor",       "percent": [30, 50, 100], "durationSeconds": [3, 5, 15], "stacking": "refresh" },
+          { "type": "Status", "target": "Self", "status": "MagicResist", "percent": [30, 50, 100], "durationSeconds": [3, 5, 15], "stacking": "refresh" },
+          { "type": "Status", "target": "Self", "status": "Root", "durationSeconds": [3, 5, 15], "stacking": "refresh" },
+          { "type": "Status", "target": "Self", "status": "DamageTakenRegen", "percent": [10, 10, 20], "durationSeconds": [3, 5, 15], "stacking": "refresh" },
+          { "type": "Status", "target": "AlliesInStartLine", "status": "CcImmunity", "durationSeconds": [3, 5, 15], "stacking": "refresh" }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- LUM (5-cost bruiser, "Guardian of Omnilium")
+    // Role Tank (front row); range ASSUMED 1 (melee).
+    {
+      "id": 9007, "name": "Lum", "cost": 5, "role": "Tank",
+      "traits": ["Omnilium", "Protector"],
+      "stats": {
+        "hp": [600, 1000, 2500], "armor": [45, 50, 100], "magicResist": [35, 40, 100], "attackDamage": [40, 60, 70],
+        "attackSpeed": 1.0, "range": 1,
+        "maxMana": 70, "manaRegen": 10.0
+      },
+      // Punch: 15/30/100% of his AD to the target; the units it collides with (the units in the line behind the target)
+      // are knocked up for 1/1.5/5 s and take 7/15/50% of his AD.
+      // The knock-up is a disable only: nobody is actually moved. "Collided" is approximated as the 2 hexes straight
+      // behind the target (length ASSUMED 2).
+      "ability": {
+        "id": 7, "name": "Guardian's Punch", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical",
+            "amount": { "terms": [ { "source": "SelfAttackDamage", "percent": [15, 30, 100] } ] } },
+          { "type": "Damage", "target": { "mode": "LineBehindTarget", "length": 2 }, "damageType": "Physical",
+            "amount": { "terms": [ { "source": "SelfAttackDamage", "percent": [7, 15, 50] } ] } },
+          { "type": "Status", "target": { "mode": "LineBehindTarget", "length": 2 }, "status": "Knockup", "durationSeconds": [1, 1.5, 5] }
+        ]
+      },
+      // Passive: bonus attack damage worth 15/30/100% of his Armor and 15/30/100% of his Magic Resist
+      // (read as: each of the two counts at that percentage).
+      "passive": {
+        "id": 107, "name": "Omnilium Might",
+        "effects": [
+          { "type": "Status", "target": "Self", "status": "BonusAttackDamage", "permanent": true,
+            "value": { "terms": [ { "source": "SelfArmor", "percent": [15, 30, 100] }, { "source": "SelfMagicResist", "percent": [15, 30, 100] } ] } }
+        ]
+      }
+    }
+    ,
+
+    // ================================================================ PHASE 7 ROSTER
+    // Mana below is on the designer's 100-scale ("0/60" = starts at 0, casts at 60); these champions have no passive
+    // regen, so they fill from attacks (+10) and damage taken. Roles: Support / Assassin / Mage map to Damage (the back
+    // row for bots); the Bruiser is a Tank. Ranges not given in the sheet are marked ASSUMED.
+
+    // ---------------------------------------------------------------- ASTRA (1-cost support) [Najmi]
+    {
+      "id": 9008, "name": "Astra", "cost": 1, "role": "Damage",
+      "traits": ["Najmi"],
+      "stats": {
+        "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 20,
+        "attackSpeed": 0.65, "range": 3, "maxMana": 60
+      },
+      // Tethers to the ALLY THAT DEALT THE MOST DAMAGE in the last 5 s ("highest DPS") for 5 s: 30% of the damage that ally
+      // takes is redirected to Astra (as true damage), and the ally gains 20/30/50% attack speed. Casting again refreshes.
+      "ability": {
+        "id": 8, "name": "Starbound Tether", "trigger": "Mana",
+        "castLockTicks": 15,                                                    // ASSUMED: 0.5 s cast animation
+        "effects": [
+          { "type": "Status", "target": { "mode": "HighestDamageAlly", "windowSeconds": 5 }, "status": "Tether",
+            "percent": 30, "durationSeconds": 5, "stacking": "refresh" },
+          { "type": "Status", "target": { "mode": "HighestDamageAlly", "windowSeconds": 5 }, "status": "AttackSpeed",
+            "percent": [20, 30, 50], "durationSeconds": 5, "stacking": "refresh" }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- LUNIS (2-cost assassin) [Selini]
+    {
+      "id": 9009, "name": "Lunis", "cost": 2, "role": "Damage",
+      "traits": ["Selini"],
+      "stats": {
+        "hp": [550, 990, 1780], "armor": [25, 35, 50], "magicResist": [25, 35, 50], "attackDamage": [45, 68, 102],
+        "attackSpeed": 0.80, "range": 1, "maxMana": 40
+      },
+      // Passive: at the start of combat he jumps to the farthest enemy (landing on its far side) and is untargetable for 2 s.
+      "passive": {
+        "id": 109, "name": "Shadow Dive",
+        "effects": [
+          { "type": "Teleport", "target": "Self", "destination": "BehindFarthestEnemy" },
+          { "type": "Status", "target": "Self", "status": "Untargetable", "durationSeconds": 2 }
+        ]
+      },
+      // Slashes in a cone for 150/225/350 physical damage. If that kills something he drops aggro for 1.5 s: enemies stop
+      // auto-targeting him (area effects can still hit him).
+      "ability": {
+        "id": 9, "name": "Crescent Slash", "trigger": "Mana",
+        "castLockTicks": 15,                                                    // ASSUMED: 0.5 s cast animation
+        "effects": [
+          { "type": "Damage", "target": { "mode": "ConeTowardTarget", "length": 2 },   // cone length ASSUMED 2 hexes
+            "damageType": "Physical", "amount": [150, 225, 350],
+            "onKill": [ { "status": "AggroDrop", "durationSeconds": 1.5, "stacking": "refresh" } ] }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- SOUL (3-cost bruiser) [Coregons]
+    {
+      "id": 9010, "name": "Soul", "cost": 3, "role": "Tank",
+      "traits": ["Coregons"],
+      "stats": {
+        "hp": [100, 150, 200], "armor": 40, "magicResist": 40, "attackDamage": [45, 68, 102],
+        "attackSpeed": 0.70, "range": 1, "maxMana": 70
+      },
+      // Passive: spawns with an 800/1200/1800 shield and cannot be healed (a permanent 100% Wound).
+      "passive": {
+        "id": 110, "name": "Undying Shell",
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": [800, 1200, 1800], "permanent": true },
+          { "type": "Status", "target": "Self", "status": "Wound", "percent": 100, "permanent": true }
+        ]
+      },
+      // Passive: every basic attack restores 20/30/50 shield -- refilled up to (not beyond) the spawn amount (cap ASSUMED).
+      "onAttack": {
+        "id": 111, "name": "Soul Feast",
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": [20, 30, 50], "permanent": true, "cap": [800, 1200, 1800] }
+        ]
+      },
+      // Deals 120/180/280 physical damage and PERMANENTLY steals 15/20/30% of the target's attack damage and armor.
+      // (The gains are listed first: each reads the target's stats before the matching loss is applied.)
+      "ability": {
+        "id": 10, "name": "Soul Rend", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [120, 180, 280] },
+          { "type": "Status", "target": "Self", "status": "BonusAttackDamage", "permanent": true,
+            "value": { "terms": [ { "source": "CastTargetAttackDamage", "percent": [15, 20, 30] } ] } },
+          { "type": "Status", "target": "Self", "status": "BonusArmor", "permanent": true,
+            "value": { "terms": [ { "source": "CastTargetArmor", "percent": [15, 20, 30] } ] } },
+          { "type": "Status", "target": "CurrentTarget", "status": "BonusAttackDamage", "permanent": true,
+            "value": { "terms": [ { "source": "CastTargetAttackDamage", "percent": [-15, -20, -30] } ] } },
+          { "type": "Status", "target": "CurrentTarget", "status": "BonusArmor", "permanent": true,
+            "value": { "terms": [ { "source": "CastTargetArmor", "percent": [-15, -20, -30] } ] } }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- MYNA (4-cost support) [Selini]
+    {
+      "id": 9011, "name": "Myna", "cost": 4, "role": "Damage",
+      "traits": ["Selini"],
+      "stats": {
+        "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 30, "abilityDamage": [40, 60, 90],
+        "attackSpeed": 0.70, "range": 4, "maxMana": 80
+      },
+      // Heals the lowest-HP ally for 200/300/500 and deals 200/300/500 magic damage to the highest-HP enemy inside a zone
+      // around her target (zone radius ASSUMED 2). Flat numbers as written in the sheet; the AP stat is not used by them.
+      "ability": {
+        "id": 11, "name": "Lunar Blessing", "trigger": "Mana",
+        "castLockTicks": 15,                                                    // ASSUMED: 0.5 s cast animation
+        "effects": [
+          { "type": "Heal", "target": "LowestHpAlly", "amount": [200, 300, 500] },
+          { "type": "Damage", "target": { "mode": "HighestHpEnemyNearTarget", "radius": 2 },
+            "damageType": "Magic", "amount": [200, 300, 500] }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- VEGA (5-cost mage) [Najmi]
+    {
+      "id": 9012, "name": "Vega", "cost": 5, "role": "Damage",
+      "traits": ["Najmi"],
+      "stats": {
+        "hp": [850, 1530, 2754], "armor": 35, "magicResist": 35, "attackDamage": 40, "abilityDamage": [80, 120, 180],
+        "attackSpeed": 0.75, "range": 4, "maxMana": 100
+      },
+      // Channels for 4 s. Every 0.5 s (8 pulses) she hits a random enemy for 100/150/400 magic damage. If the channel is
+      // not interrupted (stun / knock-up / death), it ends with 500/800/2000 magic damage to the whole enemy board.
+      "ability": {
+        "id": 12, "name": "Starfall Channel", "trigger": "Mana", "channelSeconds": 4,
+        "effects": [
+          { "type": "Damage", "target": "RandomEnemy", "damageType": "Magic", "amount": [100, 150, 400],
+            "delaySeconds": 0.5, "repeat": { "count": 8, "everySeconds": 0.5 } },
+          { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 15, "includeCenter": false, "side": "Enemies" },
+            "damageType": "Magic", "amount": [500, 800, 2000], "delaySeconds": 4 }
+        ]
+      }
+    }
+
+  ]
+}

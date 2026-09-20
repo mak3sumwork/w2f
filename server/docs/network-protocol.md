@@ -1,0 +1,170 @@
+# Network protocol and server
+
+`build/w2f_server` hosts one lobby and one match at a time. Clients (Unreal Engine 5, a web page, a test script) connect over a
+**WebSocket** and exchange **JSON text messages**: one JSON object per WebSocket text frame, in both directions. There is no
+binary format, no floating point anywhere, and nothing a client sends can change the game except the commands below, each of which
+the engine validates again by itself.
+
+```
+w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--data DIR] [--seed N] [--autosave FILE] [--fast]
+```
+`--players 2..8` seats per match (default 8). `--seed` fixes every match's seed (default: random per match). `--data` is the folder with
+`champions.json`, `traits.json`, `items.json`, `pve.json`. `--autosave FILE` writes the engine's start-of-Planning snapshot there
+(atomically). `--fast` shortens every phase for client development. Ctrl-C / SIGTERM stop it cleanly (clients get close code 1001).
+
+## Architecture: the engine does not know the network exists
+```
+ client ──ws──▶ TcpServer ──▶ WebSocket codec ──▶ GameServer ──▶ MatchManager (engine)
+ client ◀──ws── TcpServer ◀── (frames) ◀──────── GameServer ◀── IMatchListener events
+   net/ (sockets, RFC 6455, JSON protocol, lobby)                    src/ + include/w2f/ (rules)
+```
+* **`src/` and `include/w2f/`** (the engine) contain no socket header and no reference to the network layer; `make check-isolation`
+  greps for it, and the engine's own tests (`make test-engine`) link *without* the network objects.
+* **`net/`** uses only the engine's public interface: `MatchManager::Try*` to act, `IMatchListener` to observe, const getters to read.
+* **`GameServer`** is the only code that talks to the engine and it never touches a socket: it is fed `OnConnect / OnMessage /
+  OnDisconnect` and answers through a two-method `IServerTransport`. So the entire protocol is tested without a network, and
+  `TestNetworkedMatchEqualsBareEngine` records every command a networked match executes, replays them on a bare `MatchManager`, and
+  requires the identical final state hash.
+* **`TcpServer`** is one thread and one `poll()` loop with non-blocking sockets. The game tick (30 Hz) runs on the same thread between
+  network reads, so a message is always handled entirely before or entirely after a tick. Wall-clock time is read only by the loop
+  that paces ticks (`RunServerLoop`); the engine never reads a clock.
+
+## Connecting
+`ws://host:7777/` (any path; plain `ws`, no TLS: put a TLS-terminating proxy in front for `wss`).
+* The server assigns the **lowest free seat** (`player_id` 0..N-1) the moment a client connects and answers with `welcome`.
+* When all seats are taken the **match starts by itself**.
+* A client that leaves the lobby frees its seat. A client that leaves during a match keeps its seat reserved.
+* Every new player gets a random **reconnect token** in `welcome`. Reconnect with `ws://host:7777/?token=<token>`: the client gets its
+  seat back plus a full resync (see below). A token is 32 lowercase hex characters; anything else is treated as "no token".
+  If the same token connects twice, the newer connection wins and the older one receives error `replaced` and close code 4001.
+* Once the match is running, connections without a valid token are refused (error `match_in_progress`, close code 1013).
+* After the match ends the server waits 20 s (players read the result), disconnects everyone with 1000, and opens a fresh lobby.
+
+## Client -> server
+Every command is an object with `"action"` and that action's fields, and optionally `"id"` (integer 0..2^53-1) which is copied into the
+answer. **Unknown actions, unknown fields, missing fields, wrong types, non-integers and out-of-range numbers are all refused** (see errors).
+A message is at most 4096 bytes.
+
+| action | fields | notes |
+|---|---|---|
+| `buy_unit` | `shop_index` 0..63 | Planning phase only (else `WrongPhase`) |
+| `reroll_shop` | | |
+| `buy_xp` | | |
+| `sell_unit` | `unit_id` | |
+| `move_unit` | `unit_id`, `location` `"bench"`\|`"board"`, `x`, `y` | bench: `x` 0..8 (`y` optional, must be 0); board: `x` 0..6, `y` 0..3 (3 = front row). Swaps with whatever is there |
+| `equip_item` | `unit_id`, `item_id` | the item comes from the player's item bag |
+| `unequip_item` | `unit_id`, `slot` 0..2 | back to the bag |
+| `get_state` | | re-send `state` and `public_state` |
+| `get_fight` | `fight_index` 0..7 | this round's combat log of any fight (they are public) |
+| `ping` | | answered with `pong`, works in the lobby too |
+
+Every command that reaches the engine is answered with a `result` (below). Commands are only ever executed for the connection's own
+seat: a player cannot name another player, and another player's unit id is simply `InvalidUnit` for them.
+
+### Example
+```json
+{"action": "buy_unit", "shop_index": 2, "id": 17}
+{"type": "result", "id": 17, "action": "buy_unit", "result": "Ok", "ok": true}
+```
+
+## Server -> client
+Each message has a `"type"`.
+
+### Sent to one player only (private)
+| type | when | fields |
+|---|---|---|
+| `welcome` | on connect | `protocol` (1), `player_id`, `token`, `reconnected`, `seats`, `connected`, `match_running` |
+| `result` | answer to a command | `id` (if given), `action`, `result`, `ok`. `result` is the engine's `ActionResult`: `Ok`, `WrongPhase`, `InvalidPlayer`, `PlayerEliminated`, `NotEnoughGold`, `InvalidSlot`, `EmptySlot`, `RosterFull`, `BoardFull`, `MaxLevel`, `InvalidUnit`, `ItemsFull`, `InvalidItem` |
+| `error` | a bad message | `code`, `detail`, `id` (if readable) |
+| `pong` | answer to `ping` | `id` |
+| `state` | whenever anything private changed | `player_id`, `alive`, `health`, `gold`, `level`, `xp`, `xp_to_next`, `streak`, `shop` (champion ids, 0 = empty), `bench` (9 entries: a unit or `null`), `board` (units), `item_bag` (item ids) |
+| `income` | start of every round | `player_id`, `round`, `base_gold`, `interest_gold`, `streak_gold`, `passive_xp`, `total_gold` |
+| `pve_drop` | won a PvE round | `drop` (`gold`\|`champion`\|`item`) and `gold` / `champion` / `item` |
+| `unit_event` | the player's own units changed | `event`: `bought`, `sold`, `moved`, `merged`, `item_equipped`, `item_unequipped`, `items_combined` (`first`, `second`, `result`: two items on the unit became one), plus the `unit` (as `{id, champion, star, location, x, y, items}`) and event-specific fields |
+
+A **unit** is `{"id", "champion", "star", "location": "bench"|"board", "x", "y", "items": [item ids]}`.
+
+### Sent to everyone (public: visible to every player anyway)
+| type | when | fields |
+|---|---|---|
+| `lobby` | someone joined / left before the match | `seats`, `connected`, `players` |
+| `match_started` | the match begins (and on reconnect) | `player_id`, `seats`, `tick_rate` (30), `phase_ticks`, `board` dimensions, `combat_event_types` (names, index = event type number) |
+| `phase` | every phase change (and on reconnect) | `phase` (`Draft`\|`Planning`\|`Combat`\|`Resolution`\|`MatchOver`), `round`, `stage`, `round_in_stage`, `pve`, `duration_ticks`, `ticks_remaining`, `server_tick`. Clients count the phase down themselves at 30 ticks/s |
+| `public_state` | whenever it changed | `round` and `players`: `player_id`, `alive`, `health`, `level`, `streak`, `placement`, **`board`** (units). Gold, XP, shop, bench and item bag are **not** in it |
+| `combat_summary` | a Combat phase begins | `round`, `fights`: `index`, `home`, `away` (`null` for monsters), `away_is_ghost`, `away_is_monsters`, `encounter`, `events` |
+| `player_damaged` | a PvP round resolved | `player_id`, `damage`, `health` |
+| `player_eliminated` | | `player_id`, `placement` |
+| `match_over` | the match ended | `winner`, `placements` (per seat) |
+
+### Combat logs
+The `combat` message carries a whole fight, ready to play back: the client just replays the events at their ticks (tick 0 = start of
+the Combat phase) and simulates nothing. It is sent to the players *in* that fight (both sides of a PvP fight; the home player of a PvE
+or ghost fight); anyone can fetch any fight with `get_fight`, and a reconnecting player gets theirs again.
+
+```
+{"type": "combat", "round": 5, "fight_index": 1, "home": 3, "away": 6, "away_is_ghost": false, "away_is_monsters": false, "encounter": 0,
+ "winner": "home"|"away"|"draw", "winner_survivors": 4, "end_tick": 812, "survivors": [4, 0], "checksum": "1f2e...16 hex digits",
+ "columns": ["tick", "type", "team", "unit", "other", "from_x", "from_y", "to_x", "to_y", "amount", "hp_after", "champion", "star",
+             "absorbed", "subtype", "flags", "ability", "duration", "mana_max", "mana_regen", "reduced", "trait_id"],
+ "events": [[0, 0, 0, 16777217, 0, 0, 0, 3, 5, 500, 500, 9008, 1, 0, 0, 0, 0, 0, 60000, 0, 0, 0], ...]}
+```
+Each event is an array in the order of `columns`; `type` indexes `combat_event_types` in `match_started` (`Spawn, Move, Attack, Damage, Death,
+SpellCast, ShieldApplied, ShieldEnded, StatusApplied, StatusEnded, ManaChanged, Heal, TraitActivated, Teleport, SpellInterrupted`), and which
+columns each type uses is documented in `include/w2f/Combat.h`. `checksum` is the engine's 64-bit FNV-1a over the events (hex, because 64
+bits do not fit a JSON number): a client can recompute it to verify the stream arrived intact. Damage and eliminations are *not* in the log:
+they arrive as `player_damaged` / `player_eliminated` when the round resolves.
+
+### Who gets what (privacy)
+| | owner | other players |
+|---|---|---|
+| gold, XP, shop offer, bench, item bag, income, PvE drops, own unit events | yes | **never** |
+| board (units, positions, items), health, level, streak, alive / placement | yes | yes |
+| phase, damage, eliminations, combat summary, combat logs, results | yes | yes |
+
+This is enforced where the messages are built: private messages are queued *for a seat* and cannot reach another connection, and `public_state`
+is generated without the private fields. `TestPrivacyAndDelivery` audits every message every client receives across a whole match.
+
+### Errors
+`error` messages carry a stable `code`:
+
+| code | meaning |
+|---|---|
+| `invalid_json`, `not_an_object`, `missing_action`, `unknown_action`, `missing_field`, `unknown_field`, `wrong_type`, `out_of_range`, `too_large` | the message failed validation; nothing reached the game |
+| `not_in_match` | a game command before the match started |
+| `no_such_fight` | `get_fight` for a fight that does not exist this round |
+| `rate_limited` | too many messages (a bucket of 30, refilling 15/s; `get_state` costs 3, `get_fight` 5) |
+| `too_many_violations` | 50 errors on one connection: it is disconnected (close 1008) |
+| `match_in_progress`, `match_finished` | connection refused (close 1013) |
+| `replaced` | a newer connection took this seat (close 4001) |
+
+An error never closes the connection by itself (except `too_many_violations`).
+
+### Reconnecting
+Connect with `?token=...`. The server sends, in this order: `welcome` (`reconnected: true`), `match_started`, `phase` (with the real `ticks_remaining`),
+`state`, `public_state`, and during Combat / Resolution `combat_summary` and the player's own `combat`. That is everything needed to redraw the game as it is now.
+
+## WebSocket details and limits
+RFC 6455, server side, no extensions or subprotocols. Client frames must be masked, text only (binary is refused), messages at most 8 KiB, fragmentation allowed.
+The handshake must arrive within 5 s, at most 8 KiB. The server pings every 15 s; a connection silent for 60 s is dropped; a client that stops reading (more than 16 MiB queued for it) is dropped;
+at most 64 sockets are open at once. Protocol violations are answered with the RFC's close code: 1002 protocol error, 1003 binary, 1007 bad UTF-8, 1009 too large, 1008 policy.
+
+| close code | why |
+|---|---|
+| 1000 | normal: match over, lobby reset |
+| 1001 | server shutting down |
+| 1002 / 1003 / 1007 / 1009 | malformed WebSocket traffic |
+| 1008 | policy: too many violations, idle timeout, too slow to read |
+| 1013 | try again later: match in progress |
+| 4001 | replaced by a newer connection with the same token |
+
+## Not built yet (deliberately)
+* **Restoring after a server crash.** The server can write the engine's Planning-start snapshot (`--autosave`), but does not yet read one back on start-up. Doing so also needs the seat tokens persisted.
+* **TLS.** Terminate it in a proxy.
+* **A catalogue message.** Clients are expected to have the champion / item data (they only ever see ids). A `catalog` message is easy to add when the designer's data settles.
+* **Windows.** The socket layer has a Winsock branch that has never been compiled or run; Linux and macOS are tested.
+* **Several matches at once.** One process hosts one lobby / match; run several processes on different ports.
+
+## Testing
+`make test-net` (`net/tests/net_tests.cpp`): the encoders against RFC vectors; the handshake and frame parser against the RFC's own examples and ~30 malformed cases each, plus fuzzing;
+command validation with ~90 cases and 20,000 mutated messages; the lobby, reconnect, routing, privacy and rate limiting over a fake transport; a whole 3-player match audited message by message;
+the networked-match-equals-bare-engine replay; and real loopback sockets for handshakes, close codes, fragmentation, abrupt disconnects, timeouts, the connection cap, slow readers and the production loop on a thread.

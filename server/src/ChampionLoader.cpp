@@ -1,0 +1,1187 @@
+#include "w2f/ChampionLoader.h"
+
+#include <fstream>
+#include <sstream>
+
+#include "w2f/Json.h"
+#include "w2f/Item.h"
+#include "w2f/Pve.h"
+#include "w2f/Trait.h"
+
+namespace w2f {
+
+namespace {
+
+using json::Value;
+
+template <typename E>
+struct EnumName {
+    const char* name;
+    E value;
+};
+
+constexpr EnumName<ChampionRole> kRoles[] = {{"Tank", ChampionRole::Tank}, {"Damage", ChampionRole::Damage}};
+constexpr EnumName<DamageType> kDamageTypes[] = {
+    {"Physical", DamageType::Physical}, {"Magic", DamageType::Magic}, {"True", DamageType::True}};
+// Burn is deliberately absent: it can only come from a DoT effect.
+constexpr EnumName<StatusType> kStatusTypes[] = {
+    {"Stun", StatusType::Stun},         {"AttackDamage", StatusType::AttackDamage},
+    {"AttackSpeed", StatusType::AttackSpeed}, {"Armor", StatusType::Armor},
+    {"MagicResist", StatusType::MagicResist}, {"MaxHp", StatusType::MaxHp},
+    {"Wound", StatusType::Wound},       {"InflictsWound", StatusType::InflictsWound},
+    {"DamageAmp", StatusType::DamageAmp}, {"Root", StatusType::Root},
+    {"Knockup", StatusType::Knockup},   {"CcImmunity", StatusType::CcImmunity},
+    {"DamageTakenRegen", StatusType::DamageTakenRegen}, {"BonusAttackDamage", StatusType::BonusAttackDamage},
+    {"Tether", StatusType::Tether}, {"Untargetable", StatusType::Untargetable}, {"AggroDrop", StatusType::AggroDrop},
+    {"BonusArmor", StatusType::BonusArmor}, {"BonusMagicResist", StatusType::BonusMagicResist}, {"BonusMaxHp", StatusType::BonusMaxHp},
+    {"BonusAbilityDamage", StatusType::BonusAbilityDamage}, {"BonusCritChance", StatusType::BonusCritChance},
+    {"AbilityCrit", StatusType::AbilityCrit}, {"CritDamage", StatusType::CritDamage}, {"CritDamageTakenReduction", StatusType::CritDamageTakenReduction},
+    {"BonusManaRegen", StatusType::BonusManaRegen}, {"AbilityPower", StatusType::AbilityPower}, {"SpellShield", StatusType::SpellShield}};
+constexpr EnumName<StatSource> kSources[] = {
+    {"SelfMaxHp", StatSource::SelfMaxHp},
+    {"SelfCurrentHp", StatSource::SelfCurrentHp},
+    {"SelfAttackDamage", StatSource::SelfAttackDamage},
+    {"SelfAbilityDamage", StatSource::SelfAbilityDamage},
+    {"SelfArmor", StatSource::SelfArmor},
+    {"SelfMagicResist", StatSource::SelfMagicResist},
+    {"DamageDealtToTargetInWindow", StatSource::DamageDealtToTargetInWindow},
+    {"CastTargetAttackDamage", StatSource::CastTargetAttackDamage},
+    {"CastTargetArmor", StatSource::CastTargetArmor},
+    {"TriggerDamage", StatSource::TriggerDamage},
+    {"HighestAllyMaxHp", StatSource::HighestAllyMaxHp},
+    {"TargetMaxHp", StatSource::TargetMaxHp},
+    {"TargetCurrentHp", StatSource::TargetCurrentHp},
+    {"DamageDealtInWindow", StatSource::DamageDealtInWindow},
+    {"RawDamageDealtToTarget", StatSource::RawDamageDealtToTarget}};
+constexpr EnumName<TargetMode> kTargetModes[] = {{"Self", TargetMode::Self},
+                                                 {"CurrentTarget", TargetMode::CurrentTarget},
+                                                 {"AreaAroundTarget", TargetMode::AreaAroundTarget},
+                                                 {"AreaAroundSelf", TargetMode::AreaAroundSelf},
+                                                 {"ClosestEnemies", TargetMode::ClosestEnemies},
+                                                 {"LineBehindTarget", TargetMode::LineBehindTarget},
+                                                 {"AlliesInStartLine", TargetMode::AlliesInStartLine},
+                                                 {"HighestDamageAlly", TargetMode::HighestDamageAlly},
+                                                 {"LowestHpAlly", TargetMode::LowestHpAlly},
+                                                 {"HighestHpEnemyNearTarget", TargetMode::HighestHpEnemyNearTarget},
+                                                 {"RandomEnemy", TargetMode::RandomEnemy},
+                                                 {"ConeTowardTarget", TargetMode::ConeTowardTarget},
+                                                 {"TriggerAttacker", TargetMode::TriggerAttacker},
+                                                 {"TriggerVictim", TargetMode::TriggerVictim}};
+constexpr EnumName<TeleportDestination> kDestinations[] = {{"BehindFarthestEnemy", TeleportDestination::BehindFarthestEnemy},
+                                                           {"BehindClosestEnemy", TeleportDestination::BehindClosestEnemy}};
+constexpr EnumName<PveDropType> kDropTypes[] = {{"Gold", PveDropType::Gold}, {"Champion", PveDropType::Champion}, {"Item", PveDropType::Item}};
+constexpr EnumName<TraitScope> kScopes[] = {{"AllAllies", TraitScope::AllAllies}, {"TraitHolders", TraitScope::TraitHolders}, {"Team", TraitScope::Team}};
+constexpr EnumName<DamageFilter> kDamageFilters[] = {{"Any", DamageFilter::Any}, {"Basic", DamageFilter::Basic}, {"Ability", DamageFilter::Ability}};
+constexpr EnumName<TargetSide> kSides[] = {{"Enemies", TargetSide::Enemies}, {"Allies", TargetSide::Allies}, {"All", TargetSide::All}};
+constexpr EnumName<CastTrigger> kTriggers[] = {{"Mana", CastTrigger::Mana},
+                                               {"EveryNthAttack", CastTrigger::EveryNthAttack},
+                                               {"StartOfCombat", CastTrigger::StartOfCombat},
+                                               {"Passive", CastTrigger::StartOfCombat},  // alias
+                                               {"OnBasicAttack", CastTrigger::OnBasicAttack},
+                                               {"OnCast", CastTrigger::OnCast},
+                                               {"OnTakeBasicAttackDamage", CastTrigger::OnTakeBasicAttackDamage},
+                                               {"OnTakeAbilityDamage", CastTrigger::OnTakeAbilityDamage},
+                                               {"OnDealDamage", CastTrigger::OnDealDamage},
+                                               {"OnCritTaken", CastTrigger::OnCritTaken},
+                                               {"OnHpDropBelowPercent", CastTrigger::OnHpDropBelowPercent},
+                                               {"OnAllyDealDamage", CastTrigger::OnAllyDealDamage}};
+
+constexpr long long kMaxStat = 10'000'000;
+constexpr long long kMaxTicks = 1'000'000;
+constexpr long long kMinPercent = -10'000;
+constexpr long long kMaxPercent = 1'000'000;
+
+class Loader {
+public:
+    bool Run(std::string_view text, std::vector<ChampionDefinition>& out, std::string* error) {
+        Value root;
+        std::string parseError;
+        if (!json::Parse(text, root, &parseError)) return Finish(false, parseError, error);
+
+        Obj top;
+        if (!Open(root, "$", top)) return Finish(false, "", error);
+        const Value* version = Take(top, "version");
+        const Value* champions = Take(top, "champions");
+        if (version == nullptr) { Missing(top, "version"); return Finish(false, "", error); }
+        long long v = 0;
+        if (!version->ToInt(v) || v != 1) { Fail("$.version", *version, "unsupported format version (this loader reads version 1)"); return Finish(false, "", error); }
+        if (champions == nullptr) { Missing(top, "champions"); return Finish(false, "", error); }
+        if (!RejectUnknown(top) || !champions->IsArray()) {
+            if (champions->IsArray() == false) Fail("$.champions", *champions, std::string("expected an array, found ") + Value::TypeName(champions->type()));
+            return Finish(false, "", error);
+        }
+
+        std::vector<ChampionDefinition> parsed;
+        for (std::size_t i = 0; i < champions->Items().size(); ++i) {
+            ChampionDefinition def;
+            if (!ReadChampion(champions->Items()[i], "champions[" + std::to_string(i) + "]", def)) return Finish(false, "", error);
+            parsed.push_back(std::move(def));
+        }
+        out = std::move(parsed);
+        return Finish(true, "", error);
+    }
+
+    bool RunItems(std::string_view text, std::vector<ItemDefinition>& out, std::string* error) {
+        Value root;
+        std::string parseError;
+        if (!json::Parse(text, root, &parseError)) return Finish(false, parseError, error);
+        Obj top;
+        if (!Open(root, "$", top)) return Finish(false, "", error);
+        const Value* version = Take(top, "version");
+        const Value* items = Take(top, "items");
+        if (version == nullptr) { Missing(top, "version"); return Finish(false, "", error); }
+        long long v = 0;
+        if (!version->ToInt(v) || v != 1) { Fail("$.version", *version, "unsupported format version (this loader reads version 1)"); return Finish(false, "", error); }
+        if (items == nullptr) { Missing(top, "items"); return Finish(false, "", error); }
+        if (!RejectUnknown(top)) return Finish(false, "", error);
+        if (!items->IsArray()) { Fail("$.items", *items, std::string("expected an array, found ") + Value::TypeName(items->type())); return Finish(false, "", error); }
+        std::vector<ItemDefinition> parsed;
+        for (std::size_t i = 0; i < items->Items().size(); ++i) {
+            ItemDefinition def;
+            if (!ReadItem(items->Items()[i], "items[" + std::to_string(i) + "]", def)) return Finish(false, "", error);
+            parsed.push_back(std::move(def));
+        }
+        out = std::move(parsed);
+        return Finish(true, "", error);
+    }
+
+    bool RunPve(std::string_view text, PveFile& out, std::string* error) {
+        Value root;
+        std::string parseError;
+        if (!json::Parse(text, root, &parseError)) return Finish(false, parseError, error);
+        Obj top;
+        if (!Open(root, "$", top)) return Finish(false, "", error);
+        const Value* version = Take(top, "version");
+        const Value* monsters = Take(top, "monsters");
+        const Value* encounters = Take(top, "encounters");
+        const Value* defaultDrops = Take(top, "defaultDrops");
+        if (version == nullptr) { Missing(top, "version"); return Finish(false, "", error); }
+        long long v = 0;
+        if (!version->ToInt(v) || v != 1) { Fail("$.version", *version, "unsupported format version (this loader reads version 1)"); return Finish(false, "", error); }
+        if (monsters == nullptr) { Missing(top, "monsters"); return Finish(false, "", error); }
+        if (encounters == nullptr) { Missing(top, "encounters"); return Finish(false, "", error); }
+        if (!RejectUnknown(top)) return Finish(false, "", error);
+        for (const auto& [key, value] : {std::pair<const char*, const Value*>{"monsters", monsters}, {"encounters", encounters}}) {
+            if (!value->IsArray()) { Fail(std::string("$.") + key, *value, std::string("expected an array, found ") + Value::TypeName(value->type())); return Finish(false, "", error); }
+        }
+
+        PveFile parsed;
+        monsterMode_ = true;   // a monster needs no shop cost
+        for (std::size_t i = 0; i < monsters->Items().size(); ++i) {
+            ChampionDefinition def;
+            if (!ReadChampion(monsters->Items()[i], "monsters[" + std::to_string(i) + "]", def)) { monsterMode_ = false; return Finish(false, "", error); }
+            parsed.monsters.push_back(std::move(def));
+        }
+        monsterMode_ = false;
+        if (defaultDrops && !ReadDrops(*defaultDrops, "$.defaultDrops", parsed.defaultDrops)) return Finish(false, "", error);
+        for (std::size_t i = 0; i < encounters->Items().size(); ++i) {
+            EncounterDefinition def;
+            if (!ReadEncounter(encounters->Items()[i], "encounters[" + std::to_string(i) + "]", def)) return Finish(false, "", error);
+            parsed.encounters.push_back(std::move(def));
+        }
+        out = std::move(parsed);
+        return Finish(true, "", error);
+    }
+
+    bool RunTraits(std::string_view text, std::vector<TraitDefinition>& out, std::string* error) {
+        Value root;
+        std::string parseError;
+        if (!json::Parse(text, root, &parseError)) return Finish(false, parseError, error);
+        Obj top;
+        if (!Open(root, "$", top)) return Finish(false, "", error);
+        const Value* version = Take(top, "version");
+        const Value* traits = Take(top, "traits");
+        if (version == nullptr) { Missing(top, "version"); return Finish(false, "", error); }
+        long long v = 0;
+        if (!version->ToInt(v) || v != 1) { Fail("$.version", *version, "unsupported format version (this loader reads version 1)"); return Finish(false, "", error); }
+        if (traits == nullptr) { Missing(top, "traits"); return Finish(false, "", error); }
+        if (!RejectUnknown(top)) return Finish(false, "", error);
+        if (!traits->IsArray()) { Fail("$.traits", *traits, std::string("expected an array, found ") + Value::TypeName(traits->type())); return Finish(false, "", error); }
+        std::vector<TraitDefinition> parsed;
+        for (std::size_t i = 0; i < traits->Items().size(); ++i) {
+            TraitDefinition def;
+            if (!ReadTrait(traits->Items()[i], "traits[" + std::to_string(i) + "]", def)) return Finish(false, "", error);
+            parsed.push_back(std::move(def));
+        }
+        out = std::move(parsed);
+        return Finish(true, "", error);
+    }
+
+private:
+    struct Obj {
+        const Value* value = nullptr;
+        std::string path;
+        std::vector<std::string> known;
+    };
+
+    bool Finish(bool ok, const std::string& message, std::string* error) {
+        if (!ok && error) *error = message.empty() ? error_ : message;
+        return ok;
+    }
+
+    // ---- errors ----
+    bool Fail(const std::string& path, const Value& at, const std::string& message) {
+        if (error_.empty()) {
+            error_ = path + " (line " + std::to_string(at.line()) + ", column " + std::to_string(at.column()) + "): " + message;
+        }
+        return false;
+    }
+    bool Missing(const Obj& o, const std::string& key) {
+        return Fail(o.path, *o.value, "missing required key \"" + key + "\"");
+    }
+
+    // ---- objects ----
+    bool Open(const Value& v, const std::string& path, Obj& out) {
+        if (!v.IsObject()) return Fail(path, v, std::string("expected an object, found ") + Value::TypeName(v.type()));
+        out.value = &v;
+        out.path = path;
+        out.known.clear();
+        return true;
+    }
+    const Value* Take(Obj& o, const std::string& key) {
+        o.known.push_back(key);
+        return o.value->Find(key);
+    }
+    bool RejectUnknown(const Obj& o) {
+        for (std::size_t i = 0; i < o.value->MemberCount(); ++i) {
+            const std::string& key = o.value->MemberKey(i);
+            bool known = false;
+            for (const std::string& k : o.known) known = known || k == key;
+            if (!known) {
+                std::string allowed;
+                for (const std::string& k : o.known) allowed += (allowed.empty() ? "" : ", ") + k;
+                return Fail(o.path + "." + key, o.value->MemberValue(i), "unknown key \"" + key + "\" (allowed here: " + allowed + ")");
+            }
+        }
+        return true;
+    }
+    bool Require(Obj& o, const std::string& key, const Value*& out) {
+        out = Take(o, key);
+        return out != nullptr || Missing(o, key);
+    }
+
+    // ---- scalars ----
+    bool ReadInt(const Value& v, const std::string& path, long long lo, long long hi, int& out) {
+        long long n = 0;
+        if (!v.IsNumber()) return Fail(path, v, std::string("expected a number, found ") + Value::TypeName(v.type()));
+        if (!v.ToInt(n)) return Fail(path, v, "expected a whole number");
+        if (n < lo || n > hi) return Fail(path, v, "value " + std::to_string(n) + " is out of range [" + std::to_string(lo) + ", " + std::to_string(hi) + "]");
+        out = static_cast<int>(n);
+        return true;
+    }
+    bool ReadBool(const Value& v, const std::string& path, bool& out) {
+        if (!v.IsBool()) return Fail(path, v, std::string("expected true or false, found ") + Value::TypeName(v.type()));
+        out = v.AsBool();
+        return true;
+    }
+    bool ReadString(const Value& v, const std::string& path, std::string& out) {
+        if (!v.IsString()) return Fail(path, v, std::string("expected a string, found ") + Value::TypeName(v.type()));
+        out = v.AsString();
+        return true;
+    }
+    // A decimal with at most 3 decimals, returned in thousandths (0.78 -> 780).
+    bool ReadMilli(const Value& v, const std::string& path, long long lo, long long hi, int& out) {
+        long long n = 0;
+        if (!v.IsNumber()) return Fail(path, v, std::string("expected a number, found ") + Value::TypeName(v.type()));
+        if (!v.ToScaled(3, n)) return Fail(path, v, "expected at most 3 decimal places");
+        if (n < lo || n > hi) return Fail(path, v, "value is out of range");
+        out = static_cast<int>(n);
+        return true;
+    }
+    bool ReadSecondsAsTicks(const Value& v, const std::string& path, int& out) {
+        long long n = 0;
+        if (!v.IsNumber()) return Fail(path, v, std::string("expected a number of seconds, found ") + Value::TypeName(v.type()));
+        if (!v.ToTicks(kTicksPerSecond, n) || n > kMaxTicks) return Fail(path, v, "expected a non-negative number of seconds (not too large)");
+        out = static_cast<int>(n);
+        return true;
+    }
+    template <typename E, std::size_t N>
+    bool ReadEnum(const Value& v, const std::string& path, const EnumName<E> (&table)[N], E& out) {
+        if (!v.IsString()) return Fail(path, v, std::string("expected a string, found ") + Value::TypeName(v.type()));
+        for (const auto& entry : table) {
+            if (v.AsString() == entry.name) { out = entry.value; return true; }
+        }
+        std::string expected;
+        for (const auto& entry : table) expected += (expected.empty() ? "" : ", ") + std::string(entry.name);
+        return Fail(path, v, "unknown value \"" + v.AsString() + "\"; expected one of: " + expected);
+    }
+
+    // ---- per-star values: one number (all three stars) or an array of exactly three ----
+    template <typename ReadOne>
+    bool ReadStar(const Value& v, const std::string& path, StarValue& out, ReadOne readOne) {
+        if (v.IsArray()) {
+            if (v.Items().size() != static_cast<std::size_t>(kMaxStarLevel)) {
+                return Fail(path, v, "expected exactly " + std::to_string(kMaxStarLevel) + " values (one per star level), found " + std::to_string(v.Items().size()));
+            }
+            for (std::size_t i = 0; i < out.size(); ++i) {
+                if (!readOne(v.Items()[i], path + "[" + std::to_string(i) + "]", out[i])) return false;
+            }
+            return true;
+        }
+        int single = 0;
+        if (!readOne(v, path, single)) return false;
+        out = Same(single);
+        return true;
+    }
+    bool ReadStarInts(const Value& v, const std::string& path, long long lo, long long hi, StarValue& out) {
+        return ReadStar(v, path, out, [&](const Value& item, const std::string& p, int& o) { return ReadInt(item, p, lo, hi, o); });
+    }
+    bool ReadStarSeconds(const Value& v, const std::string& path, StarValue& out) {
+        return ReadStar(v, path, out, [&](const Value& item, const std::string& p, int& o) { return ReadSecondsAsTicks(item, p, o); });
+    }
+
+    // <base>Ticks or <base>Seconds (per star). Sets `found` if either is present.
+    bool ReadStarTime(Obj& o, const std::string& base, StarValue& out, bool& found) {
+        const Value* ticks = Take(o, base + "Ticks");
+        const Value* seconds = Take(o, base + "Seconds");
+        found = ticks != nullptr || seconds != nullptr;
+        if (ticks && seconds) return Fail(o.path, *o.value, "give either \"" + base + "Ticks\" or \"" + base + "Seconds\", not both");
+        if (ticks) return ReadStarInts(*ticks, o.path + "." + base + "Ticks", 0, kMaxTicks, out);
+        if (seconds) return ReadStarSeconds(*seconds, o.path + "." + base + "Seconds", out);
+        return true;
+    }
+    // Same, but a single value (not per star).
+    bool ReadScalarTime(Obj& o, const std::string& base, int& out, bool& found) {
+        const Value* ticks = Take(o, base + "Ticks");
+        const Value* seconds = Take(o, base + "Seconds");
+        found = ticks != nullptr || seconds != nullptr;
+        if (ticks && seconds) return Fail(o.path, *o.value, "give either \"" + base + "Ticks\" or \"" + base + "Seconds\", not both");
+        if (ticks) return ReadInt(*ticks, o.path + "." + base + "Ticks", 0, kMaxTicks, out);
+        if (seconds) return ReadSecondsAsTicks(*seconds, o.path + "." + base + "Seconds", out);
+        return true;
+    }
+
+    // ---- formulas ----
+    bool ReadAmount(const Value& v, const std::string& path, Amount& out) {
+        out = Amount{};
+        if (v.IsNumber() || v.IsArray()) return ReadStarInts(v, path, -kMaxStat, kMaxStat, out.flat);  // shorthand: just a flat value
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* flat = Take(o, "flat");
+        const Value* flatSeconds = Take(o, "flatSeconds");
+        const Value* terms = Take(o, "terms");
+        if (!RejectUnknown(o)) return false;
+        if (flat && flatSeconds) return Fail(path, v, "give either \"flat\" or \"flatSeconds\", not both");
+        if (flat && !ReadStarInts(*flat, path + ".flat", -kMaxStat, kMaxStat, out.flat)) return false;
+        if (flatSeconds && !ReadStarSeconds(*flatSeconds, path + ".flatSeconds", out.flat)) return false;
+        if (terms) {
+            if (!terms->IsArray()) return Fail(path + ".terms", *terms, std::string("expected an array, found ") + Value::TypeName(terms->type()));
+            for (std::size_t i = 0; i < terms->Items().size(); ++i) {
+                ScalingTerm term;
+                if (!ReadTerm(terms->Items()[i], path + ".terms[" + std::to_string(i) + "]", term)) return false;
+                out.terms.push_back(term);
+            }
+        }
+        if (!flat && !flatSeconds && !terms) return Fail(path, v, "an amount needs \"flat\", \"flatSeconds\" and/or \"terms\"");
+        return true;
+    }
+
+    bool ReadTerm(const Value& v, const std::string& path, ScalingTerm& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* source = nullptr;
+        const Value* percent = nullptr;
+        if (!Require(o, "source", source)) return false;
+        const Value* permille = Take(o, "permille");   // "percent" in thousandths: 5 = 0.5%
+        if (permille && o.value->Find("percent") != nullptr) return Fail(path, v, "give either \"percent\" or \"permille\", not both");
+        if (permille) percent = permille;
+        else if (!Require(o, "percent", percent)) return false;
+        int window = 0;
+        bool haveWindow = false;
+        if (!ReadScalarTime(o, "window", window, haveWindow)) return false;
+        if (!RejectUnknown(o)) return false;
+        if (!ReadEnum(*source, path + ".source", kSources, out.source)) return false;
+        if (!ReadStarInts(*percent, path + (permille ? ".permille" : ".percent"), kMinPercent * (permille ? 10 : 1), kMaxPercent * (permille ? 10 : 1), out.percent)) return false;
+        if (permille) out.divisor = 1000;
+        out.windowTicks = window;
+        const bool windowed = out.source == StatSource::DamageDealtInWindow || out.source == StatSource::DamageDealtToTargetInWindow;
+        if (windowed && !haveWindow) {
+            return Fail(path, v, "a windowed source needs \"windowSeconds\" or \"windowTicks\"");
+        }
+        if (!windowed && haveWindow) {
+            return Fail(path, v, "a window only applies to DamageDealtInWindow / DamageDealtToTargetInWindow");
+        }
+        return true;
+    }
+
+    bool ReadTarget(const Value& v, const std::string& path, TargetSpec& out) {
+        out = TargetSpec{};
+        if (v.IsString()) {  // shorthand for the modes that take no options
+            if (!ReadEnum(v, path, kTargetModes, out.mode)) return false;
+            switch (out.mode) {
+                case TargetMode::Self: out = TargetSpec::Self(); return true;
+                case TargetMode::CurrentTarget: return true;
+                case TargetMode::AlliesInStartLine: out = TargetSpec::StartLine(); return true;
+                case TargetMode::LowestHpAlly: out = TargetSpec::LowestHpAlly(); return true;
+                case TargetMode::RandomEnemy: out = TargetSpec::RandomEnemy(); return true;
+                case TargetMode::HighestDamageAlly: out = TargetSpec::HighestDamageAlly(); return true;
+                case TargetMode::TriggerAttacker: out = TargetSpec::TriggerAttacker(); return true;
+                case TargetMode::TriggerVictim: out = TargetSpec::TriggerVictim(); return true;
+                default: break;
+            }
+            return Fail(path, v, "this target needs the long form, e.g. {\"mode\": \"AreaAroundTarget\", \"radius\": 3}");
+        }
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* mode = nullptr;
+        if (!Require(o, "mode", mode)) return false;
+        const Value* radius = Take(o, "radius");
+        const Value* includeCenter = Take(o, "includeCenter");
+        const Value* side = Take(o, "side");
+        const Value* count = Take(o, "count");
+        const Value* length = Take(o, "length");
+        int window = 0;
+        bool haveWindow = false;
+        if (!ReadScalarTime(o, "window", window, haveWindow)) return false;
+        if (!RejectUnknown(o) || !ReadEnum(*mode, path + ".mode", kTargetModes, out.mode)) return false;
+        const bool area = out.mode == TargetMode::AreaAroundTarget || out.mode == TargetMode::AreaAroundSelf;
+        const bool zone = area || out.mode == TargetMode::HighestHpEnemyNearTarget;
+        switch (out.mode) {
+            case TargetMode::Self: out.side = TargetSide::All; break;
+            case TargetMode::AlliesInStartLine:
+            case TargetMode::HighestDamageAlly:
+            case TargetMode::LowestHpAlly: out.side = TargetSide::Allies; break;
+            default: out.side = TargetSide::Enemies; break;
+        }
+        if (zone && !radius) return Missing(o, "radius");
+        if (!zone && radius) return Fail(path, v, "\"radius\" only applies to the Area modes and HighestHpEnemyNearTarget");
+        if (includeCenter && !area) return Fail(path, v, "\"includeCenter\" only applies to the Area modes");
+        if (out.mode == TargetMode::ClosestEnemies) {
+            if (!count) return Missing(o, "count");
+        } else if (count) {
+            return Fail(path, v, "\"count\" only applies to ClosestEnemies");
+        }
+        const bool lineLike = out.mode == TargetMode::LineBehindTarget || out.mode == TargetMode::ConeTowardTarget;
+        if (lineLike) {
+            if (!length) return Missing(o, "length");
+        } else if (length) {
+            return Fail(path, v, "\"length\" only applies to LineBehindTarget and ConeTowardTarget");
+        }
+        if (haveWindow && out.mode != TargetMode::HighestDamageAlly) return Fail(path, v, "a window only applies to HighestDamageAlly");
+        if (radius && !ReadInt(*radius, path + ".radius", 0, 32, out.radius)) return false;
+        if (includeCenter && !ReadBool(*includeCenter, path + ".includeCenter", out.includeCenter)) return false;
+        if (count && !ReadInt(*count, path + ".count", 1, 16, out.count)) return false;
+        if (length && !ReadInt(*length, path + ".length", 1, 16, out.radius)) return false;
+        if (side && !ReadEnum(*side, path + ".side", kSides, out.side)) return false;
+        out.windowTicks = window;
+        return true;
+    }
+
+    // The keys of a StatusEffect, shared by "Status" effects and "onKill" entries. Takes what it needs from `o` and
+    // rejects anything else in it.
+    bool ReadStatusBody(Obj& o, const Value& v, const std::string& path, StatusEffect& s) {
+        const Value* status = nullptr;
+        if (!Require(o, "status", status)) return false;
+        const Value* percent = Take(o, "percent");
+        const Value* value = Take(o, "value");
+        const Value* multiplier = Take(o, "multiplierPercent");
+        const Value* permanent = Take(o, "permanent");
+        const Value* stacking = Take(o, "stacking");
+        // Duration is optional only for permanent statuses.
+        const Value* formula = Take(o, "duration");
+        StarValue flat{};
+        bool haveFlat = false;
+        if (!ReadStarTime(o, "duration", flat, haveFlat) || !RejectUnknown(o)) return false;
+        if (!ReadEnum(*status, path + ".status", kStatusTypes, s.status)) return false;
+        if (permanent && !ReadBool(*permanent, path + ".permanent", s.permanent)) return false;
+        if (stacking) {
+            if (!stacking->IsString() || (stacking->AsString() != "add" && stacking->AsString() != "refresh")) {
+                return Fail(path + ".stacking", *stacking, "expected \"add\" (the default: same-type statuses add up) or \"refresh\"");
+            }
+            s.refreshes = stacking->AsString() == "refresh";
+        }
+        if (s.permanent) {
+            if (formula || haveFlat) return Fail(path, v, "a permanent status has no duration");
+        } else {
+            if (formula && haveFlat) return Fail(path, v, "give one of \"duration\", \"durationTicks\", \"durationSeconds\"");
+            if (!formula && !haveFlat) return Missing(o, "duration (or durationTicks / durationSeconds), or \"permanent\": true");
+            if (formula) {
+                if (!ReadAmount(*formula, path + ".duration", s.duration)) return false;
+            } else {
+                s.duration = FlatAmount(flat);
+            }
+        }
+        if (percent && !ReadStarInts(*percent, path + ".percent", kMinPercent, kMaxPercent, s.percent)) return false;
+        const bool durationOnly = s.status == StatusType::Stun || s.status == StatusType::Root || s.status == StatusType::Knockup ||
+                                  s.status == StatusType::CcImmunity || s.status == StatusType::Untargetable || s.status == StatusType::AggroDrop ||
+                                  s.status == StatusType::AbilityCrit || s.status == StatusType::SpellShield;
+        if (IsFlatBonusStatus(s.status)) {
+            if (!value) return Missing(o, "value");
+            if (percent) return Fail(path, v, "a flat bonus status takes a \"value\" formula, not \"percent\"");
+            if (!ReadAmount(*value, path + ".value", s.value)) return false;
+        } else {
+            if (value) return Fail(path, v, "\"value\" only applies to the flat bonus statuses (BonusAttackDamage, BonusArmor, ...)");
+            if (!percent && !durationOnly) return Missing(o, "percent");
+        }
+        if (multiplier && !ReadInt(*multiplier, path + ".multiplierPercent", 0, kMaxPercent, s.multiplierPercent)) return false;
+        return true;
+    }
+
+    // "duration" (a formula), "durationTicks" or "durationSeconds" (flat, per star): exactly one.
+    bool ReadDuration(Obj& o, Amount& out) {
+        const Value* formula = Take(o, "duration");
+        StarValue flat{};
+        bool haveFlat = false;
+        if (!ReadStarTime(o, "duration", flat, haveFlat)) return false;
+        if (formula && haveFlat) return Fail(o.path, *o.value, "give one of \"duration\", \"durationTicks\", \"durationSeconds\"");
+        if (!formula && !haveFlat) return Missing(o, "duration (or durationTicks / durationSeconds)");
+        if (formula) return ReadAmount(*formula, o.path + ".duration", out);
+        out = FlatAmount(flat);
+        return true;
+    }
+
+    // ---- effects ----
+    bool ReadEffect(const Value& v, const std::string& path, AbilityEffect& out, TraitScope* scopeOut = nullptr) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* type = nullptr;
+        if (!Require(o, "type", type)) return false;
+        if (!type->IsString()) return Fail(path + ".type", *type, "expected a string");
+        const std::string kind = type->AsString();
+
+        const Value* target = Take(o, "target");
+        const Value* scope = scopeOut ? Take(o, "scope") : nullptr;   // only trait effects have a scope
+        const Value* repeat = Take(o, "repeat");
+        int delay = 0;
+        bool haveDelay = false;
+        if (!ReadScalarTime(o, "delay", delay, haveDelay)) return false;
+        out.delayTicks = delay;
+        if (repeat) {   // {"count": 8, "everySeconds": 0.5}: runs `count` times, the first at the delay, then at that spacing
+            Obj r;
+            if (!Open(*repeat, path + ".repeat", r)) return false;
+            const Value* count = nullptr;
+            if (!Require(r, "count", count)) return false;
+            int every = 0;
+            bool haveEvery = false;
+            if (!ReadScalarTime(r, "every", every, haveEvery) || !RejectUnknown(r)) return false;
+            if (!ReadInt(*count, path + ".repeat.count", 1, 64, out.repeatCount)) return false;
+            if (out.repeatCount > 1 && (!haveEvery || every < 1)) return Fail(path + ".repeat", *repeat, "a repeat of more than 1 needs everySeconds / everyTicks of at least 1 tick");
+            out.repeatIntervalTicks = every;
+        }
+        if (target) {
+            if (!ReadTarget(*target, path + ".target", out.target)) return false;
+        } else if (scopeOut) {
+            out.target = TargetSpec::Self();   // synergy effects always apply to each qualifying unit itself
+        } else {
+            return Missing(o, "target");
+        }
+        if (scopeOut) {
+            if (!scope) return Missing(o, "scope");
+            if (!ReadEnum(*scope, path + ".scope", kScopes, *scopeOut)) return false;
+        }
+
+        if (kind == "Damage") {
+            DamageEffect d;
+            const Value* damageType = Take(o, "damageType");
+            const Value* amount = nullptr;
+            if (!Require(o, "amount", amount)) return false;
+            const Value* multiplier = Take(o, "multiplierPercent");
+            const Value* canCrit = Take(o, "canCrit");
+            const Value* onKill = Take(o, "onKill");
+            if (!RejectUnknown(o)) return false;
+            if (!damageType) return Missing(o, "damageType");
+            if (!ReadEnum(*damageType, path + ".damageType", kDamageTypes, d.type) || !ReadAmount(*amount, path + ".amount", d.amount)) return false;
+            if (multiplier && !ReadInt(*multiplier, path + ".multiplierPercent", 0, kMaxPercent, d.multiplierPercent)) return false;
+            if (canCrit && !ReadBool(*canCrit, path + ".canCrit", d.canCrit)) return false;
+            if (onKill) {   // statuses the killer gains: [ {"status": "AggroDrop", "durationSeconds": 1.5}, ... ]
+                if (!onKill->IsArray()) return Fail(path + ".onKill", *onKill, std::string("expected an array, found ") + Value::TypeName(onKill->type()));
+                for (std::size_t i = 0; i < onKill->Items().size(); ++i) {
+                    const std::string killPath = path + ".onKill[" + std::to_string(i) + "]";
+                    Obj k;
+                    if (!Open(onKill->Items()[i], killPath, k)) return false;
+                    StatusEffect reward;
+                    if (!ReadStatusBody(k, onKill->Items()[i], killPath, reward)) return false;
+                    d.onKill.push_back(std::move(reward));
+                }
+            }
+            out.payload = d;
+        } else if (kind == "Shield") {
+            ShieldEffect s;
+            const Value* amount = nullptr;
+            if (!Require(o, "amount", amount)) return false;
+            const Value* reduction = Take(o, "damageReductionPercent");
+            const Value* permanent = Take(o, "permanent");
+            const Value* cap = Take(o, "cap");
+            const Value* durationFormula = Take(o, "duration");
+            StarValue durationFlat{};
+            bool haveDurationFlat = false;
+            if (!ReadStarTime(o, "duration", durationFlat, haveDurationFlat) || !RejectUnknown(o)) return false;
+            if (permanent && !ReadBool(*permanent, path + ".permanent", s.permanent)) return false;
+            if (s.permanent) {
+                if (durationFormula || haveDurationFlat) return Fail(path, v, "a permanent shield has no duration");
+            } else {
+                if (durationFormula && haveDurationFlat) return Fail(path, v, "give one of \"duration\", \"durationTicks\", \"durationSeconds\"");
+                if (!durationFormula && !haveDurationFlat) return Missing(o, "duration (or durationTicks / durationSeconds), or \"permanent\": true");
+                if (durationFormula) {
+                    if (!ReadAmount(*durationFormula, path + ".duration", s.duration)) return false;
+                } else {
+                    s.duration = FlatAmount(durationFlat);
+                }
+            }
+            if (!ReadAmount(*amount, path + ".amount", s.amount)) return false;
+            if (reduction && !ReadStarInts(*reduction, path + ".damageReductionPercent", 0, 100, s.damageReductionPercent)) return false;
+            if (cap) {
+                if (!ReadAmount(*cap, path + ".cap", s.cap)) return false;
+                s.capped = true;
+            }
+            out.payload = s;
+        } else if (kind == "Status") {
+            StatusEffect st;
+            if (!ReadStatusBody(o, v, path, st)) return false;
+            out.payload = st;
+        } else if (kind == "Teleport") {
+            TeleportEffect tp;
+            const Value* destination = Take(o, "destination");
+            if (!RejectUnknown(o)) return false;
+            if (destination && !ReadEnum(*destination, path + ".destination", kDestinations, tp.destination)) return false;
+            out.payload = tp;
+        } else if (kind == "Mana") {
+            ManaEffect m;
+            const Value* amount = nullptr;
+            if (!Require(o, "amount", amount) || !RejectUnknown(o)) return false;
+            if (!ReadAmount(*amount, path + ".amount", m.amount)) return false;
+            out.payload = m;
+        } else if (kind == "Summon") {
+            SummonEffect sm;
+            const Value* champion = nullptr;
+            if (!Require(o, "champion", champion)) return false;
+            const Value* count = Take(o, "count");
+            const Value* star = Take(o, "star");
+            const Value* maxHp = Take(o, "maxHp");
+            const Value* attackDamage = Take(o, "attackDamage");
+            if (!RejectUnknown(o)) return false;
+            int championId = 0;
+            if (!ReadInt(*champion, path + ".champion", 1, 2'000'000'000, championId)) return false;
+            sm.champion = static_cast<ChampionId>(championId);
+            if (count && !ReadAmount(*count, path + ".count", sm.count)) return false;
+            if (star && !ReadInt(*star, path + ".star", 0, kMaxStarLevel, sm.starLevel)) return false;
+            if (maxHp && !ReadAmount(*maxHp, path + ".maxHp", sm.maxHp)) return false;
+            if (attackDamage && !ReadAmount(*attackDamage, path + ".attackDamage", sm.attackDamage)) return false;
+            out.payload = sm;
+        } else if (kind == "Heal") {
+            HealEffect h;
+            const Value* amount = nullptr;
+            if (!Require(o, "amount", amount) || !RejectUnknown(o)) return false;
+            if (!ReadAmount(*amount, path + ".amount", h.amount)) return false;
+            out.payload = h;
+        } else if (kind == "DoT") {
+            DotEffect d;
+            const Value* damageType = Take(o, "damageType");
+            const Value* amount = nullptr;
+            if (!Require(o, "amount", amount)) return false;
+            const Value* isTotal = Take(o, "amountIsTotal");
+            const Value* stack = Take(o, "stackBonusPercent");
+            int interval = 0;
+            bool haveInterval = false;
+            if (!ReadScalarTime(o, "interval", interval, haveInterval)) return false;
+            if (!ReadDuration(o, d.duration) || !RejectUnknown(o)) return false;
+            if (!damageType) return Missing(o, "damageType");
+            if (!ReadEnum(*damageType, path + ".damageType", kDamageTypes, d.type) || !ReadAmount(*amount, path + ".amount", d.amount)) return false;
+            if (isTotal && !ReadBool(*isTotal, path + ".amountIsTotal", d.amountIsTotal)) return false;
+            if (stack && !ReadStarInts(*stack, path + ".stackBonusPercent", 0, kMaxPercent, d.stackBonusPercent)) return false;
+            if (!haveInterval) return Missing(o, "intervalTicks (or intervalSeconds)");
+            if (interval < 1) return Fail(path + ".interval", v, "the interval must be at least 1 tick");
+            d.intervalTicks = interval;
+            out.payload = d;
+        } else {
+            return Fail(path + ".type", *type, "unknown effect type \"" + kind + "\"; expected one of: Damage, Shield, Status, DoT, Heal, Teleport, Mana, Summon");
+        }
+        return true;
+    }
+
+    bool ReadAbility(const Value& v, const std::string& path, bool isPassive, AbilityDefinition& out,
+                     CastTrigger defaultTrigger = CastTrigger::None) {
+        out = AbilityDefinition{};
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* id = nullptr;
+        const Value* name = nullptr;
+        const Value* effects = nullptr;
+        if (!Require(o, "id", id) || !Require(o, "name", name) || !Require(o, "effects", effects)) return false;
+        const Value* trigger = Take(o, "trigger");
+        const Value* attackCount = Take(o, "attackCount");
+        const Value* thresholdPercent = Take(o, "thresholdPercent");
+        const Value* damageFilter = Take(o, "damageFilter");
+        const Value* maxTriggers = Take(o, "maxTriggers");
+        const Value* resetOnTargetChange = Take(o, "resetOnTargetChange");
+        const Value* castOnDeath = Take(o, "castOnDeath");
+        int lock = 0;
+        bool haveLock = false;
+        int channel = 0;
+        bool haveChannel = false;
+        if (!ReadScalarTime(o, "castLock", lock, haveLock) || !ReadScalarTime(o, "channel", channel, haveChannel) || !RejectUnknown(o)) return false;
+
+        int idValue = 0;
+        if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
+        out.id = static_cast<AbilityId>(idValue);
+        if (!ReadString(*name, path + ".name", out.name)) return false;
+        if (trigger) {
+            if (!ReadEnum(*trigger, path + ".trigger", kTriggers, out.trigger)) return false;
+        } else if (isPassive) {
+            out.trigger = CastTrigger::StartOfCombat;
+        } else if (defaultTrigger != CastTrigger::None) {
+            out.trigger = defaultTrigger;
+        } else {
+            return Missing(o, "trigger");
+        }
+        if (attackCount && !ReadInt(*attackCount, path + ".attackCount", 1, 1000, out.attackCount)) return false;
+        if (thresholdPercent && !ReadInt(*thresholdPercent, path + ".thresholdPercent", 1, 99, out.thresholdPercent)) return false;
+        if (damageFilter && !ReadEnum(*damageFilter, path + ".damageFilter", kDamageFilters, out.damageFilter)) return false;
+        if (maxTriggers && !ReadInt(*maxTriggers, path + ".maxTriggers", 1, 1000, out.maxTriggers)) return false;
+        if (resetOnTargetChange && !ReadBool(*resetOnTargetChange, path + ".resetOnTargetChange", out.resetCountOnTargetChange)) return false;
+        if (castOnDeath && !ReadBool(*castOnDeath, path + ".castOnDeath", out.castOnDeath)) return false;
+        out.castLockTicks = lock;
+        out.channelTicks = channel;
+
+        if (!effects->IsArray()) return Fail(path + ".effects", *effects, std::string("expected an array, found ") + Value::TypeName(effects->type()));
+        for (std::size_t i = 0; i < effects->Items().size(); ++i) {
+            AbilityEffect effect;
+            if (!ReadEffect(effects->Items()[i], path + ".effects[" + std::to_string(i) + "]", effect)) return false;
+            out.effects.push_back(std::move(effect));
+        }
+        return true;
+    }
+
+    // ---- PvE ----
+    bool ReadDrops(const Value& v, const std::string& path, std::vector<PveDropEntry>& out) {
+        if (!v.IsArray()) return Fail(path, v, std::string("expected an array of drops, found ") + Value::TypeName(v.type()));
+        for (std::size_t i = 0; i < v.Items().size(); ++i) {
+            const std::string dropPath = path + "[" + std::to_string(i) + "]";
+            Obj o;
+            if (!Open(v.Items()[i], dropPath, o)) return false;
+            const Value* type = nullptr;
+            if (!Require(o, "type", type)) return false;
+            const Value* weight = Take(o, "weight");
+            const Value* minGold = Take(o, "minGold");
+            const Value* maxGold = Take(o, "maxGold");
+            const Value* tiers = Take(o, "tiers");
+            const Value* items = Take(o, "items");
+            if (!RejectUnknown(o)) return false;
+            PveDropEntry entry;
+            if (!ReadEnum(*type, dropPath + ".type", kDropTypes, entry.type)) return false;
+            if (weight && !ReadInt(*weight, dropPath + ".weight", 1, 1'000'000, entry.weight)) return false;
+            if (entry.type == PveDropType::Gold) {
+                if (!minGold || !maxGold) return Fail(dropPath, v.Items()[i], "a Gold drop needs \"minGold\" and \"maxGold\"");
+                if (!ReadInt(*minGold, dropPath + ".minGold", 0, 1'000'000, entry.minGold) || !ReadInt(*maxGold, dropPath + ".maxGold", 0, 1'000'000, entry.maxGold)) return false;
+            } else if (minGold || maxGold) {
+                return Fail(dropPath, v.Items()[i], "\"minGold\" / \"maxGold\" only apply to Gold drops");
+            }
+            if (entry.type == PveDropType::Champion) {
+                if (!tiers) return Missing(o, "tiers");
+                if (!tiers->IsArray()) return Fail(dropPath + ".tiers", *tiers, std::string("expected an array of cost tiers, found ") + Value::TypeName(tiers->type()));
+                for (std::size_t t = 0; t < tiers->Items().size(); ++t) {
+                    int tier = 0;
+                    if (!ReadInt(tiers->Items()[t], dropPath + ".tiers[" + std::to_string(t) + "]", 1, kMaxCostTier, tier)) return false;
+                    entry.tiers.push_back(tier);
+                }
+            } else if (tiers) {
+                return Fail(dropPath, v.Items()[i], "\"tiers\" only applies to Champion drops");
+            }
+            if (items) {
+                if (entry.type != PveDropType::Item) return Fail(dropPath, v.Items()[i], "\"items\" only applies to Item drops");
+                if (!items->IsArray()) return Fail(dropPath + ".items", *items, std::string("expected an array of item ids, found ") + Value::TypeName(items->type()));
+                for (std::size_t t = 0; t < items->Items().size(); ++t) {
+                    int item = 0;
+                    if (!ReadInt(items->Items()[t], dropPath + ".items[" + std::to_string(t) + "]", 1, 2'000'000'000, item)) return false;
+                    entry.items.push_back(static_cast<ItemId>(item));
+                }
+            }
+            out.push_back(std::move(entry));
+        }
+        return true;
+    }
+
+    bool ReadEncounter(const Value& v, const std::string& path, EncounterDefinition& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* id = nullptr;
+        const Value* name = nullptr;
+        const Value* units = nullptr;
+        if (!Require(o, "id", id) || !Require(o, "name", name) || !Require(o, "units", units)) return false;
+        const Value* stage = Take(o, "stage");
+        const Value* round = Take(o, "round");
+        const Value* drops = Take(o, "drops");
+        if (!RejectUnknown(o)) return false;
+        int idValue = 0;
+        if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
+        out.id = static_cast<std::uint32_t>(idValue);
+        if (!ReadString(*name, path + ".name", out.name)) return false;
+        if (stage && !ReadInt(*stage, path + ".stage", 0, 1000, out.stage)) return false;
+        if (round && !ReadInt(*round, path + ".round", 0, 1000, out.round)) return false;
+        if (!units->IsArray()) return Fail(path + ".units", *units, std::string("expected an array, found ") + Value::TypeName(units->type()));
+        for (std::size_t i = 0; i < units->Items().size(); ++i) {
+            const std::string unitPath = path + ".units[" + std::to_string(i) + "]";
+            Obj u;
+            if (!Open(units->Items()[i], unitPath, u)) return false;
+            const Value* monster = nullptr;
+            const Value* x = nullptr;
+            const Value* y = nullptr;
+            if (!Require(u, "monster", monster) || !Require(u, "x", x) || !Require(u, "y", y)) return false;
+            const Value* star = Take(u, "star");
+            if (!RejectUnknown(u)) return false;
+            MonsterPlacement placed;
+            int monsterId = 0;
+            if (!ReadInt(*monster, unitPath + ".monster", 1, 2'000'000'000, monsterId)) return false;
+            placed.monster = static_cast<ChampionId>(monsterId);
+            if (!ReadInt(*x, unitPath + ".x", 0, kBoardColumns - 1, placed.x) || !ReadInt(*y, unitPath + ".y", 0, kBoardRows - 1, placed.y)) return false;
+            if (star && !ReadInt(*star, unitPath + ".star", 1, kMaxStarLevel, placed.starLevel)) return false;
+            out.units.push_back(placed);
+        }
+        if (drops && !ReadDrops(*drops, path + ".drops", out.drops)) return false;
+        return true;
+    }
+
+    // ---- items ----
+    bool ReadItem(const Value& v, const std::string& path, ItemDefinition& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* id = nullptr;
+        const Value* name = nullptr;
+        if (!Require(o, "id", id) || !Require(o, "name", name)) return false;
+        const Value* stats = Take(o, "stats");
+        const Value* grants = Take(o, "grantsTraits");
+        const Value* components = Take(o, "components");
+        const Value* abilities = Take(o, "abilities");
+        const Value* auras = Take(o, "auras");
+        if (!RejectUnknown(o)) return false;
+        int idValue = 0;
+        if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
+        out.id = static_cast<ItemId>(idValue);
+        if (components) {   // "components": [ 4, 7 ]  the two BASE items this one is made from
+            if (!components->IsArray() || components->Items().size() != 2) return Fail(path + ".components", *components, "expected an array of exactly two item ids");
+            for (std::size_t i = 0; i < 2; ++i) {
+                int c = 0;
+                if (!ReadInt(components->Items()[i], path + ".components[" + std::to_string(i) + "]", 1, 2'000'000'000, c)) return false;
+                out.components[i] = static_cast<ItemId>(c);
+            }
+        }
+        if (abilities && !ReadAbilityList(*abilities, path + ".abilities", out.abilities)) return false;
+        if (auras && !ReadAuras(*auras, path + ".auras", out.auras)) return false;
+        if (!ReadString(*name, path + ".name", out.name)) return false;
+        if (stats) {
+            Obj st;
+            const std::string statsPath = path + ".stats";
+            if (!Open(*stats, statsPath, st)) return false;
+            struct Field { const char* key; int* target; long long lo, hi; };
+            ItemStats& is = out.stats;
+            const Field fields[] = {{"hp", &is.maxHp, -100000, 100000},       {"armor", &is.armor, -10000, 10000},
+                                    {"magicResist", &is.magicResist, -10000, 10000}, {"attackDamage", &is.attackDamage, -10000, 10000},
+                                    {"abilityDamage", &is.abilityDamage, -10000, 10000}, {"attackSpeedPercent", &is.attackSpeedPercent, -90, 1000},
+                                    {"critChance", &is.critChance, -100, 100},  {"startMana", &is.startMana, 0, 1000}};
+            const Value* values[8] = {};
+            for (std::size_t i = 0; i < 8; ++i) values[i] = Take(st, fields[i].key);
+            const Value* manaRegen = Take(st, "manaRegen");   // mana per second, up to 3 decimals ("+1 Mana Regen" = 1)
+            if (!RejectUnknown(st)) return false;
+            for (std::size_t i = 0; i < 8; ++i) {
+                if (values[i] && !ReadInt(*values[i], statsPath + "." + fields[i].key, fields[i].lo, fields[i].hi, *fields[i].target)) return false;
+            }
+            if (manaRegen && !ReadMilli(*manaRegen, statsPath + ".manaRegen", -10000, 20000, is.manaRegenMilli)) return false;
+        }
+        if (grants) {
+            if (!grants->IsArray()) return Fail(path + ".grantsTraits", *grants, std::string("expected an array of strings, found ") + Value::TypeName(grants->type()));
+            for (std::size_t i = 0; i < grants->Items().size(); ++i) {
+                std::string trait;
+                if (!ReadString(grants->Items()[i], path + ".grantsTraits[" + std::to_string(i) + "]", trait)) return false;
+                out.grantsTraits.push_back(std::move(trait));
+            }
+        }
+        return true;
+    }
+
+    // ---- traits ----
+    // An array of abilities (a champion's `triggers`, an item's `abilities`): each needs its own "trigger".
+    bool ReadAbilityList(const Value& v, const std::string& path, std::vector<AbilityDefinition>& out) {
+        if (!v.IsArray()) return Fail(path, v, std::string("expected an array of abilities, found ") + Value::TypeName(v.type()));
+        for (std::size_t i = 0; i < v.Items().size(); ++i) {
+            AbilityDefinition a;
+            if (!ReadAbility(v.Items()[i], path + "[" + std::to_string(i) + "]", false, a)) return false;
+            out.push_back(std::move(a));
+        }
+        return true;
+    }
+
+    // Auras: [ { "side": "Enemies", "radius": 2, "status": "MagicResist", "amount": -30 } ]
+    bool ReadAuras(const Value& v, const std::string& path, std::vector<AuraDefinition>& out) {
+        if (!v.IsArray()) return Fail(path, v, std::string("expected an array of auras, found ") + Value::TypeName(v.type()));
+        for (std::size_t i = 0; i < v.Items().size(); ++i) {
+            const std::string auraPath = path + "[" + std::to_string(i) + "]";
+            Obj o;
+            if (!Open(v.Items()[i], auraPath, o)) return false;
+            const Value* side = nullptr;
+            const Value* radius = nullptr;
+            const Value* status = nullptr;
+            const Value* amount = nullptr;
+            if (!Require(o, "side", side) || !Require(o, "radius", radius) || !Require(o, "status", status) || !Require(o, "amount", amount)) return false;
+            const Value* includeSelf = Take(o, "includeSelf");
+            if (!RejectUnknown(o)) return false;
+            AuraDefinition a;
+            if (!ReadEnum(*side, auraPath + ".side", kSides, a.side)) return false;
+            if (!ReadInt(*radius, auraPath + ".radius", 1, 15, a.radius)) return false;
+            if (!ReadEnum(*status, auraPath + ".status", kStatusTypes, a.status)) return false;
+            if (!ReadInt(*amount, auraPath + ".amount", kMinPercent, kMaxPercent, a.amount)) return false;
+            if (includeSelf && !ReadBool(*includeSelf, auraPath + ".includeSelf", a.includeSelf)) return false;
+            out.push_back(a);
+        }
+        return true;
+    }
+
+    bool ReadTrait(const Value& v, const std::string& path, TraitDefinition& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* id = nullptr;
+        const Value* name = nullptr;
+        if (!Require(o, "id", id) || !Require(o, "name", name)) return false;
+        const Value* breakpoints = Take(o, "breakpoints");
+        if (!RejectUnknown(o)) return false;
+        int idValue = 0;
+        if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
+        out.id = static_cast<TraitId>(idValue);
+        if (!ReadString(*name, path + ".name", out.name)) return false;
+        if (!breakpoints) return true;   // a trait tag with no synergy (yet)
+        if (!breakpoints->IsArray()) return Fail(path + ".breakpoints", *breakpoints, std::string("expected an array, found ") + Value::TypeName(breakpoints->type()));
+        for (std::size_t i = 0; i < breakpoints->Items().size(); ++i) {
+            const std::string bpPath = path + ".breakpoints[" + std::to_string(i) + "]";
+            Obj b;
+            if (!Open(breakpoints->Items()[i], bpPath, b)) return false;
+            const Value* count = nullptr;
+            if (!Require(b, "count", count)) return false;
+            const Value* effects = Take(b, "effects");
+            const Value* triggers = Take(b, "triggers");
+            if (!RejectUnknown(b)) return false;
+            if (!effects && !triggers) return Missing(b, "effects (or triggers)");
+            TraitBreakpoint bp;
+            if (!ReadInt(*count, bpPath + ".count", 1, 100, bp.count)) return false;
+            if (effects) {
+                if (!effects->IsArray()) return Fail(bpPath + ".effects", *effects, std::string("expected an array, found ") + Value::TypeName(effects->type()));
+                for (std::size_t k = 0; k < effects->Items().size(); ++k) {
+                    TraitEffect te;
+                    if (!ReadEffect(effects->Items()[k], bpPath + ".effects[" + std::to_string(k) + "]", te.effect, &te.scope)) return false;
+                    bp.effects.push_back(std::move(te));
+                }
+            }
+            if (triggers) {   // hooks handed to every unit in scope: [ { "scope": "TraitHolders", "ability": { ...an ability with a hook trigger... } } ]
+                if (!triggers->IsArray()) return Fail(bpPath + ".triggers", *triggers, std::string("expected an array, found ") + Value::TypeName(triggers->type()));
+                for (std::size_t k = 0; k < triggers->Items().size(); ++k) {
+                    const std::string tPath = bpPath + ".triggers[" + std::to_string(k) + "]";
+                    Obj t;
+                    if (!Open(triggers->Items()[k], tPath, t)) return false;
+                    const Value* scope = nullptr;
+                    const Value* ability = nullptr;
+                    if (!Require(t, "scope", scope) || !Require(t, "ability", ability) || !RejectUnknown(t)) return false;
+                    TraitTrigger tt;
+                    if (!ReadEnum(*scope, tPath + ".scope", kScopes, tt.scope)) return false;
+                    if (!ReadAbility(*ability, tPath + ".ability", false, tt.ability)) return false;
+                    bp.triggers.push_back(std::move(tt));
+                }
+            }
+            out.breakpoints.push_back(std::move(bp));
+        }
+        return true;
+    }
+
+    // ---- champions ----
+    bool ReadStats(const Value& v, const std::string& path, CombatStats& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* hp = nullptr;
+        const Value* armor = nullptr;
+        const Value* magicResist = nullptr;
+        const Value* attackDamage = nullptr;
+        const Value* attackSpeed = nullptr;
+        const Value* range = nullptr;
+        if (!Require(o, "hp", hp) || !Require(o, "armor", armor) || !Require(o, "magicResist", magicResist) ||
+            !Require(o, "attackDamage", attackDamage) || !Require(o, "attackSpeed", attackSpeed) || !Require(o, "range", range)) {
+            return false;
+        }
+        const Value* abilityDamage = Take(o, "abilityDamage");
+        const Value* abilityPowerPercent = Take(o, "abilityPowerPercent");
+        const Value* crit = Take(o, "crit");
+        const Value* maxMana = Take(o, "maxMana");
+        const Value* startMana = Take(o, "startMana");
+        const Value* manaRegen = Take(o, "manaRegen");
+        int spread = 0;
+        bool haveSpread = false;
+        if (!ReadScalarTime(o, "attackSpread", spread, haveSpread) || !RejectUnknown(o)) return false;
+
+        if (!ReadStarInts(*hp, path + ".hp", 1, kMaxStat, out.maxHp)) return false;
+        if (!ReadStarInts(*armor, path + ".armor", 0, kMaxStat, out.armor)) return false;
+        if (!ReadStarInts(*magicResist, path + ".magicResist", 0, kMaxStat, out.magicResist)) return false;
+        if (!ReadStarInts(*attackDamage, path + ".attackDamage", 0, kMaxStat, out.attackDamage)) return false;
+        if (!ReadMilli(*attackSpeed, path + ".attackSpeed", 1, 100'000, out.attackSpeedMilli)) return false;
+        if (!ReadInt(*range, path + ".range", 1, 32, out.attackRange)) return false;
+        if (abilityDamage && !ReadStarInts(*abilityDamage, path + ".abilityDamage", 0, kMaxStat, out.abilityDamage)) return false;
+        if (abilityPowerPercent && !ReadInt(*abilityPowerPercent, path + ".abilityPowerPercent", 0, kMaxPercent, out.abilityPower)) return false;
+        if (crit && !ReadStarInts(*crit, path + ".crit", 0, 100, out.critChance)) return false;
+        if (maxMana && !ReadInt(*maxMana, path + ".maxMana", 0, 100'000, out.maxMana)) return false;
+        if (startMana && !ReadInt(*startMana, path + ".startMana", 0, 100'000, out.startMana)) return false;
+        if (manaRegen && !ReadMilli(*manaRegen, path + ".manaRegen", 0, 1'000'000, out.manaRegenMilli)) return false;
+        out.attackSpreadTicks = spread;
+        return true;
+    }
+
+    bool ReadChampion(const Value& v, const std::string& path, ChampionDefinition& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* id = nullptr;
+        const Value* name = nullptr;
+        const Value* cost = nullptr;
+        const Value* stats = nullptr;
+        if (!Require(o, "id", id) || !Require(o, "name", name) || !Require(o, "stats", stats)) return false;
+        const Value* summon = Take(o, "summon");
+        bool isSummon = false;
+        if (summon && !ReadBool(*summon, path + ".summon", isSummon)) return false;
+        if (monsterMode_ || isSummon) {
+            cost = Take(o, "cost");   // monsters and summons are never sold: a cost is accepted but not needed
+        } else if (!Require(o, "cost", cost)) {
+            return false;
+        }
+        out.summon = isSummon;
+        const Value* triggersValue = Take(o, "triggers");
+        const Value* aurasValue = Take(o, "auras");
+        const Value* role = Take(o, "role");
+        const Value* traits = Take(o, "traits");
+        const Value* ability = Take(o, "ability");
+        const Value* passive = Take(o, "passive");
+        const Value* onAttack = Take(o, "onAttack");
+        if (!RejectUnknown(o)) return false;
+
+        int idValue = 0;
+        if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
+        out.id = static_cast<ChampionId>(idValue);
+        if (!ReadString(*name, path + ".name", out.name)) return false;
+        if (cost && !ReadInt(*cost, path + ".cost", 1, kMaxCostTier, out.cost)) return false;
+        if (role && !ReadEnum(*role, path + ".role", kRoles, out.role)) return false;
+        if (traits) {
+            if (!traits->IsArray()) return Fail(path + ".traits", *traits, std::string("expected an array of strings, found ") + Value::TypeName(traits->type()));
+            for (std::size_t i = 0; i < traits->Items().size(); ++i) {
+                std::string trait;
+                if (!ReadString(traits->Items()[i], path + ".traits[" + std::to_string(i) + "]", trait)) return false;
+                out.traits.push_back(std::move(trait));
+            }
+        }
+        if (!ReadStats(*stats, path + ".stats", out.stats)) return false;
+        if (ability && !ReadAbility(*ability, path + ".ability", false, out.ability)) return false;
+        if (passive && !ReadAbility(*passive, path + ".passive", true, out.passive)) return false;
+        if (onAttack && !ReadAbility(*onAttack, path + ".onAttack", false, out.onAttack, CastTrigger::OnBasicAttack)) return false;
+        if (triggersValue && !ReadAbilityList(*triggersValue, path + ".triggers", out.triggers)) return false;
+        if (aurasValue && !ReadAuras(*aurasValue, path + ".auras", out.auras)) return false;
+        return true;
+    }
+
+    bool monsterMode_ = false;
+    std::string error_;
+};
+
+}  // namespace
+
+bool ParseChampionsJson(std::string_view text, std::vector<ChampionDefinition>& out, std::string* error) {
+    return Loader().Run(text, out, error);
+}
+
+std::unique_ptr<ChampionDatabase> LoadChampionDatabaseFromJson(std::string_view text, std::string* error) {
+    std::vector<ChampionDefinition> definitions;
+    if (!ParseChampionsJson(text, definitions, error)) return nullptr;
+    std::string validationError;
+    auto database = ChampionDatabase::Create(std::move(definitions), &validationError);
+    if (!database && error) *error = "champion data is invalid: " + validationError;
+    return database;
+}
+
+bool ParseItemsJson(std::string_view text, std::vector<ItemDefinition>& out, std::string* error) {
+    return Loader().RunItems(text, out, error);
+}
+
+std::unique_ptr<ItemDatabase> LoadItemDatabaseFromJson(std::string_view text, std::string* error) {
+    std::vector<ItemDefinition> definitions;
+    if (!ParseItemsJson(text, definitions, error)) return nullptr;
+    std::string validationError;
+    auto database = ItemDatabase::Create(std::move(definitions), &validationError);
+    if (!database && error) *error = "item data is invalid: " + validationError;
+    return database;
+}
+
+std::unique_ptr<ItemDatabase> LoadItemDatabaseFromFile(const std::string& path, std::string* error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (error) *error = "cannot open item data file '" + path + "'";
+        return nullptr;
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    std::string inner;
+    auto database = LoadItemDatabaseFromJson(contents.str(), &inner);
+    if (!database && error) *error = path + ": " + inner;
+    return database;
+}
+
+bool ParsePveJson(std::string_view text, PveFile& out, std::string* error) {
+    return Loader().RunPve(text, out, error);
+}
+
+std::unique_ptr<EncounterDatabase> LoadEncounterDatabaseFromJson(std::string_view text, const ChampionDatabase* champions,
+                                                                  const ItemDatabase* items, std::string* error) {
+    PveFile file;
+    if (!ParsePveJson(text, file, error)) return nullptr;
+    std::string validationError;
+    auto database = EncounterDatabase::Create(std::move(file.monsters), std::move(file.encounters), std::move(file.defaultDrops), champions, items, &validationError);
+    if (!database && error) *error = "PvE data is invalid: " + validationError;
+    return database;
+}
+
+std::unique_ptr<EncounterDatabase> LoadEncounterDatabaseFromFile(const std::string& path, const ChampionDatabase* champions,
+                                                                  const ItemDatabase* items, std::string* error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (error) *error = "cannot open PvE data file '" + path + "'";
+        return nullptr;
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    std::string inner;
+    auto database = LoadEncounterDatabaseFromJson(contents.str(), champions, items, &inner);
+    if (!database && error) *error = path + ": " + inner;
+    return database;
+}
+
+bool ParseTraitsJson(std::string_view text, std::vector<TraitDefinition>& out, std::string* error) {
+    return Loader().RunTraits(text, out, error);
+}
+
+std::unique_ptr<TraitDatabase> LoadTraitDatabaseFromJson(std::string_view text, std::string* error) {
+    std::vector<TraitDefinition> definitions;
+    if (!ParseTraitsJson(text, definitions, error)) return nullptr;
+    std::string validationError;
+    auto database = TraitDatabase::Create(std::move(definitions), &validationError);
+    if (!database && error) *error = "trait data is invalid: " + validationError;
+    return database;
+}
+
+std::unique_ptr<TraitDatabase> LoadTraitDatabaseFromFile(const std::string& path, std::string* error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (error) *error = "cannot open trait data file '" + path + "'";
+        return nullptr;
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    std::string inner;
+    auto database = LoadTraitDatabaseFromJson(contents.str(), &inner);
+    if (!database && error) *error = path + ": " + inner;
+    return database;
+}
+
+std::unique_ptr<ChampionDatabase> LoadChampionDatabaseFromFile(const std::string& path, std::string* error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        if (error) *error = "cannot open champion data file '" + path + "'";
+        return nullptr;
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    std::string inner;
+    auto database = LoadChampionDatabaseFromJson(contents.str(), &inner);
+    if (!database && error) *error = path + ": " + inner;
+    return database;
+}
+
+}  // namespace w2f

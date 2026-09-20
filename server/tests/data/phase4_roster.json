@@ -1,0 +1,62 @@
+// (Mana is on the 100-scale like the production data: the same champions, mana x10 -- identical behaviour.)
+// FROZEN test fixture: the five champions exactly as they were at the end of Phase 4 (when they were still written in
+// C++). The mechanics tests are written against THIS file so that they keep meaning the same thing while the designer
+// changes data/champions.json. Do not tune numbers here.
+{
+  "version": 1,
+  "champions": [
+    {
+      "id": 9001, "name": "Alesk", "cost": 2, "role": "Tank",
+      "stats": { "hp": [325, 475, 650], "armor": [31, 45, 63], "magicResist": [17, 24, 29], "attackDamage": [30, 35, 40],
+                 "attackSpeed": 1.0, "range": 1, "maxMana": 50, "manaRegen": 10.0 },
+      "ability": { "id": 1, "name": "AESA", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [ { "type": "Shield", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 20 } ] },
+                       "durationTicks": 45, "damageReductionPercent": [5, 8, 15] } ] }
+    },
+    {
+      "id": 9002, "name": "Baira", "cost": 2, "role": "Damage",
+      "stats": { "hp": [100, 150, 200], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [20, 25, 29],
+                 "abilityDamage": [15, 21, 40], "attackSpeed": 0.37, "range": 3 },
+      "ability": { "id": 2, "name": "Ardeat's Destiny", "trigger": "EveryNthAttack", "attackCount": 5,
+        "effects": [ { "type": "DoT", "target": { "mode": "AreaAroundTarget", "radius": 3, "includeCenter": true },
+                       "damageType": "Magic", "amount": { "terms": [ { "source": "SelfAbilityDamage", "percent": 100 } ] },
+                       "durationTicks": 150, "intervalTicks": 30, "stackBonusPercent": [25, 35, 45] } ] }
+    },
+    {
+      "id": 9003, "name": "Cyla", "cost": 3, "role": "Damage",
+      "stats": { "hp": [90, 140, 180], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [50, 60, 80],
+                 "crit": [15, 25, 50], "attackSpeed": 0.78, "range": 4, "maxMana": 60, "manaRegen": 10.0 },
+      "ability": { "id": 3, "name": "Rocket Strike", "trigger": "Mana", "castLockTicks": 0,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "canCrit": true,
+            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": [110, 117, 125], "windowTicks": 90 } ] } },
+          { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false },
+            "damageType": "Magic", "canCrit": true, "multiplierPercent": 63,
+            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": [110, 117, 125], "windowTicks": 90 } ] } } ] }
+    },
+    {
+      "id": 9004, "name": "Dyno", "cost": 3, "role": "Tank",
+      "stats": { "hp": [170, 280, 333], "armor": [17, 27, 35], "magicResist": [10, 15, 20], "attackDamage": [50, 60, 80],
+                 "attackSpeed": 0.75, "range": 1 },
+      "ability": { "id": 4, "name": "Dyno Shield", "trigger": "EveryNthAttack", "attackCount": 3,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": [7, 12, 20] } ] }, "durationTicks": 30 },
+          { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": -10, "durationTicks": 30 } ] }
+    },
+    {
+      "id": 9005, "name": "Faire", "cost": 3, "role": "Tank",
+      "stats": { "hp": [225, 333, 427], "armor": [20, 32, 41], "magicResist": [15, 20, 25], "attackDamage": [25, 30, 35],
+                 "abilityDamage": [28, 45, 60], "attackSpeed": 0.75, "range": 1, "maxMana": 50, "manaRegen": 10.0,
+                 "attackSpreadTicks": 30 },
+      "ability": { "id": 5, "name": "Exploit", "trigger": "Mana", "castLockTicks": 18, "castOnDeath": true,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic",
+            "amount": { "terms": [ { "source": "SelfAbilityDamage", "percent": 100 }, { "source": "SelfAttackDamage", "percent": [10, 15, 20] } ] } },
+          { "type": "Status", "target": "CurrentTarget", "status": "Stun",
+            "duration": { "terms": [ { "source": "RawDamageDealtToTarget", "percent": 60 } ] } },
+          { "type": "Status", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false },
+            "status": "Stun", "multiplierPercent": 60,
+            "duration": { "terms": [ { "source": "RawDamageDealtToTarget", "percent": 60 } ] } } ] }
+    }
+  ]
+}

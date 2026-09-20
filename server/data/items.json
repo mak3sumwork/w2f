@@ -1,0 +1,18 @@
+// W2F items. Loaded next to champions.json / traits.json; every trait an item grants must be declared in traits.json.
+// Format: docs/champions-json.md (section "items.json").
+//
+// PLACEHOLDERS: the lead designer is redesigning items and synergies in a separate master document. These three only
+// demonstrate what the engine supports: flat stats and granted trait tags. Replace them freely.
+//
+// Stats (all flat integers, all optional): hp, armor, magicResist, attackDamage, abilityDamage (adds to a champion's "AP"),
+// attackSpeedPercent (+%), critChance (+percentage points), startMana (+mana at the start of the fight).
+{
+  "version": 1,
+  "items": [
+    { "id": 1, "name": "Example Sword", "stats": { "attackDamage": 15 } },
+    { "id": 2, "name": "Example Belt",  "stats": { "hp": 200 } },
+    // From the design doc: +300 HP, +25 AD, and the holder gains the Coregons trait. (The doc also gives a RECIPE -- Omnilium Seed +
+    // a mana item -- but item crafting from components does not exist yet, so for now it is just a finished item.)
+    { "id": 3, "name": "Coregons Emblem", "stats": { "hp": 300, "attackDamage": 25 }, "grantsTraits": ["Coregons"] }
+  ]
+}

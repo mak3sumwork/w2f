@@ -1,0 +1,39 @@
+// W2F traits and synergies. Loaded next to champions.json; every trait tag a champion lists must be declared here.
+// Format: docs/champions-json.md (section "traits.json").
+//
+// At the start of a fight the server counts, for each team, how many DIFFERENT champions (two copies of one champion
+// count once) on the board have each trait, and applies the highest breakpoint reached -- before passives fire.
+//   "scope": "AllAllies"    -> every unit on the team gets the effect
+//   "scope": "TraitHolders" -> only units that themselves have this trait get it
+// Statuses of one type add up, so a unit that gets both a "AllAllies +10%" and a "TraitHolders +10%" has +20%.
+{
+  "version": 1,
+  "traits": [
+
+    // Origins with no synergy defined yet (the sheet's Helios entry stops at "3 HELIOS UNITS:").
+    { "id": 1, "name": "Helios" },
+    { "id": 2, "name": "Phaisa" },
+    { "id": 3, "name": "Hexagon" },
+    { "id": 4, "name": "Omnilium" },
+    { "id": 6, "name": "Selini" },
+    { "id": 7, "name": "Najmi" },
+    { "id": 8, "name": "Coregons" },
+
+    // PROTECTOR (Les, Lum): with 2 Protectors on the board, ALL allies get +10% damage amplification and +10% Armor/Magic
+    // Resist, and the Protectors themselves get another +10% of each on top.
+    {
+      "id": 5, "name": "Protector",
+      "breakpoints": [
+        { "count": 2, "effects": [
+          { "scope": "AllAllies",    "type": "Status", "status": "DamageAmp",   "percent": 10, "permanent": true },
+          { "scope": "AllAllies",    "type": "Status", "status": "Armor",       "percent": 10, "permanent": true },
+          { "scope": "AllAllies",    "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp",   "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "Armor",       "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true }
+        ] }
+      ]
+    }
+
+  ]
+}
