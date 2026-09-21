@@ -90,6 +90,7 @@ any unknown or missing field and any out-of-range number is refused with an `err
 | `pick_gift` | `gift_index` 0..3 | Mother Nature's phase only |
 | `sell_unit` | `unit_id` | Planning: any unit. Combat/Resolution: bench units only |
 | `move_unit` | `unit_id`, `location` `"bench"`/`"board"`, `x`, `y` | Planning: anywhere (swaps with what is there). Combat/Resolution: bench <-> bench only |
+| `combine_items` | `first`, `second` | (revision 2) two base components in the item bag become the finished item; answered with `result`, a `bag_event`, and the new `state` |
 | `equip_item` | `unit_id`, `item_id` | Planning; in Combat/Resolution only onto bench units. An **Item Remover** takes *all* items off the unit and is used up |
 | `unequip_item` | `unit_id`, `slot` 0..2 | as `equip_item` |
 | `get_state` | | any time: re-sends `state` and `public_state` |
@@ -342,4 +343,6 @@ data yet; names are. Fights are instant on the server: the log is produced in on
   numeric meanings do not change and are not removed. New fields, new message types, new appended enum values (event types, status types, area shapes, action results) may appear: a client must
   **ignore unknown fields and unknown message types**, and treat an unknown enum index as "no special effect".
 * A breaking change would bump `protocol` to 2 and be announced in this file. The schema files are versioned with the protocol and updated in the same commit as any addition.
+* **Revision history** (additive only): **1** the frozen protocol; **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
+  scouted player's arena), `combat.unit_items` (unit id -> item ids of the fighters).
 * The combat log's columns are named in every message: read them from `columns`, never by hard-coded position, and tolerate extra columns at the end.

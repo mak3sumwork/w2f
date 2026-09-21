@@ -7214,6 +7214,55 @@ static void TestEncounterDataAndSelection() {
     CHECK(w2f::LoadEncounterDatabaseFromFile("/nonexistent/pve.json", nullptr, nullptr, &err) == nullptr && err.find("cannot open") != std::string::npos);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// Combining two components of the item BAG into a finished item (combine_items): recipes, either order, the same component twice, refusals change nothing.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+static void TestCombineBagItems() {
+    std::string err;
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+    auto db = ChampionDatabase::Create({Def(101, "A", 1)}, &err);
+    CHECK(items != nullptr && db != nullptr);
+    if (!items || !db) return;
+    struct BagLog : ItemEventLog {
+        struct Combo { PlayerId player; ItemId first, second, result; };
+        std::vector<Combo> combos;
+        void OnBagItemsCombined(PlayerId p, ItemId a, ItemId b, ItemId r) override { combos.push_back({p, a, b, r}); }
+    } events;
+    auto match = PlanningMatch(*db, items.get());
+    match->AddListener(&events);
+    PlayerState* p = match->PlayersMutable().Get(0);
+    for (ItemId item : {3u, 4u, 3u, 9u, 6u, 24u}) CHECK(p->AddItemToBag(item));   // Sword, Vest, Sword, Seed, Stick, Soul's Sword (finished)
+    const int total = CountAllItems(*match);
+
+    // Refusals change nothing: not in the bag, no recipe, a finished item, a component with itself when only one copy, another player's bag.
+    const std::uint64_t before = match->StateHash();
+    CHECK(match->TryCombineItems(0, 3, 5) == ActionResult::InvalidItem);      // Bow is not in the bag
+    CHECK(match->TryCombineItems(0, 4, 6) == ActionResult::InvalidItem);      // Vest + Stick is no recipe
+    CHECK(match->TryCombineItems(0, 24, 3) == ActionResult::InvalidItem);     // a finished item never combines
+    CHECK(match->TryCombineItems(0, 9, 9) == ActionResult::InvalidItem);      // one Seed only
+    CHECK(match->TryCombineItems(1, 3, 3) == ActionResult::InvalidItem);      // player 1's bag is empty
+    CHECK(match->TryCombineItems(0, 0, 3) == ActionResult::InvalidItem);
+    CHECK(match->StateHash() == before && events.combos.empty());
+
+    // The real thing: either order, the finished item lands in the bag, the two components are gone.
+    const ItemId sword = 3, seed = 9;
+    const ItemDefinition* soulsSword = items->FindCombination(sword, sword);
+    const ItemDefinition* emblem = items->FindCombination(seed, sword);
+    CHECK(soulsSword != nullptr && emblem != nullptr);
+    if (!soulsSword || !emblem) return;
+    const ItemDefinition* vestEmblem = items->FindCombination(seed, 4);
+    CHECK(vestEmblem != nullptr && match->TryCombineItems(0, 4, seed) == ActionResult::Ok);   // the other order works too (a Seed and a Vest make an Emblem)
+    CHECK(vestEmblem && std::count(p->ItemBag().begin(), p->ItemBag().end(), vestEmblem->id) == 1);
+    const std::size_t bagBefore = p->ItemBag().size();
+    CHECK(match->TryCombineItems(0, sword, sword) == ActionResult::Ok);          // the same component twice needs two copies: it has two
+    CHECK(std::count(p->ItemBag().begin(), p->ItemBag().end(), soulsSword->id) == 2);   // (it already held one Soul's Sword, id 24)
+    CHECK(p->ItemBag().size() == bagBefore - 1);
+    CHECK(match->TryCombineItems(0, sword, sword) == ActionResult::InvalidItem);   // both Swords are used up now
+    CHECK(events.combos.size() == 2 && events.combos[1].first == sword && events.combos[1].second == sword && events.combos[1].result == soulsSword->id);
+    CHECK(CountAllItems(*match) == total - 2);   // each combination consumes two items and creates one
+    CHECK(match->VerifyPoolIntegrity());
+}
+
 static void TestItemRemover() {
     std::string err;
     auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
@@ -11594,6 +11643,7 @@ int main(int argc, char** argv) {
         {"Shop + bench during Combat, board locked", TestShopAndBenchDuringCombat},
         {"Mother Nature: unit gifts scale with the stage", TestMotherNatureUnitGiftsScaleWithTheStage},
         {"Match rhythm: phase lengths, safety limit, shop rule", TestRoundRhythmAndShopRule},
+        {"Bag: combine two components into a finished item", TestCombineBagItems},
         {"Item Remover (consumable)", TestItemRemover},
         {"Combat: movement + targeting", TestCombatMovementAndTargeting},
         {"Combat: determinism + path caching", TestCombatDeterminismAndPathCaching},

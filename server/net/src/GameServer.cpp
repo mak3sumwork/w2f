@@ -187,6 +187,7 @@ public:
             case CommandType::MoveUnit: result = match_->TryMoveUnit(player, cmd.unit, cmd.location, cmd.x, cmd.y); break;
             case CommandType::EquipItem: result = match_->TryEquipItem(player, cmd.unit, cmd.item); break;
             case CommandType::UnequipItem: result = match_->TryUnequipItem(player, cmd.unit, cmd.slot); break;
+            case CommandType::CombineItems: result = match_->TryCombineItems(player, cmd.item, cmd.item2); break;
             case CommandType::GetState:
             case CommandType::GetFight:
             case CommandType::GetCatalog:
@@ -238,7 +239,7 @@ public:
         }
         const int index = static_cast<int>(fights_.size());
         fights_.push_back(msg::Summarize(index, o));
-        fightJson_.push_back(msg::Combat(round, index, o));
+        fightJson_.push_back(msg::Combat(round, index, o, match_.get()));
     }
     void OnPlayerDamaged(PlayerId p, int damage, int health) override { Queue(-1, msg::PlayerDamaged(p, damage, health)); }
     void OnPveDrop(PlayerId p, const PveDrop& drop) override { Queue(p, msg::PveDropMsg(drop)); }
@@ -257,6 +258,7 @@ public:
     void OnItemEquipped(PlayerId p, const UnitInstance& u, ItemId item) override { Queue(p, msg::ItemEquipped(u, item)); }
     void OnItemUnequipped(PlayerId p, const UnitInstance& u, ItemId item) override { Queue(p, msg::ItemUnequipped(u, item)); }
     void OnItemsCombined(PlayerId p, const UnitInstance& u, const ItemCombination& c) override { Queue(p, msg::ItemsCombined(u, c)); }
+    void OnBagItemsCombined(PlayerId p, ItemId first, ItemId second, ItemId result) override { Queue(p, msg::BagItemsCombined(first, second, result)); }
     void OnItemConsumed(PlayerId p, const UnitInstance& u, ItemId item, const std::vector<ItemId>& returned) override { Queue(p, msg::ItemConsumed(u, item, returned)); }
 
     // ---- accessors ----------------------------------------------------------------------------

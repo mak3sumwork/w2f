@@ -127,6 +127,9 @@ public:
     ActionResult TryEquipItem(UnitId unit, ItemId item);
     // Takes the item in `slot` off the unit and puts it back in the bag.
     ActionResult TryUnequipItem(UnitId unit, int slot);
+    // Combines two components that are both IN THE BAG (a recipe in items.json, either order; the same component twice needs two copies) into the finished item, which lands
+    // in the bag. InvalidItem, and nothing changes, if either is not in the bag, they are not both base components, or no recipe exists.
+    ActionResult TryCombineBagItems(ItemId first, ItemId second);
 
     // ---- Snapshot ----
     // Overwrites this player with saved state. It does NOT touch the shared pool: the pool's counts are restored

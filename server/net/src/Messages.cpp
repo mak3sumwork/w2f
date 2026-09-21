@@ -373,6 +373,12 @@ std::string PublicState(const MatchManager& match) {
             if (u.location == LocationType::Board) WriteUnit(w, u);
         }
         w.EndArray();
+        // The bench is public too (as in TFT, where you can scout it): it shows in the scouted player's arena. Gold, XP, shop, item bag stay private.
+        w.Key("bench").BeginArray();
+        for (const UnitInstance& u : p.Roster().Units()) {
+            if (u.location == LocationType::Bench) WriteUnit(w, u);
+        }
+        w.EndArray();
         w.EndObject();
     }
     w.EndArray();
@@ -410,7 +416,7 @@ std::string CombatSummary(int round, const std::vector<FightSummary>& fights) {
     return Finish(w);
 }
 
-std::string Combat(int round, int index, const CombatOutcome& o) {
+std::string Combat(int round, int index, const CombatOutcome& o, const MatchManager* match) {
     JsonWriter w = Start("combat");
     w.Field("round", round);
     w.Field("fight_index", index);
@@ -419,6 +425,22 @@ std::string Combat(int round, int index, const CombatOutcome& o) {
     w.Field("away_is_ghost", o.matchup.awayIsGhost);
     w.Field("away_is_monsters", o.matchup.awayIsMonsters);
     w.Field("encounter", o.matchup.encounter);
+    // The items the fighters carry (the boards are locked during a fight, so the rosters still say what stood there at its start). Monsters carry none.
+    w.Key("unit_items").BeginObject();
+    if (match != nullptr) {
+        for (const PlayerId seat : {o.matchup.home, o.matchup.away}) {
+            if (seat == kInvalidPlayerId || seat >= match->Players().PlayerCount()) continue;
+            for (const UnitInstance& u : match->Players().Get(seat)->Roster().Units()) {
+                if (u.location != LocationType::Board || u.ItemCount() == 0) continue;
+                w.Key(std::to_string(u.id)).BeginArray();
+                for (ItemId item : u.items) {
+                    if (item != 0) w.UInt(item);
+                }
+                w.EndArray();
+            }
+        }
+    }
+    w.EndObject();
     w.Field("winner", o.winner == CombatWinner::Home ? "home" : o.winner == CombatWinner::Away ? "away" : "draw");
     w.Field("winner_survivors", o.winnerSurvivors);
     w.Field("end_tick", o.log.endTick);
@@ -564,6 +586,15 @@ std::string ItemEquipped(const UnitInstance& unit, ItemId item) {
     w.Key("unit");
     WriteUnit(w, unit);
     w.Field("item", item);
+    return Finish(w);
+}
+
+std::string BagItemsCombined(ItemId first, ItemId second, ItemId result) {
+    JsonWriter w = Start("bag_event");
+    w.Field("event", "combined");
+    w.Field("first", first);
+    w.Field("second", second);
+    w.Field("result", result);
     return Finish(w);
 }
 

@@ -243,6 +243,29 @@ ActionResult PlayerState::TryEquipItem(UnitId unit, ItemId item) {
     return ActionResult::Ok;
 }
 
+ActionResult PlayerState::TryCombineBagItems(ItemId first, ItemId second) {
+    if (!IsAlive()) return ActionResult::PlayerEliminated;
+    if (items_ == nullptr || first == 0 || second == 0) return ActionResult::InvalidItem;
+    const auto a = std::find(itemBag_.begin(), itemBag_.end(), first);
+    if (a == itemBag_.end()) return ActionResult::InvalidItem;
+    // the second must be a DIFFERENT entry of the bag (the same id twice needs two copies)
+    auto b = itemBag_.end();
+    for (auto it = itemBag_.begin(); it != itemBag_.end(); ++it) {
+        if (it != a && *it == second) { b = it; break; }
+    }
+    if (b == itemBag_.end()) return ActionResult::InvalidItem;
+    const ItemDefinition* result = items_->FindCombination(first, second);
+    if (result == nullptr) return ActionResult::InvalidItem;
+    const ItemId finished = result->id;
+    const std::size_t hi = static_cast<std::size_t>(std::max(a - itemBag_.begin(), b - itemBag_.begin()));
+    const std::size_t lo = static_cast<std::size_t>(std::min(a - itemBag_.begin(), b - itemBag_.begin()));
+    itemBag_.erase(itemBag_.begin() + static_cast<std::ptrdiff_t>(hi));
+    itemBag_.erase(itemBag_.begin() + static_cast<std::ptrdiff_t>(lo));
+    itemBag_.push_back(finished);
+    if (listener_) listener_->OnBagItemsCombined(id_, first, second, finished);
+    return ActionResult::Ok;
+}
+
 ActionResult PlayerState::TryUnequipItem(UnitId unit, int slot) {
     if (!IsAlive()) return ActionResult::PlayerEliminated;
     ItemId item = 0;

@@ -610,6 +610,13 @@ ActionResult MatchManager::TryEquipItem(PlayerId player, UnitId unit, ItemId ite
     return p->TryEquipItem(unit, item);
 }
 
+ActionResult MatchManager::TryCombineItems(PlayerId player, ItemId first, ItemId second) {
+    PlayerState* p = nullptr;
+    const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
+    if (check != ActionResult::Ok) return check;
+    return p->TryCombineBagItems(first, second);
+}
+
 ActionResult MatchManager::TryUnequipItem(PlayerId player, UnitId unit, int slot) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
@@ -641,6 +648,10 @@ void MatchManager::OnItemUnequipped(PlayerId player, const UnitInstance& unit, I
 void MatchManager::OnItemConsumed(PlayerId player, const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned) {
     for (IMatchListener* l : listeners_) l->OnItemConsumed(player, unit, consumable, returned);
 }
+void MatchManager::OnBagItemsCombined(PlayerId player, ItemId first, ItemId second, ItemId result) {
+    for (IMatchListener* l : listeners_) l->OnBagItemsCombined(player, first, second, result);
+}
+
 void MatchManager::OnItemsCombined(PlayerId player, const UnitInstance& unit, const ItemCombination& combination) {
     for (IMatchListener* l : listeners_) l->OnItemsCombined(player, unit, combination);
 }

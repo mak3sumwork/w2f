@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 1;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 2;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -33,6 +33,7 @@ enum class CommandType : std::uint8_t {
     MoveUnit,     // unit_id, location ("bench" | "board"), x, [y]
     EquipItem,    // unit_id, item_id
     UnequipItem,  // unit_id, slot
+    CombineItems, // first, second: two components in the item bag become the finished item
     GetState,     // re-send the private and public state
     GetFight,     // fight_index: the combat log of one of this round's fights (any player's: fights are public)
     Ping,         // answered with "pong" even before a match exists
@@ -49,6 +50,7 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::MoveUnit: return "move_unit";
         case CommandType::EquipItem: return "equip_item";
         case CommandType::UnequipItem: return "unequip_item";
+        case CommandType::CombineItems: return "combine_items";
         case CommandType::GetState: return "get_state";
         case CommandType::GetFight: return "get_fight";
         case CommandType::Ping: return "ping";
@@ -65,6 +67,7 @@ struct Command {
     int giftIndex = 0;
     UnitId unit = kInvalidUnitId;
     ItemId item = 0;
+    ItemId item2 = 0;   // combine_items: the second component (`item` is the first)
     LocationType location = LocationType::None;
     int x = 0;
     int y = 0;

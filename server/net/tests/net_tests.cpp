@@ -516,7 +516,7 @@ struct Rig {
     std::unique_ptr<ItemDatabase> items;
     std::unique_ptr<TraitDatabase> traits = sample::LoadProductionTraits();
     std::unique_ptr<EncounterDatabase> encounters;
-    std::unique_ptr<TextTable> text = TextTable::FromFile(sample::ProductionTextPath());
+    std::unique_ptr<TextTable> display = TextTable::FromFile(sample::ProductionTextPath());
     GameData data;
     GameServerConfig cfg;
     FakeTransport net;
@@ -534,7 +534,7 @@ struct Rig {
         data.items = items.get();
         data.traits = traits.get();
         data.encounters = encounters.get();
-        data.text = text.get();
+        data.text = display.get();
         data.config.match.motherNatureTicks = 30;
         data.config.match.planningTicks = 90;
         data.config.match.combatTicks = Seconds(125);   // the real maximum: a fight that a shorter phase cut off would be decided by the tie-break, not fought to the end
@@ -1252,7 +1252,7 @@ static void TestPrivacyAndDelivery() {
                     if (unit == nullptr || (static_cast<std::uint32_t>(Num(*unit, "id")) >> 24) != static_cast<std::uint32_t>(me + 1)) ++badUnitOwner;
                 }
                 if (type == "public_state") {
-                    for (const char* forbidden : {"\"gold\"", "\"shop\"", "\"bench\"", "\"item_bag\"", "\"xp\"", "\"xp_to_next\""}) {
+                    for (const char* forbidden : {"\"gold\"", "\"shop\"", "\"item_bag\"", "\"xp\"", "\"xp_to_next\""}) {   // (the bench is public since revision 2)
                         if (text.find(forbidden) != std::string::npos) ++publicLeaks;
                     }
                     CHECK(v.Find("players")->Items().size() == 3);
@@ -2384,12 +2384,13 @@ static void TestJsonSchemas() {
         combination.result = 24;
         checkMessage(msg::ItemsCombined(unit, combination));
         checkMessage(msg::ItemConsumed(unit, 50, {3, 4}));
+        checkMessage(msg::BagItemsCombined(3, 3, 24));
         checkMessage(msg::PlayerDamaged(1, 7, 93));
         checkMessage(msg::PlayerEliminated(4, 6));
         checkMessage(msg::MatchStarted(r.data.config, 8, 0, 3, {1, 2, 3, 4, 5, 6, 7}));
         checkMessage(msg::Phase(r.data.config, MatchPhase::Combat, 5, 10, 600, 12345678901ull, false, false));
         checkMessage(msg::Phase(r.data.config, MatchPhase::MotherNature, 3, 0, 600, 0, true, true));
-        checkMessage(msg::Catalog(*r.champions, r.items.get(), r.traits.get(), r.encounters.get(), r.data.config.combat, r.text.get()));
+        checkMessage(msg::Catalog(*r.champions, r.items.get(), r.traits.get(), r.encounters.get(), r.data.config.combat, r.display.get()));
     }
 
     // 2. Whole matches: everything every client is sent (state, public_state, phases, fights, results, gifts, drops, events...).
@@ -2828,6 +2829,60 @@ static void TestEightClientSoak() {
     }
 }
 
+static void TestCombineItemsAndPublicBenchOverTheProtocol() {
+    Rig r(2, {}, sample::ProductionItemsPath());
+    const ConnectionId a = r.Connect();
+    const ConnectionId b = r.Connect();
+    CHECK(r.RunUntil([&] { return IsPlanning(r); }, 200));
+    PlayerState* player = const_cast<MatchManager*>(r.server->match())->PlayersMutable().Get(0);   // admin access: items normally arrive as PvE drops
+    for (ItemId item : {3u, 3u, 9u}) CHECK(player->AddItemToBag(item));
+    r.net.sent.clear();
+
+    // combine_items: the answer, then a bag_event, then the new state; private to the owner.
+    r.Say(a, R"({"action": "combine_items", "first": 3, "second": 3, "id": 5})");
+    CHECK(Str(r.Last(a, "result"), "result") == "Ok" && Num(r.Last(a, "result"), "id") == 5);
+    const json::Value event = r.Last(a, "bag_event");
+    CHECK(Str(event, "event") == "combined" && Num(event, "first") == 3 && Num(event, "second") == 3 && Num(event, "result") == 24);
+    std::vector<long long> bag;
+    const json::Value state = r.Last(a, "state");   // a named local: never range-for over a member of a temporary (MSVC)
+    for (const json::Value& item : state.Find("item_bag")->Items()) { long long id = 0; item.ToInt(id); bag.push_back(id); }
+    CHECK((bag == std::vector<long long>{9, 24}));
+    CHECK(r.CountType(b, "bag_event") == 0 && r.CountType(b, "state") == 0);
+    // Refused: nothing to combine with; and the schema-level refusals (missing / unknown fields).
+    r.net.sent.clear();
+    r.Say(a, R"({"action": "combine_items", "first": 24, "second": 9, "id": 6})");
+    CHECK(Str(r.Last(a, "result"), "result") == "InvalidItem" && r.CountType(a, "bag_event") == 0);
+    r.Say(a, R"({"action": "combine_items", "first": 3})");
+    CHECK(Str(r.Last(a, "error"), "code") == "missing_field");
+    r.Say(a, R"({"action": "combine_items", "first": 3, "second": 3, "third": 3})");
+    CHECK(Str(r.Last(a, "error"), "code") == "unknown_field");
+
+    // The bench is public: player 1 sees player 0's bench units (and the private bag and gold stay private).
+    r.Say(a, R"({"action": "buy_unit", "shop_index": 0})");
+    r.Say(b, R"({"action": "get_state"})");
+    const json::Value pub = r.Last(b, "public_state");
+    bool sawBench = false;
+    for (const json::Value& p : pub.Find("players")->Items()) {
+        CHECK(p.Find("bench") != nullptr && p.Find("bench")->IsArray());
+        if (Num(p, "player_id") == 0 && !p.Find("bench")->Items().empty()) sawBench = true;
+    }
+    CHECK(sawBench);
+
+    // The fighters' items travel with the fight: combat.unit_items maps a unit id to its item ids.
+    const UnitId unit = player->Roster().Units()[0].id;
+    CHECK(player->AddItemToBag(4));
+    r.Say(a, R"({"action": "move_unit", "unit_id": )" + std::to_string(unit) + R"(, "location": "board", "x": 3, "y": 3})");
+    r.Say(a, R"({"action": "equip_item", "unit_id": )" + std::to_string(unit) + R"(, "item_id": 4})");
+    r.net.sent.clear();
+    CHECK(r.RunUntil([&] { return r.server->match()->Phase() == MatchPhase::Combat; }, 5000));
+    const json::Value combat = r.Last(a, "combat");
+    const json::Value* unitItems = combat.Find("unit_items");
+    CHECK(unitItems != nullptr && unitItems->IsObject());
+    const json::Value* mine = unitItems != nullptr ? unitItems->Find(std::to_string(unit)) : nullptr;
+    long long carried = 0;
+    CHECK(mine != nullptr && mine->Items().size() == 1 && mine->Items()[0].ToInt(carried) && carried == 4);
+}
+
 static void TestCatalog() {
     Rig r(2);
     const ConnectionId a = r.Connect();   // works in the lobby, before any match
@@ -2854,7 +2909,7 @@ static void TestCatalog() {
     const json::Value* text = catalog.Find("text");
     CHECK(text != nullptr && text->IsObject() && Str(*text, "language") == "en");
     const json::Value* entries = text != nullptr ? text->Find("entries") : nullptr;
-    CHECK(entries != nullptr && entries->IsObject() && entries->MemberCount() == r.text->Entries().size());
+    CHECK(entries != nullptr && entries->IsObject() && entries->MemberCount() == r.display->Entries().size());
     const json::Value* aleskName = entries != nullptr ? entries->Find("champion.9001.name") : nullptr;
     const json::Value* aleskDesc = entries != nullptr ? entries->Find("champion.9001.ability.desc") : nullptr;
     CHECK(aleskName != nullptr && aleskName->AsString() == "Alesk" && aleskDesc != nullptr && aleskDesc->AsString().size() > 20);
@@ -2897,6 +2952,7 @@ int main() {
         {"Sockets: two-player flow + token reconnect", TestSocketFullMatchFlow},
         {"Sockets: the real server loop starts and stops", TestSocketServerLoopRunsAndStops},
         {"Item Remover over the protocol + catalog flag", TestItemRemoverOverTheProtocol},
+        {"combine_items + public bench over the protocol", TestCombineItemsAndPublicBenchOverTheProtocol},
         {"Combat phase length on the wire", TestCombatPhaseLengthOnTheWire},
         {"Bot seats: lobby, play, reset, determinism", TestBotSeats},
         {"JSON Schemas describe exactly what the server sends", TestJsonSchemas},

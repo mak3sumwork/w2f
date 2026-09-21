@@ -54,6 +54,8 @@ public:
     // Two items on a unit turned into one (right after OnItemEquipped for the second, or after OnUnitMerged for items carried over
     // by a merge). `unit` is its state afterwards: the result already sits in the slot the first item had.
     virtual void OnItemsCombined(PlayerId /*player*/, const UnitInstance& /*unit*/, const ItemCombination& /*combination*/) {}
+    // Two components in the item BAG were combined into a finished item (TryCombineBagItems).
+    virtual void OnBagItemsCombined(PlayerId /*player*/, ItemId /*first*/, ItemId /*second*/, ItemId /*result*/) {}
     // A consumable (the Item Remover) was used on `unit` and is gone from the bag. `returned` are the items that came off the unit, in slot order (each was
     // also announced by OnItemUnequipped just before). `unit` is its state afterwards.
     virtual void OnItemConsumed(PlayerId /*player*/, const UnitInstance& /*unit*/, ItemId /*consumable*/, const std::vector<ItemId>& /*returned*/) {}

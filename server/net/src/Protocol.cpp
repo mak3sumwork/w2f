@@ -78,7 +78,7 @@ ParseResult ParseCommand(std::string_view text) {
     struct Known { const char* name; CommandType type; };
     static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp},
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
-                                   {"unequip_item", CommandType::UnequipItem}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
+                                   {"unequip_item", CommandType::UnequipItem}, {"combine_items", CommandType::CombineItems}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
                                    {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}};
     bool found = false;
     for (const Known& k : kKnown) {
@@ -95,6 +95,7 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::MoveUnit: allowed = {"id", "action", "unit_id", "location", "x", "y"}; break;
         case CommandType::EquipItem: allowed = {"id", "action", "unit_id", "item_id"}; break;
         case CommandType::UnequipItem: allowed = {"id", "action", "unit_id", "slot"}; break;
+        case CommandType::CombineItems: allowed = {"id", "action", "first", "second"}; break;
         case CommandType::GetFight: allowed = {"id", "action", "fight_index"}; break;
         case CommandType::RerollShop:
         case CommandType::BuyXp:
@@ -160,6 +161,13 @@ ParseResult ParseCommand(std::string_view text) {
             if (!ok) break;
             ok = in.Required("slot", 0, kMaxItemsPerUnit - 1, v);
             c.slot = static_cast<int>(v);
+            break;
+        case CommandType::CombineItems:
+            ok = in.Required("first", 1, 4294967295LL, v);
+            c.item = static_cast<ItemId>(v);
+            if (!ok) break;
+            ok = in.Required("second", 1, 4294967295LL, v);
+            c.item2 = static_cast<ItemId>(v);
             break;
         case CommandType::GetFight:
             ok = in.Required("fight_index", 0, kMaxPlayers - 1, v);

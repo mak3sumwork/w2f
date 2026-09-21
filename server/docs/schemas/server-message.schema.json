@@ -60,6 +60,9 @@
   },
   {
    "$ref": "#/$defs/match_over"
+  },
+  {
+   "$ref": "#/$defs/bag_event"
   }
  ],
  "$defs": {
@@ -1029,10 +1032,18 @@
         "items": {
          "$ref": "#/$defs/unit"
         }
+       },
+       "bench": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/unit"
+        },
+        "description": "the player's bench (public since revision 2, as in TFT: it is what a scouted arena shows)"
        }
       },
       "required": [
        "alive",
+       "bench",
        "board",
        "health",
        "level",
@@ -1684,6 +1695,17 @@
      "items": {
       "$ref": "#/$defs/combatRow"
      }
+    },
+    "unit_items": {
+     "type": "object",
+     "description": "the items the fighters carry: unit id -> item ids (the Spawn rows carry none). Monsters carry none.",
+     "additionalProperties": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "minimum": 1
+      }
+     }
     }
    },
    "required": [
@@ -1700,6 +1722,7 @@
     "round",
     "survivors",
     "type",
+    "unit_items",
     "winner",
     "winner_survivors"
    ],
@@ -1792,6 +1815,38 @@
     "winner"
    ],
    "additionalProperties": false
+  },
+  "bag_event": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "bag_event"
+    },
+    "event": {
+     "const": "combined"
+    },
+    "first": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "second": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "result": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "type",
+    "event",
+    "first",
+    "second",
+    "result"
+   ],
+   "additionalProperties": false,
+   "description": "two components of the player's item bag were combined into `result` (the bag itself arrives in the next `state`)"
   }
  }
 }

@@ -58,7 +58,8 @@ struct FightSummary {
 FightSummary Summarize(int index, const CombatOutcome& outcome);
 std::string CombatSummary(int round, const std::vector<FightSummary>& fights);
 // The whole fight as a timestamped event stream; see docs/network-protocol.md for the column layout.
-std::string Combat(int round, int index, const CombatOutcome& outcome);
+// `match` (optional) lets the message name the items the fighters carry (`unit_items`: unit id -> item ids), read from the boards of the two seats: the log's Spawn rows carry none.
+std::string Combat(int round, int index, const CombatOutcome& outcome, const MatchManager* match = nullptr);
 
 std::string PlayerDamaged(PlayerId player, int damage, int healthAfter);
 std::string PlayerEliminated(PlayerId player, int placement);
@@ -74,6 +75,8 @@ std::string UnitMoved(const UnitMove& move);
 std::string UnitMerged(const UnitMerge& merge);
 std::string ItemEquipped(const UnitInstance& unit, ItemId item);
 std::string ItemUnequipped(const UnitInstance& unit, ItemId item);
+// Two components of the item bag were combined (the bag itself is in the next `state`).
+std::string BagItemsCombined(ItemId first, ItemId second, ItemId result);
 std::string ItemsCombined(const UnitInstance& unit, const ItemCombination& combination);
 std::string ItemConsumed(const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned);
 

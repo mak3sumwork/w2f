@@ -67,6 +67,7 @@ A message is at most 4096 bytes.
 | `move_unit` | `unit_id`, `location` `"bench"`\|`"board"`, `x`, `y` | bench: `x` 0..8 (`y` optional, must be 0); board: `x` 0..6, `y` 0..3 (3 = front row). Swaps with whatever is there. In Combat / Resolution only bench <-> bench (`UnitInCombat` otherwise). The board holds as many units as the player's level (`BoardFull`) |
 | `equip_item` | `unit_id`, `item_id` | the item comes from the player's item bag. Planning; in Combat / Resolution onto bench units only. An **Item Remover** (consumable) takes all items off the unit instead (`NoItemsToRemove` if it has none) |
 | `unequip_item` | `unit_id`, `slot` 0..2 | back to the bag. Same phase rule as `equip_item` |
+| `combine_items` | `first`, `second` (item ids) | (revision 2) combine two base components that are both **in the item bag** into the finished item (recipes in items.json, either order; the same id twice needs two copies). `InvalidItem` (nothing changes) if either is not in the bag or there is no recipe. Answered with `result`, a `bag_event` (`event` `combined`, `first`, `second`, `result`) and the new `state`. Same phase rules as `equip_item` |
 | `get_state` | | re-send `state` and `public_state` |
 | `get_fight` | `fight_index` 0..7 | this round's combat log of any fight (they are public) |
 | `get_catalog` | | answered with `catalog`: what every champion / item / trait id means. Works in the lobby too (costs 5 rate-limit tokens) |
@@ -106,7 +107,7 @@ A **unit** is `{"id", "champion", "star", "location": "bench"|"board", "x", "y",
 | `catalog` | answer to `get_catalog` | `champions` (`id`, `name`, `cost`, `role` `tank`\|`damage`, `monster`, `summon`, `traits`, `hp[3]`, `attack_damage[3]`, `attack_speed_milli`, `range`, `max_mana`, `ability`, `passive` names; the PvE monsters are included, flagged `monster`), `items` (`id`, `name`, `components` (two ids for a finished item), `stats`, `traits` granted, `has_effect`, `consumable`: the Item Remover, used up by `equip_item`), `traits` (`id`, `name`, `breakpoints`), `text` (`language`, `entries`: the display text, a flat key -> string map from `data/text_en.json`; keys in `docs/UE5-Integration.md` section 5) |
 | `match_started` | the match begins (and on reconnect) | `player_id`, `seats`, `bot_seats` (the AI seats), `tick_rate` (30), `phase_ticks` (`mother_nature`, `planning`, `combat`, `resolution`), `mother_nature_every` (every N rounds; 0 = no Mother Nature data), `board` dimensions, `combat_event_types` (names, index = event type number) |
 | `phase` | every phase change (and on reconnect) | `phase` (`MotherNature`\|`Planning`\|`Combat`\|`Resolution`\|`MatchOver`), `round`, `stage`, `round_in_stage`, `pve`, `mother_nature` (this is one of her rounds: a gift phase first, and no shop until the round is over), `shop_closed` (no shop this round: Mother Nature's, or the opening round 1 where everyone is dealt a free unit), `duration_ticks` (the phase's REAL length: a Combat phase lasts as long as the round's longest fight plus a 2 s linger, at least 3 s and at most 35 s, and this is known from its first tick), `ticks_remaining`, `server_tick`. Clients count the phase down themselves at 30 ticks/s |
-| `public_state` | whenever it changed | `round` and `players`: `player_id`, `alive`, `health`, `level`, `streak`, `placement`, **`board`** (units). Gold, XP, shop, bench and item bag are **not** in it |
+| `public_state` | whenever it changed | `round` and `players`: `player_id`, `alive`, `health`, `level`, `streak`, `placement`, **`board`** and (revision 2) **`bench`** (units, with their items: public, as in TFT, so a client can show a scouted arena). Gold, XP, shop and item bag are **not** in it |
 | `combat_summary` | a Combat phase begins | `round`, `fights`: `index`, `home`, `away` (`null` for monsters), `away_is_ghost`, `away_is_monsters`, `encounter`, `events` |
 | `player_damaged` | a PvP round resolved | `player_id`, `damage`, `health` |
 | `player_eliminated` | | `player_id`, `placement` |
@@ -119,7 +120,7 @@ or ghost fight); anyone can fetch any fight with `get_fight`, and a reconnecting
 
 ```
 {"type": "combat", "round": 5, "fight_index": 1, "home": 3, "away": 6, "away_is_ghost": false, "away_is_monsters": false, "encounter": 0,
- "winner": "home"|"away"|"draw", "winner_survivors": 4, "end_tick": 812, "survivors": [4, 0], "checksum": "1f2e...16 hex digits",
+ "unit_items": {"16777217": [4]}, "winner": "home"|"away"|"draw", "winner_survivors": 4, "end_tick": 812, "survivors": [4, 0], "checksum": "1f2e...16 hex digits",
  "columns": ["tick", "type", "team", "unit", "other", "from_x", "from_y", "to_x", "to_y", "amount", "hp_after", "champion", "star",
              "absorbed", "subtype", "flags", "ability", "duration", "mana_max", "mana_regen", "reduced", "trait_id", "windup", "flight", "kind", "shape", "size"],
  "events": [[0, 0, 0, 16777217, 0, 0, 0, 3, 5, 500, 500, 9008, 1, 0, 0, 0, 0, 0, 60000, 0, 0, 0, 0, 0, 0, 0, 0], ...]}
@@ -137,8 +138,8 @@ lands**; an animation may start earlier by `windup` (+ `flight`). A fight goes i
 ### Who gets what (privacy)
 | | owner | other players |
 |---|---|---|
-| gold, XP, shop offer, bench, item bag, income, PvE drops, Mother Nature offers and picks, own unit events | yes | **never** |
-| board (units, positions, items), health, level, streak, alive / placement | yes | yes |
+| gold, XP, shop offer, item bag, income, PvE drops, Mother Nature offers and picks, own unit events | yes | **never** |
+| board and bench (units, positions, items; the bench is public since revision 2), health, level, streak, alive / placement | yes | yes |
 | phase, damage, eliminations, combat summary, combat logs, results | yes | yes |
 
 This is enforced where the messages are built: private messages are queued *for a seat* and cannot reach another connection, and `public_state`

@@ -162,6 +162,8 @@ public:
     // Put an item from the player's bag on a unit / take it off again.
     ActionResult TryEquipItem(PlayerId player, UnitId unit, ItemId item);
     ActionResult TryUnequipItem(PlayerId player, UnitId unit, int slot);
+    // Combine two components of the player's item bag into a finished item (any phase in which items may be handled, like equipping to a bench unit).
+    ActionResult TryCombineItems(PlayerId player, ItemId first, ItemId second);
 
     // ---- Snapshot / restore (see Snapshot.h) ----
     // The whole match as bytes. Call between ticks / actions (which is the only time anything can call it).
@@ -221,6 +223,7 @@ private:
     void OnItemEquipped(PlayerId player, const UnitInstance& unit, ItemId item) override;
     void OnItemUnequipped(PlayerId player, const UnitInstance& unit, ItemId item) override;
     void OnItemsCombined(PlayerId player, const UnitInstance& unit, const ItemCombination& combination) override;
+    void OnBagItemsCombined(PlayerId player, ItemId first, ItemId second, ItemId result) override;
     void OnItemConsumed(PlayerId player, const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned) override;
     void OnIncomeGranted(PlayerId player, int round, const IncomeBreakdown& income) override;
 

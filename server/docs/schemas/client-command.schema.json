@@ -286,6 +286,37 @@
     "action"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "action": {
+     "const": "combine_items"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "first": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "an item id in the item bag (a base component)"
+    },
+    "second": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "another base component in the bag (the same id twice needs two copies)"
+    }
+   },
+   "required": [
+    "action",
+    "first",
+    "second"
+   ],
+   "additionalProperties": false,
+   "description": "combine two components of the bag into the finished item (recipes in items.json); answered with `result`, then a `bag_event` and the new `state`"
   }
  ]
 }
