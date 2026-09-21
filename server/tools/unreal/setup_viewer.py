@@ -14,6 +14,7 @@ import import_blockouts   # noqa: E402  (same folder)
 MAP = "/Game/W2F/Maps/L_Viewer"
 
 import_blockouts.import_models()   # (re)import every SM_*.glb, replacing what is there
+import_blockouts.import_icons()    # ... and the UI icons (T_Item_*, T_Portrait_*, T_Coin, T_Lock*)
 import_blockouts.assign_material(import_blockouts.vertex_colour_material())
 
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)

@@ -554,15 +554,54 @@
        },
        "presentation": {
         "$ref": "#/$defs/championPresentation"
+       },
+       "armor": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "minItems": 3,
+        "maxItems": 3
+       },
+       "magic_resist": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "minItems": 3,
+        "maxItems": 3
+       },
+       "ability_damage": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "minItems": 3,
+        "maxItems": 3
+       },
+       "start_mana": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "mana_regen_milli": {
+        "type": "integer",
+        "minimum": 0
        }
       },
       "required": [
        "ability",
+       "ability_damage",
+       "armor",
        "attack_damage",
        "attack_speed_milli",
        "cost",
        "hp",
        "id",
+       "magic_resist",
+       "mana_regen_milli",
        "max_mana",
        "monster",
        "name",
@@ -570,6 +609,7 @@
        "presentation",
        "range",
        "role",
+       "start_mana",
        "summon",
        "traits"
       ],

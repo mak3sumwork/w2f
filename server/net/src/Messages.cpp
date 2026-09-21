@@ -165,6 +165,11 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
             w.EndArray();
             WriteStarValues(w, "hp", c.stats.maxHp);
             WriteStarValues(w, "attack_damage", c.stats.attackDamage);
+            WriteStarValues(w, "armor", c.stats.armor);                    // (revision 4) the rest of the stat sheet, for a unit info panel
+            WriteStarValues(w, "magic_resist", c.stats.magicResist);
+            WriteStarValues(w, "ability_damage", c.stats.abilityDamage);
+            w.Field("start_mana", c.stats.startMana);
+            w.Field("mana_regen_milli", c.stats.manaRegenMilli);
             w.Field("attack_speed_milli", c.stats.attackSpeedMilli);
             w.Field("range", c.stats.attackRange);
             w.Field("max_mana", c.stats.maxMana);

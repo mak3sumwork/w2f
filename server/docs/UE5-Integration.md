@@ -343,6 +343,6 @@ data yet; names are. Fights are instant on the server: the log is produced in on
   numeric meanings do not change and are not removed. New fields, new message types, new appended enum values (event types, status types, area shapes, action results) may appear: a client must
   **ignore unknown fields and unknown message types**, and treat an unknown enum index as "no special effect".
 * A breaking change would bump `protocol` to 2 and be announced in this file. The schema files are versioned with the protocol and updated in the same commit as any addition.
-* **Revision history** (additive only): **1** the frozen protocol; **3** (Phase 21) `set_shop_lock` + `state.shop_locked` (the lock rule; snapshot format 5); **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
+* **Revision history** (additive only): **1** the frozen protocol; **4** (Phase 22) the catalog champions also carry `armor[3]`, `magic_resist[3]`, `ability_damage[3]`, `start_mana`, `mana_regen_milli`; **3** (Phase 21) `set_shop_lock` + `state.shop_locked` (the lock rule; snapshot format 5); **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
   scouted player's arena), `combat.unit_items` (unit id -> item ids of the fighters).
 * The combat log's columns are named in every message: read them from `columns`, never by hard-coded position, and tolerate extra columns at the end.

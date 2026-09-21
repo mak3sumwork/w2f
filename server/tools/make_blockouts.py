@@ -467,18 +467,19 @@ def bench_slot():
     return coloured(box(0, -0.0625, 0, 0.80, 0.125, 0.80), "8E897D") + coloured(box(0, 0.0, 0, 0.66, 0.012, 0.66), "B5B0A0")
 
 def arena_base():
-    """The floating island the board sits on (10 m along Z, 9 m along X, grass top at y = 0), a stone rim, four brazier pillars and a few pines."""
+    """The floating island the board sits on (11.6 m along Z, 9 m along X, grass top at y = 0): room for both benches. A stone rim, four brazier pillars and a few pines."""
+    L = 11.6
     t = []
-    t += coloured(box(0, -0.25, 0, 9.0, 0.5, 10.0), "5E8C4A")                                   # grass
-    t += coloured(box(0, -1.2, 0, 8.4, 1.4, 9.4), "6B5B4A") + coloured(box(0, -2.4, 0, 6.0, 1.0, 7.0), "574A3C")   # rock underneath
-    for sz in (-1, 1): t += coloured(box(0, 0.09, sz * 4.85, 9.0, 0.18, 0.30), "9C978A")          # rim
-    for sx in (-1, 1): t += coloured(box(sx * 4.35, 0.09, 0, 0.30, 0.18, 10.0), "9C978A")
+    t += coloured(box(0, -0.25, 0, 9.0, 0.5, L), "5E8C4A")                                       # grass
+    t += coloured(box(0, -1.2, 0, 8.4, 1.4, L - 0.6), "6B5B4A") + coloured(box(0, -2.4, 0, 6.0, 1.0, L - 3.0), "574A3C")   # rock underneath
+    for sz in (-1, 1): t += coloured(box(0, 0.09, sz * (L / 2 - 0.15), 9.0, 0.18, 0.30), "9C978A")   # rim
+    for sx in (-1, 1): t += coloured(box(sx * 4.35, 0.09, 0, 0.30, 0.18, L), "9C978A")
     for sx in (-1, 1):
         for sz in (-1, 1):
-            px, pz = sx * 4.1, sz * 4.6
+            px, pz = sx * 4.1, sz * (L / 2 - 0.4)
             t += coloured(box(px, 0.55, pz, 0.5, 1.1, 0.5), "9C978A") + coloured(cyl(px, 1.1, pz, 0.30, 0.22, 0.14, 8), "3A3A42") + coloured(cyl(px, 1.24, pz, 0.16, 0.0, 0.42, 6), "FFA733")
     for sx in (-1, 1):                                                                             # pines down both long sides
-        for pz in (-3.2, -1.6, 0.0, 1.6, 3.2):
+        for pz in (-4.0, -2.0, 0.0, 2.0, 4.0):
             px = sx * 4.15
             t += coloured(cyl(px, 0.0, pz, 0.09, 0.09, 0.4, 5), "6B4A2B") + coloured(cyl(px, 0.3, pz, 0.5, 0.0, 1.3, 7), "3F7A3A") + coloured(cyl(px, 0.9, pz, 0.38, 0.0, 1.0, 7), "4C8E45")
     return t

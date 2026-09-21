@@ -38,6 +38,43 @@ def import_models():
     return len(files)
 
 
+ICONS_SRC = os.environ.get("W2F_ICONS") or os.path.normpath(os.path.join(HERE, "..", "..", "docs", "icons"))
+ICONS_DEST = "/Game/W2F/Icons"
+
+
+def import_icons():
+    """Imports docs/icons/*.png (item icons, champion portraits, UI glyphs) as UI textures: no mipmaps, no compression artefacts, never streamed."""
+    if not os.path.isdir(ICONS_SRC):
+        unreal.log_warning("W2F: no icons folder at %s (run tools/make_icons.py)" % ICONS_SRC)
+        return 0
+    tasks = []
+    for f in sorted(os.listdir(ICONS_SRC)):
+        if not f.endswith(".png"):
+            continue
+        task = unreal.AssetImportTask()
+        task.set_editor_property("filename", os.path.join(ICONS_SRC, f))
+        task.set_editor_property("destination_path", ICONS_DEST)
+        task.set_editor_property("automated", True)
+        task.set_editor_property("replace_existing", True)
+        task.set_editor_property("replace_existing_settings", True)
+        task.set_editor_property("save", False)
+        tasks.append(task)
+    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+    count = 0
+    for asset_path in unreal.EditorAssetLibrary.list_assets(ICONS_DEST, recursive=True, include_folder=False):
+        texture = unreal.EditorAssetLibrary.load_asset(asset_path)
+        if not isinstance(texture, unreal.Texture2D):
+            continue
+        texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_EDITOR_ICON)
+        texture.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
+        texture.set_editor_property("never_stream", True)
+        texture.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_UI)
+        unreal.EditorAssetLibrary.save_loaded_asset(texture)
+        count += 1
+    unreal.log("W2F: imported %d icon textures from %s" % (count, ICONS_SRC))
+    return count
+
+
 def vertex_colour_material():
     """M_BlockoutVC: Base Color = the mesh's vertex colour. (Re)builds the graph every time, so an earlier broken version is repaired.
     NB: the Vertex Color node's outputs are all UNNAMED, the first one ("") is RGB: naming it "RGB" connects nothing and the material renders black."""
