@@ -22,7 +22,7 @@ SERVER   := build/w2f_server
 BALANCE  := build/w2f_balance
 RECORD   := build/w2f_record_fights
 
-.PHONY: all test test-engine test-net check-isolation demo server balance golden sample-fights blockouts clean
+.PHONY: all test test-engine test-net check-isolation demo server balance golden sample-fights blockouts crafted clean
 all: $(TEST) $(NET_TEST) $(DEMO) $(SERVER)
 
 build/engine/%.o: src/%.cpp $(HDR)
@@ -72,6 +72,10 @@ $(RECORD): $(ENGINE_OBJ) $(NET_OBJ) tools/record_fights.cpp $(HDR)
 # Placeholder 3D models (glTF) for every champion / monster, from data/ (standard-library Python; verifies its own output). docs/blockouts/README.md
 blockouts:
 	python3 tools/make_blockouts.py
+
+# The crafted (Blender) models: needs a Python 3.11 venv with the bpy module at ~/w2f_bpy/venv (docs/models/README.md)
+crafted:
+	$(HOME)/w2f_bpy/venv/bin/python tools/blender/alesk.py
 
 sample-fights: $(RECORD)
 	@mkdir -p docs/sample_fights
