@@ -1,0 +1,13 @@
+# TLS termination for w2f_server: Caddy gets a certificate for W2F_DOMAIN by itself (Let's Encrypt) and proxies WebSockets to the game servers.
+# Clients connect to  wss://$W2F_DOMAIN/match/1?code=...  (the server ignores the path; the proxy uses it to pick a match).
+{$W2F_DOMAIN:localhost} {
+	handle /match/1* {
+		reverse_proxy w2f-1:7777
+	}
+	handle /match/2* {
+		reverse_proxy w2f-2:7777
+	}
+	handle {
+		respond "W2F game server" 200
+	}
+}

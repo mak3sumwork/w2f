@@ -91,6 +91,16 @@
   #bag { display: flex; flex-wrap: wrap; gap: 6px; }
   .item { padding: 3px 8px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
   .item.sel { outline: 2px solid #fff; } .item.legend { border-color: var(--gold); } .item.emblem { border-color: #a855f7; }
+  .item { cursor: grab; } .item.consumable { border: 1px dashed var(--bad); color: #ffb3b3; background: #3a2226; font-weight: 650; }
+  .item.dragging, .tok.dragging { opacity: .4; }
+  .cell.dragover, .slot.dragover { background: #59639a; outline: 2px dashed #fff8; }
+  .panel.dragover { outline: 2px dashed var(--bad); }
+  .tok[draggable=true] { cursor: grab; }
+  .dragHint { font-size: 11px; color: var(--dim); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .otBadge { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); z-index: 6; padding: 3px 12px; border-radius: 999px; background: #b3261e; color: #fff; font-weight: 800;
+             letter-spacing: .12em; animation: otPulse .7s ease-in-out infinite alternate; pointer-events: none; }
+  @keyframes otPulse { from { opacity: .65; } to { opacity: 1; } }
+  .field.overtime .cell { box-shadow: inset 0 0 0 2px #ff5a4f55; }
   #inspector .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
   #log { max-height: 320px; overflow-y: auto; font-size: 12px; display: grid; gap: 1px; }
   #log div { padding: 1px 4px; border-radius: 3px; } #log .err { color: var(--bad); } #log .imp { color: var(--gold); } #log .mn { color: #c8b3ff; } #log .sys { color: var(--dim); }
@@ -105,6 +115,12 @@
   .ctok .mnb i { display: block; height: 100%; background: #5ab0ff; }
   .fx { position: absolute; left: 0; top: 0; pointer-events: none; font-weight: 800; text-shadow: 0 1px 2px #000; animation: floatUp .9s ease-out forwards; z-index: 5; }
   @keyframes floatUp { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -34px; } }
+  .fx.dot1 { color: #ffb066; } .fx.dot36 { color: #7ee07e; } .fx.dot37 { color: #ff6b6b; } .fx.dot38 { color: #d18cff; }   /* typed DoT ticks: Burn / Poison / Bleed / Drain */
+  .proj { position: absolute; left: 0; top: 0; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: radial-gradient(#fff, #ffd166 60%, #ff9f1c); box-shadow: 0 0 8px 3px #ffd16699; z-index: 4; pointer-events: none; }
+  .aoe { position: absolute; left: 0; top: 0; border-radius: 50%; border: 3px solid #ffffffcc; background: #ffffff22; pointer-events: none; z-index: 3; animation: aoeFade .9s ease-out forwards; }
+  .aoe.line { border-radius: 4px; } .aoe.all { border-radius: 8px; }
+  @keyframes aoeFade { from { opacity: 1; } to { opacity: 0; } }
+  .ctok.swing { filter: brightness(1.35); } .ctok.winding { box-shadow: 0 0 0 3px #ffffff55; }
   .fx.dmg { color: #ffd0d0; } .fx.crit { color: #ffcf40; font-size: 17px; } .fx.heal { color: var(--good); } .fx.txt { color: #cfe0ff; font-size: 11px; }
   .arenaline { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed #fff2; pointer-events: none; }
   .fights .f { display: flex; justify-content: space-between; gap: 8px; padding: 2px 4px; border-radius: 4px; } .fights .f.mine { background: #2b3350; }
@@ -157,12 +173,12 @@
       </div>
       <div class="panel" id="stage"><div id="board" class="field"></div><div id="arena" class="field" hidden></div><div id="battleResult" class="banner" hidden style="margin-top:8px"></div></div>
       <div class="panel"><h3>Bench (click a unit, then a slot or a cell)</h3><div id="bench"></div></div>
-      <div class="panel"><h3>Shop</h3><div id="shop"></div></div>
+      <div class="panel" id="shopPanel"><h3>Shop <span class="dragHint">- drag a champion here to sell it</span></h3><div id="shop"></div></div>
     </section>
 
     <aside>
       <div class="panel" id="inspector"><h3>Selected</h3><div class="dim">Click a unit or an item.</div></div>
-      <div class="panel"><h3>Item bag (click an item, then a unit)</h3><div id="bag" class="dim">-</div></div>
+      <div class="panel"><h3>Item bag <span class="dragHint">- drag an item onto a champion (or click both)</span></h3><div id="bag" class="dim">-</div></div>
       <div class="panel"><h3>Log</h3><div id="log"></div></div>
     </aside>
   </div>
@@ -205,7 +221,7 @@ const G = {
   champ: {}, item: {}, trait: {}, traitByName: {}, catalogReady: false,
   meta: null, phase: null, me: null, pub: null, maxHealth: 0,
   fights: [], fightRound: 0, logs: {},
-  sel: null, viewSeat: null, view: 'board', replay: null, wantFight: null,
+  sel: null, viewSeat: null, view: 'board', replay: null, wantFight: null, drag: null,
   over: null, log: [], nextId: 1, pending: {}, reconnectTimer: null, manualClose: false,
 };
 
@@ -238,6 +254,7 @@ function statText(st) {
 function itemTip(id) {
   const it = G.item[id];
   if (!it) return 'item ' + id;
+  if (it.consumable) return it.name + '\nConsumable. Drag it onto a champion (or click it, then the champion): it takes ALL of that champion\'s items off and puts them back in your bag. It does not use an item slot, and it is used up.';
   const lines = [it.name];
   if (it.components.length) lines.push('= ' + it.components.map(iName).join(' + '));
   const s = statText(it.stats);
@@ -344,7 +361,8 @@ function handle(m) {
       break;
     case 'income': logLine('Income: +' + m.total_gold + ' gold (' + m.base_gold + ' base, ' + m.interest_gold + ' interest, ' + m.streak_gold + ' streak), +' + m.passive_xp + ' XP.', 'sys'); break;
     case 'result':
-      if (!m.ok) logLine(m.action + ' refused: ' + m.result + (m.result === 'BoardFull' && G.me ? ' (at level ' + G.me.level + ' you can field ' + G.me.level + ' units: swap with a unit on the board, or level up)' : ''), 'err');
+      if (!m.ok && m.result === 'NoItemsToRemove') logLine('That champion carries no items, so the Item Remover was not used (you keep it).', 'err');
+      else if (!m.ok) logLine(m.action + ' refused: ' + m.result + (m.result === 'UnitInCombat' ? ' (the board is locked while units fight: only bench units can be sold, moved or equipped, and a purchase may not merge into a fighter)' : m.result === 'BoardFull' && G.me ? ' (at level ' + G.me.level + ' you can field ' + G.me.level + ' units: swap with a unit on the board, or level up)' : ''), 'err');
       delete G.pending[m.id];
       break;
     case 'error': logLine('Server error: ' + m.code + ' - ' + m.detail, 'err'); break;
@@ -374,6 +392,8 @@ function onUnitEvent(m) {
     case 'sold': logLine('Sold ' + cName(u.champion) + ' ' + '*'.repeat(u.star) + ' for ' + m.gold_gained + '.'); break;
     case 'merged': logLine(cName(u.champion) + ' is now ' + u.star + '-star!', 'imp'); break;
     case 'items_combined': logLine('Items combined into ' + iName(m.result) + ' on ' + cName(u.champion) + '.', 'imp'); break;
+    case 'consumable_used': logLine(iName(m.item) + ' used on ' + cName(u.champion) + ': ' + (m.returned.length ? m.returned.map(iName).join(', ') + ' returned to your bag.' : 'nothing to return.'), 'imp'); break;
+    case 'item_unequipped': logLine('Took ' + iName(m.item) + ' off ' + cName(u.champion) + '.'); break;
     case 'item_equipped': logLine('Equipped ' + iName(m.item) + ' on ' + cName(u.champion) + '.'); break;
     default: break;
   }
@@ -451,9 +471,9 @@ function renderHud() {
     $('streak').className = 'value ' + (me.streak > 0 ? 'good' : me.streak < 0 ? 'bad' : '');
     $('boardCount').textContent = me.board.length + '/' + me.level + ' on board, ' + me.bench.filter(Boolean).length + ' on bench';
   }
-  const planning = p && p.phase === 'Planning';
-  $('btnReroll').disabled = !planning || !me || me.gold < 2 || p.shop_closed;
-  $('btnXp').disabled = !planning || !me || me.gold < 4 || me.xp_to_next === 0;
+  const shopOpen = p && (p.phase === 'Planning' || p.phase === 'Combat' || p.phase === 'Resolution');   // the shop stays open while units fight (bought champions go to the bench)
+  $('btnReroll').disabled = !shopOpen || !me || me.gold < 2 || p.shop_closed;
+  $('btnXp').disabled = !shopOpen || !me || me.gold < 4 || me.xp_to_next === 0;
 }
 function tickTimer() {
   const p = G.phase;
@@ -479,7 +499,42 @@ function makeToken(u, cls) {
     t.appendChild(d);
   }
   if (G.sel && G.sel.type === 'unit' && G.sel.id === u.id) t.classList.add('sel');
+  if (!viewingOther()) makeDraggable(t, { type: 'unit', id: u.id });
   return t;
+}
+
+// ---- drag and drop (units between cells / bench / the shop panel, items onto units) ------------------------------------------------------
+// The drag payload also lives in G.drag, because browsers hide dataTransfer contents while a drag is still over a target.
+function makeDraggable(el, payload) {
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => {
+    G.drag = payload;
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', payload.type + ':' + (payload.id || payload.item)); } catch (err) { /* some browsers refuse */ }
+    el.classList.add('dragging');
+  });
+  el.addEventListener('dragend', () => { G.drag = null; el.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach((x) => x.classList.remove('dragover')); });
+}
+function makeDropTarget(el, onDrop) {
+  el.addEventListener('dragover', (e) => { if (!G.drag) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+  el.addEventListener('drop', (e) => {
+    e.preventDefault(); el.classList.remove('dragover');
+    const payload = G.drag; G.drag = null;
+    if (payload) onDrop(payload);
+  });
+}
+// Dropping on a bench slot or board cell: an item goes on the unit standing there (an Item Remover empties it), a unit moves there (or swaps).
+function dropOnPlace(payload, location, x, y) {
+  if (viewingOther() || !G.me) return;
+  const here = location === 'bench' ? G.me.bench[x] : G.me.board.find((u) => u.x === x && u.y === y);
+  if (payload.type === 'item') {
+    if (here) send({ action: 'equip_item', unit_id: here.id, item_id: payload.item });
+    else logLine('Drop the item onto a champion.', 'sys');
+  } else if (payload.type === 'unit' && !(here && here.id === payload.id)) {
+    send({ action: 'move_unit', unit_id: payload.id, location, x, y: location === 'bench' ? 0 : y });
+  }
+  G.sel = null;
 }
 
 // Board geometry: odd rows sit half a hex to the right; "row" is the DISPLAY row (0 = top).
@@ -503,7 +558,7 @@ function renderBoard() {
         cell.appendChild(makeToken(u));
         if (G.sel && G.sel.type === 'unit' && G.sel.id === u.id) cell.classList.add('sel');
       }
-      if (interactive) cell.onclick = () => clickPlace('board', x, y);
+      if (interactive) { cell.onclick = () => clickPlace('board', x, y); makeDropTarget(cell, (payload) => dropOnPlace(payload, 'board', x, y)); }
       field.appendChild(cell);
     }
   }
@@ -519,6 +574,7 @@ function renderBench() {
     s.appendChild(h('span', 'idx', i + 1));
     if (u) { s.appendChild(makeToken(u, 'small')); if (G.sel && G.sel.type === 'unit' && G.sel.id === u.id) s.classList.add('sel'); }
     s.onclick = () => clickPlace('bench', i, 0);
+    makeDropTarget(s, (payload) => dropOnPlace(payload, 'bench', i, 0));
     bench.appendChild(s);
   }
 }
@@ -556,8 +612,9 @@ function renderBag() {
   bag.className = '';
   items.forEach((id) => {
     const it = G.item[id];
-    const chip = h('div', 'item' + (it && it.components.length ? (it.traits.length ? ' emblem' : ' legend') : ''), iName(id));
+    const chip = h('div', 'item' + (it && it.consumable ? ' consumable' : it && it.components.length ? (it.traits.length ? ' emblem' : ' legend') : ''), iName(id));
     chip.title = itemTip(id);
+    makeDraggable(chip, { type: 'item', item: id });
     if (G.sel && G.sel.type === 'item' && G.sel.item === id) chip.classList.add('sel');
     chip.onclick = () => { G.sel = G.sel && G.sel.type === 'item' && G.sel.item === id ? null : { type: 'item', item: id }; renderAll(); };
     bag.appendChild(chip);
@@ -705,10 +762,13 @@ class Replay {
       return e;
     });
     this.endTick = msg.end_tick;
+    // The presentation contract: an Attack's tick is its IMPACT; the swing starts `windup + flight` earlier and a projectile flies for `flight` ticks.
+    this.attacks = this.ev.filter((e) => e.type === 2).map((e) => ({ unit: e.unit, target: e.other, tick: e.tick, launch: e.tick - e.flight, start: e.tick - e.flight - e.windup, kind: e.kind, from: { x: e.from_x, y: e.from_y }, to: { x: e.to_x, y: e.to_y } }));
+    this.casts = this.ev.filter((e) => e.type === 5).map((e) => ({ unit: e.unit, tick: e.tick, start: e.tick - e.windup, end: e.tick + Math.max(e.duration, 1) }));
     this.reset();
   }
   reset() {
-    this.t = 0; this.i = 0; this.units = new Map(); this.fx = []; this.notes = []; this.finished = false;
+    this.t = 0; this.i = 0; this.units = new Map(); this.fx = []; this.aoe = []; this.notes = []; this.finished = false; this.overtime = null; this.overtimeShown = false;
   }
   advance(dt) { this.t += dt; this.applyUntil(this.t); }
   seekEnd() { this.t = this.endTick + 1; this.applyUntil(1e9); }
@@ -730,19 +790,25 @@ class Replay {
       case 13:  // Teleport
         if (u) { u.x = e.to_x; u.y = e.to_y; u.from = null; }
         break;
-      case 2:   // Attack
-        if (u) u.lunge = { target: e.other, t0: e.tick, dur: 6 };
+      case 2:   // Attack (its tick is the moment of impact)
+        if (u) u.lunge = { target: e.other, t0: e.tick - 3, dur: 6 };
         break;
       case 3:   // Damage
         if (u) {
           u.hp = e.hp_after; u.maxHp = Math.max(u.maxHp, u.hp);
           const lost = e.amount - e.absorbed;
           if (e.absorbed > 0 && u.shield > 0) u.shield = Math.max(0, u.shield - e.absorbed);
-          this.fx.push({ unit: e.unit, text: String(Math.max(lost, 0)), cls: (e.flags & 1) ? 'crit' : 'dmg' });
+          this.fx.push({ unit: e.unit, text: String(Math.max(lost, 0)), cls: (e.flags & 1) ? 'crit' : (e.flags & 2) && e.kind ? 'dot' + e.kind : 'dmg' });
         }
         break;
       case 4: if (u) { u.alive = false; u.hp = 0; } break;   // Death
-      case 5: if (u) { u.cast = e.tick + Math.max(e.duration, 1); this.fx.push({ unit: e.unit, text: this.abilityName(u), cls: 'txt' }); } break;
+      case 5:   // SpellCast: shape / size / to describe the area (see the catalog's area_shapes)
+        if (u) {
+          u.cast = e.tick + Math.max(e.duration, 1);
+          this.fx.push({ unit: e.unit, text: this.abilityName(u), cls: 'txt' });
+          this.aoe.push({ shape: e.shape, size: e.size, from: { x: e.from_x, y: e.from_y }, to: { x: e.to_x, y: e.to_y }, team: u.team });
+        }
+        break;
       case 6: if (u) u.shield += e.amount; break;            // ShieldApplied
       case 7: if (u) u.shield = 0; break;                    // ShieldEnded
       case 8:   // StatusApplied (subtype 0 = Stun); hp_after is the holder's HP afterwards (max-HP statuses move it)
@@ -752,6 +818,9 @@ class Replay {
       case 10: if (u) u.mana = e.amount; break;              // ManaChanged
       case 11:  // Heal
         if (u) { u.hp = e.hp_after; u.maxHp = Math.max(u.maxHp, u.hp); if (e.amount > 0) this.fx.push({ unit: e.unit, text: '+' + e.amount, cls: 'heal' }); }
+        break;
+      case 15:  // Overtime: from here every unit acts `amount` times faster, and the fight is a draw `duration` ticks later
+        this.overtime = { tick: e.tick, speed: e.amount, until: e.tick + e.duration };
         break;
       case 12:  // TraitActivated
         this.notes.push({ team: e.team, trait: e.trait_id, count: e.amount, level: e.subtype });
@@ -788,7 +857,7 @@ function startReplay(msg) {
   buildArena();
   showView('battle');
   const who = msg.away_is_monsters ? 'monsters' : seatLabel(msg.away) + (msg.away_is_ghost ? "'s ghost" : '');
-  logLine('Battle: ' + seatLabel(msg.home) + ' vs ' + who + ' - ' + msg.winner + ' wins (' + msg.winner_survivors + ' survivors).', 'sys');
+  logLine('Battle: ' + seatLabel(msg.home) + ' vs ' + who + ' - ' + (msg.winner === 'draw' ? 'a draw' : msg.winner + ' wins (' + msg.winner_survivors + ' survivors)') + '.', 'sys');
   R.last = performance.now();
   cancelAnimationFrame(R.raf);
   R.raf = requestAnimationFrame(frame);
@@ -799,6 +868,8 @@ function buildArena() {
   arena.style.width = 7.5 * HEX_W + 'px';
   arena.style.height = (ARENA_ROWS - 1) * ROW_H + 2 * HEX_R + 'px';
   R.els.clear();
+  if (R.proj) R.proj.clear();
+  arena.classList.remove('overtime');
   const flip = G.replay.bottomTeam === 0;
   for (let y = 0; y < ARENA_ROWS; ++y) {
     for (let x = 0; x < 7; ++x) {
@@ -847,6 +918,42 @@ function drawReplay() {
     el.hpBox.classList.toggle('shield', u.shield > 0);
     el.mnFill.style.width = u.manaMax > 0 ? Math.max(0, Math.min(100, (100 * u.mana) / u.manaMax)) + '%' : '0';
   }
+  // Presentation: projectiles in the air, swing / cast anticipation, and the areas spells cover.
+  const active = rp.attacks.filter((a) => a.start <= rp.t && rp.t < a.tick);   // (attacks are few in flight at any moment; the filter is cheap enough for a test client)
+  const swinging = new Set(active.map((a) => a.unit)), flying = new Map();
+  for (const a of active) if (a.kind === 1 && rp.t >= a.launch) flying.set(a, true);
+  for (const [id, el] of R.els) el.classList.toggle('swing', swinging.has(id));
+  for (const c of rp.casts) if (c.start <= rp.t && rp.t < c.tick && R.els.get(c.unit)) R.els.get(c.unit).classList.add('winding');
+  for (const [id, el] of R.els) if (!rp.casts.some((c) => c.unit === id && c.start <= rp.t && rp.t < c.tick)) el.classList.remove('winding');
+  R.proj = R.proj || new Map();
+  for (const [a, el] of R.proj) if (!flying.has(a)) { el.remove(); R.proj.delete(a); }
+  for (const a of flying.keys()) {
+    let el = R.proj.get(a);
+    if (!el) { el = h('div', 'proj'); arena.appendChild(el); R.proj.set(a, el); }
+    const p0 = arenaPixel(a.from.x, a.from.y, flip), p1 = arenaPixel(a.to.x, a.to.y, flip);
+    const f = Math.min(1, Math.max(0, (rp.t - a.launch) / Math.max(1, a.tick - a.launch)));
+    el.style.transform = 'translate(' + (p0.px + (p1.px - p0.px) * f) + 'px,' + (p0.py + (p1.py - p0.py) * f) + 'px)';
+  }
+  while (rp.aoe.length) {
+    const z = rp.aoe.shift();
+    if (z.shape === 0 || z.shape === 1) continue;   // None / Single: nothing to draw
+    const c = arenaPixel(z.shape === 3 ? z.from.x : z.to.x, z.shape === 3 ? z.from.y : z.to.y, flip);
+    const ring = h('div', 'aoe' + (z.shape === 7 ? ' all' : z.shape === 4 || z.shape === 5 || z.shape === 6 ? ' line' : ''));
+    let w = (2 * z.size + 1) * HEX_W * 0.92, hgt = w, tx = c.px - w / 2, ty = c.py - hgt / 2, rot = '';
+    if (z.shape === 7) { w = 7.5 * HEX_W; hgt = ARENA_ROWS * ROW_H; tx = 0; ty = 0; }
+    if (z.shape === 4 || z.shape === 5) {   // a line / cone: a band of `size` hexes from the caster through the target
+      const p0 = arenaPixel(z.from.x, z.from.y, flip);
+      const dx = c.px - p0.px, dy = c.py - p0.py, len = Math.max(1, Math.hypot(dx, dy));
+      w = Math.max(len, z.size * HEX_W); hgt = z.shape === 5 ? w * 0.9 : HEX_W * 0.7;
+      tx = p0.px; ty = p0.py - hgt / 2; rot = 'rotate(' + Math.atan2(dy, dx) + 'rad)';
+      ring.style.transformOrigin = '0 50%';
+    }
+    if (z.shape === 6) { w = 7 * HEX_W; hgt = HEX_W * 0.8; tx = 0; ty = c.py - hgt / 2; }
+    ring.style.width = w + 'px'; ring.style.height = hgt + 'px';
+    ring.style.transform = 'translate(' + tx + 'px,' + ty + 'px) ' + rot;
+    arena.appendChild(ring);
+    setTimeout(() => ring.remove(), 950);
+  }
   while (rp.fx.length) {
     const f = rp.fx.shift();
     const u = rp.unit(f.unit);
@@ -856,6 +963,12 @@ function drawReplay() {
     fx.style.transform = 'translate(' + (a.px - 10) + 'px,' + (a.py - 28) + 'px)';
     arena.appendChild(fx);
     setTimeout(() => fx.remove(), 950);
+  }
+  if (rp.overtime && !rp.overtimeShown && rp.t >= rp.overtime.tick) {
+    rp.overtimeShown = true;
+    arena.classList.add('overtime');
+    arena.appendChild(h('div', 'otBadge', 'OVERTIME x' + rp.overtime.speed));
+    logLine('Overtime! From ' + (rp.overtime.tick / TICK).toFixed(0) + ' s everyone attacks, moves and gains mana ' + rp.overtime.speed + 'x faster, until one team is wiped out.', 'imp');
   }
   if (rp.notes.length) {
     for (const n of rp.notes.splice(0)) {
@@ -879,10 +992,10 @@ function showBattleResult() {
   if (!box.hidden) return;
   const mine = m.home === G.seat || m.away === G.seat;
   const homeWon = m.winner === 'home', awayWon = m.winner === 'away';
-  let text = m.winner === 'draw' ? 'Draw (time ran out)' : (homeWon ? seatLabel(m.home) : m.away_is_monsters ? 'The monsters' : seatLabel(m.away)) + ' won with ' + m.winner_survivors + ' units left';
+  let text = m.winner === 'draw' ? (rp.overtime && m.end_tick >= rp.overtime.until ? 'Draw - still undecided after overtime' : 'Draw') : (homeWon ? seatLabel(m.home) : m.away_is_monsters ? 'The monsters' : seatLabel(m.away)) + ' won with ' + m.winner_survivors + ' units left';
   if (mine && m.home === G.seat && m.winner !== 'draw') text = (homeWon ? 'Victory' : 'Defeat') + ' - ' + text;
   if (mine && m.away === G.seat && m.winner !== 'draw') text = (awayWon ? 'Victory' : 'Defeat') + ' - ' + text;
-  box.textContent = text + '  (fight ended at ' + (m.end_tick / TICK).toFixed(1) + ' s)';
+  box.textContent = text + '  (fight ended at ' + (m.end_tick / TICK).toFixed(1) + ' s' + (rp.overtime && m.end_tick > rp.overtime.tick ? ', decided in overtime' : '') + ')';
   box.hidden = false;
 }
 
@@ -906,6 +1019,7 @@ function renderAll() {
 $('btnConnect').onclick = () => connect(false);
 $('btnDisconnect').onclick = () => { G.manualClose = true; if (G.ws) G.ws.close(); };
 $('btnReroll').onclick = reroll;
+makeDropTarget($('shopPanel'), (payload) => { if (payload.type === 'unit') { send({ action: 'sell_unit', unit_id: payload.id }); G.sel = null; } });   // drag a champion onto the shop to sell it
 $('btnXp').onclick = buyXp;
 $('tabBoard').onclick = () => { G.viewSeat = null; showView('board'); renderAll(); };
 $('tabBattle').onclick = () => { if (G.replay) showView('battle'); };

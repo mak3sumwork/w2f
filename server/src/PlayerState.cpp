@@ -118,14 +118,36 @@ void PlayerState::RecordRoundResult(RoundResult result) {
 
 // ---- Units -------------------------------------------------------------------------------
 
+// The purchase, tried out on a copy of the roster: where would the new unit land, and which units would a merge use?
+bool PlayerState::BenchOnlyPurchaseFits(const ChampionDefinition* champion, int starLevel) const {
+    UnitRoster trial = roster_;
+    const UnitRoster::AddResult result = trial.Add(champion, starLevel);
+    if (!result.added || result.unit.location == LocationType::Board) return false;
+    for (const UnitMerge& merge : result.merges) {
+        if (merge.upgraded.location == LocationType::Board) return false;
+        for (UnitId consumed : merge.consumed) {
+            const UnitInstance* existing = roster_.Find(consumed);   // (null: the new unit itself)
+            if (existing != nullptr && existing->location == LocationType::Board) return false;
+        }
+    }
+    return true;
+}
+
 bool PlayerState::CanAcquire(const ChampionDefinition* champion, int starLevel) const {
-    return IsAlive() && roster_.CanAdd(champion, starLevel);
+    if (!IsAlive() || !roster_.CanAdd(champion, starLevel)) return false;
+    return !benchOnly_ || BenchOnlyPurchaseFits(champion, starLevel);
+}
+
+ActionResult PlayerState::AcquireBlockedReason(const ChampionDefinition* champion, int starLevel) const {
+    if (benchOnly_ && roster_.CanAdd(champion, starLevel) && roster_.BenchCount() < kBenchSlots) return ActionResult::UnitInCombat;
+    return ActionResult::RosterFull;
 }
 
 ActionResult PlayerState::AcquireUnit(const ChampionDefinition* champion, int goldSpent, int starLevel) {
     if (!IsAlive()) return ActionResult::PlayerEliminated;
     if (champion == nullptr || starLevel < 1 || starLevel > kMaxStarLevel) return ActionResult::InvalidUnit;
     if (!roster_.CanAdd(champion, starLevel)) return ActionResult::RosterFull;
+    if (benchOnly_ && !BenchOnlyPurchaseFits(champion, starLevel)) return AcquireBlockedReason(champion, starLevel);
 
     const UnitRoster::AddResult added = roster_.Add(champion, starLevel);
     assert(added.added);
@@ -192,7 +214,24 @@ ActionResult PlayerState::TryEquipItem(UnitId unit, ItemId item) {
     if (!IsAlive()) return ActionResult::PlayerEliminated;
     const auto inBag = std::find(itemBag_.begin(), itemBag_.end(), item);
     if (item == 0 || inBag == itemBag_.end()) return ActionResult::InvalidItem;
-    if (items_ != nullptr && items_->Find(item) == nullptr) return ActionResult::InvalidItem;
+    const ItemDefinition* def = items_ != nullptr ? items_->Find(item) : nullptr;
+    if (items_ != nullptr && def == nullptr) return ActionResult::InvalidItem;
+    if (def != nullptr && def->use == ItemUse::RemoveAllItems) {
+        const UnitInstance* target = roster_.Find(unit);
+        if (target == nullptr) return ActionResult::InvalidUnit;
+        if (target->ItemCount() == 0) return ActionResult::NoItemsToRemove;
+        itemBag_.erase(inBag);   // the remover is used up (the first copy; the bag can hold several)
+        std::vector<ItemId> returned;
+        for (int slot = 0; slot < kMaxItemsPerUnit; ++slot) {
+            ItemId taken = 0;
+            if (roster_.UnequipItem(unit, slot, &taken) != ActionResult::Ok) continue;   // (an empty slot)
+            itemBag_.push_back(taken);
+            returned.push_back(taken);
+            if (listener_) listener_->OnItemUnequipped(id_, *roster_.Find(unit), taken);
+        }
+        if (listener_) listener_->OnItemConsumed(id_, *roster_.Find(unit), item, returned);
+        return ActionResult::Ok;
+    }
     ItemCombination combination;
     const ActionResult result = roster_.EquipItem(unit, item, &combination);
     if (result != ActionResult::Ok) return result;

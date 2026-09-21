@@ -95,11 +95,16 @@ public:
     // ---- Units ----
     // Can this champion be received right now? (free bench/board spot, or it completes a merge)
     bool CanAcquire(const ChampionDefinition* champion, int starLevel = 1) const;
+    // Why CanAcquire is false: RosterFull, or (only while bench-only purchases are on) UnitInCombat when the copy would have to merge into a unit on the board.
+    ActionResult AcquireBlockedReason(const ChampionDefinition* champion, int starLevel = 1) const;
     // Adds a unit: first free bench slot, else first free board cell, then merges immediately.
     // Does NOT charge gold or touch the pool -- the caller (shop / carousel / award) already
     // took the copy out of the pool and paid. `goldSpent` is only reported in the event.
     ActionResult AcquireUnit(const ChampionDefinition* champion, int goldSpent = 0, int starLevel = 1);
 
+    // While set (the MatchManager sets it for a player's own shop actions in Combat / Resolution) a purchase may only land on the BENCH, and may only merge
+    // units that are on the bench: it never puts a unit on the board and never touches a unit that is fighting. CanAcquire / AcquireUnit obey it.
+    void SetBenchOnlyPurchases(bool on) { benchOnly_ = on; }
     // Bench<->board moves and swaps. See UnitRoster::Move for the exact rules.
     ActionResult TryMoveUnit(UnitId unit, LocationType location, int x, int y);
 
@@ -114,6 +119,8 @@ public:
     const std::vector<ItemId>& ItemBag() const { return itemBag_; }
     // False (and nothing changes) for id 0 or, when an item database is attached, an id it does not know.
     bool AddItemToBag(ItemId item);
+    // A CONSUMABLE (the Item Remover) does not go onto the unit: it takes every item off it (they land in the bag, in slot order) and is used up
+    // (NoItemsToRemove, and nothing changes, if the unit carries none). Several can be held. Everything below applies to ordinary items.
     // Moves an item from the bag onto a unit (ItemsFull if it carries 3; InvalidItem if not in the bag / unknown). If the unit holds an
     // item this one combines with (a recipe in items.json), both are consumed at once and the finished item takes their place --
     // even on a unit that is already full.
@@ -134,6 +141,7 @@ public:
 
 private:
     void SyncBoardCapacity();
+    bool BenchOnlyPurchaseFits(const ChampionDefinition* champion, int starLevel) const;
 
     PlayerId id_;
     PlayerConfig config_;
@@ -147,6 +155,7 @@ private:
     int streak_ = 0;
     bool eliminated_ = false;
     int placement_ = 0;
+    bool benchOnly_ = false;   // not state: only ever true inside one player action
     UnitRoster roster_;
     std::vector<ItemId> itemBag_;
     const ItemDatabase* items_;

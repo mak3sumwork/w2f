@@ -6,6 +6,8 @@
 
 #include "w2f/AIBotController.h"
 #include "w2f/CombatSimulator.h"
+#include "w2f/Json.h"
+#include "w2f/net/JsonWriter.h"
 #include "w2f/net/Encoding.h"
 #include "w2f/net/Messages.h"
 
@@ -210,6 +212,7 @@ public:
                 state_ = State::Finished;
                 finishedTicks_ = 0;
                 Broadcast(msg::MatchOver(*match_));
+                if (finishedHandler_) finishedHandler_();
             }
             return;
         }
@@ -222,7 +225,7 @@ public:
     void OnPhaseChanged(MatchPhase, MatchPhase to, int round) override {
         if (to == MatchPhase::Combat) QueueCombat(round);
         combatBatchOpen_ = false;
-        Queue(-1, msg::Phase(config_, to, round, 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round), match_ != nullptr && match_->IsShopClosed(round)));
+        Queue(-1, msg::Phase(config_, to, round, 0, match_ != nullptr ? match_->PhaseTicks() : 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round), match_ != nullptr && match_->IsShopClosed(round)));
     }
     void OnPlayerEliminated(PlayerId p, int placement) override { Queue(-1, msg::PlayerEliminated(p, placement)); }
     void OnMatchEnded(PlayerId) override { dirty_ = true; }   // the final message needs the placements: sent when Tick() returns
@@ -244,7 +247,7 @@ public:
         Queue(p, msg::GiftPicked(index, gift, data_.motherNature, automatic, goldConverted));
     }
     void OnAutoSnapshot(int round, const std::vector<std::uint8_t>& bytes) override {
-        if (snapshotSink_) snapshotSink_(round, bytes);
+        if (snapshotSink_) snapshotSink_(round, bytes, SeatsJson(round));
     }
     void OnIncomeGranted(PlayerId p, int round, const IncomeBreakdown& income) override { Queue(p, msg::Income(p, round, income)); }
     void OnUnitBought(PlayerId p, const UnitInstance& u, int gold) override { Queue(p, msg::UnitBought(u, gold)); }
@@ -254,6 +257,7 @@ public:
     void OnItemEquipped(PlayerId p, const UnitInstance& u, ItemId item) override { Queue(p, msg::ItemEquipped(u, item)); }
     void OnItemUnequipped(PlayerId p, const UnitInstance& u, ItemId item) override { Queue(p, msg::ItemUnequipped(u, item)); }
     void OnItemsCombined(PlayerId p, const UnitInstance& u, const ItemCombination& c) override { Queue(p, msg::ItemsCombined(u, c)); }
+    void OnItemConsumed(PlayerId p, const UnitInstance& u, ItemId item, const std::vector<ItemId>& returned) override { Queue(p, msg::ItemConsumed(u, item, returned)); }
 
     // ---- accessors ----------------------------------------------------------------------------
 
@@ -262,11 +266,14 @@ public:
     std::uint64_t tick_ = 0;
     CommandObserver observer_;
     SnapshotSink snapshotSink_;
+    MatchFinishedHandler finishedHandler_;
     GameServerConfig cfg_;
     std::unordered_map<ConnectionId, Conn> conns_;
     std::vector<Seat> seats_;
 
     int MotherNatureEvery() const { return data_.motherNature != nullptr ? config_.match.motherNatureEveryRounds : 0; }
+
+    bool Resume(const std::vector<std::uint8_t>& snapshot, const std::string& seatsJson, std::string* error) { return DoResume(snapshot, seatsJson, error); }
 
     int ConnectedCount() const {
         int n = 0;
@@ -290,7 +297,7 @@ private:
 
     // The same for every connection: built once, on first use.
     const std::string& Catalog() {
-        if (catalog_.empty()) catalog_ = msg::Catalog(*data_.champions, data_.items, data_.traits, data_.encounters);
+        if (catalog_.empty()) catalog_ = msg::Catalog(*data_.champions, data_.items, data_.traits, data_.encounters, data_.config.combat);
         return catalog_;
     }
 
@@ -395,7 +402,7 @@ private:
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
         SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats()));
-        SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), tick_, match_->IsMotherNatureRound(), match_->IsShopClosed()));
+        SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), match_->PhaseTicks(), tick_, match_->IsMotherNatureRound(), match_->IsShopClosed()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
         SendTo(s.conn, msg::PublicState(*match_));
@@ -437,6 +444,106 @@ private:
         }
         match_->Start();
         SyncAfterEngineCall();
+    }
+
+    // What a snapshot cannot hold (see GameServer::SetSnapshotSink). Called from inside the engine's tick at the start of Planning, i.e. before the bots
+    // have acted this round -- exactly the moment the snapshot is of.
+    std::string SeatsJson(int round) const {
+        JsonWriter w;
+        w.BeginObject();
+        w.Field("format", 1);
+        w.Field("seats", cfg_.seats);
+        w.Field("round", round);
+        w.Field("tick", tick_);
+        w.Key("players").BeginArray();
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            w.BeginObject();
+            w.Field("seat", static_cast<int>(i));
+            w.Field("bot", seats_[i].bot);
+            w.Field("token", seats_[i].token);
+            w.EndObject();
+        }
+        w.EndArray();
+        w.Key("bots").BeginArray();   // (u64 words travel as decimal strings: JSON numbers do not carry 64 bits safely)
+        for (const AIBotController& bot : bots_) {
+            const AIBotController::State state = bot.GetState();
+            w.BeginObject();
+            w.Field("seat", static_cast<int>(bot.Player()));
+            w.Key("rng").BeginArray();
+            for (std::uint64_t word : state.rng.words) w.String(std::to_string(word));
+            w.EndArray();
+            w.Field("last_acted_round", state.lastActedRound);
+            w.EndObject();
+        }
+        w.EndArray();
+        w.EndObject();
+        return w.Take();
+    }
+
+    bool DoResume(const std::vector<std::uint8_t>& snapshot, const std::string& seatsJson, std::string* error) {
+        const auto fail = [error](const std::string& why) {
+            if (error) *error = "cannot resume: " + why;
+            return false;
+        };
+        if (state_ != State::Lobby || match_ != nullptr || !conns_.empty() || TakenSeats() != 0) return fail("the server is not fresh (a match or a connection already exists)");
+        json::Value sidecar;
+        std::string parseError;
+        if (!json::Parse(seatsJson, sidecar, &parseError) || !sidecar.IsObject()) return fail("the seats file is not valid JSON (" + parseError + ")");
+        long long format = 0, seats = 0, tick = 0;
+        const json::Value* players = sidecar.Find("players");
+        const json::Value* bots = sidecar.Find("bots");
+        if (sidecar.Find("format") == nullptr || !sidecar.Find("format")->ToInt(format) || format != 1) return fail("unknown seats file format");
+        if (sidecar.Find("seats") == nullptr || !sidecar.Find("seats")->ToInt(seats) || seats != cfg_.seats) return fail("the seats file is for a different number of seats (server: " + std::to_string(cfg_.seats) + ")");
+        if (sidecar.Find("tick") == nullptr || !sidecar.Find("tick")->ToInt(tick) || tick < 0) return fail("bad tick");
+        if (players == nullptr || !players->IsArray() || players->Items().size() != seats_.size() || bots == nullptr || !bots->IsArray()) return fail("bad players / bots");
+
+        std::vector<std::string> tokens(seats_.size());
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            const json::Value& p = players->Items()[i];
+            const json::Value* bot = p.Find("bot");
+            const json::Value* token = p.Find("token");
+            if (bot == nullptr || !bot->IsBool() || token == nullptr || !token->IsString()) return fail("bad player entry");
+            if (bot->AsBool() != seats_[i].bot) return fail("the seats file has bots in different seats (start the server with the same --bots)");
+            if (!bot->AsBool() && (token->AsString().size() != kTokenHexChars || !IsLowerHex(token->AsString()))) return fail("a human seat without a valid token");
+            tokens[i] = bot->AsBool() ? std::string() : token->AsString();
+        }
+        std::vector<AIBotController> restoredBots;
+        for (const json::Value& b : bots->Items()) {
+            long long seat = 0, lastActed = 0;
+            const json::Value* rng = b.Find("rng");
+            if (b.Find("seat") == nullptr || !b.Find("seat")->ToInt(seat) || seat < 0 || seat >= seats || !seats_[static_cast<std::size_t>(seat)].bot) return fail("bad bot entry");
+            if (b.Find("last_acted_round") == nullptr || !b.Find("last_acted_round")->ToInt(lastActed) || rng == nullptr || !rng->IsArray() || rng->Items().size() != 4) return fail("bad bot state");
+            AIBotController::State state;
+            for (std::size_t k = 0; k < 4; ++k) {
+                if (!rng->Items()[k].IsString()) return fail("bad bot rng");
+                state.rng.words[k] = std::strtoull(rng->Items()[k].AsString().c_str(), nullptr, 10);
+            }
+            if (!state.rng.IsValid()) return fail("bad bot rng");
+            state.lastActedRound = static_cast<int>(lastActed);
+            restoredBots.emplace_back(static_cast<PlayerId>(seat), 0, BotProfile{}, data_.traits);
+            restoredBots.back().SetState(state);
+        }
+        if (static_cast<int>(restoredBots.size()) != cfg_.bots) return fail("the seats file has a different number of bots");
+
+        config_ = data_.config;
+        config_.match.playerCount = cfg_.seats;
+        std::string restoreError;
+        auto simulator = std::make_unique<CombatSimulator>(config_.combat, data_.traits, data_.items);
+        auto restored = MatchManager::Restore(snapshot, config_, *data_.champions, std::move(simulator), &restoreError, data_.items, data_.encounters, data_.motherNature);
+        if (!restored) return fail(restoreError);
+
+        match_ = std::move(restored);
+        match_->AddListener(this);
+        for (std::size_t i = 0; i < seats_.size(); ++i) seats_[i].token = tokens[i];
+        bots_ = std::move(restoredBots);
+        state_ = State::Running;
+        tick_ = static_cast<std::uint64_t>(tick);
+        lastPublic_.clear();
+        fights_.clear();
+        fightJson_.clear();
+        combatBatchOpen_ = false;
+        dirty_ = false;
+        return true;
     }
 
     void ResetToLobby() {
@@ -494,5 +601,7 @@ const MatchManager* GameServer::match() const { return impl_->match_.get(); }
 std::uint64_t GameServer::tickCount() const { return impl_->tick_; }
 void GameServer::SetCommandObserver(CommandObserver observer) { impl_->observer_ = std::move(observer); }
 void GameServer::SetSnapshotSink(SnapshotSink sink) { impl_->snapshotSink_ = std::move(sink); }
+void GameServer::SetMatchFinishedHandler(MatchFinishedHandler handler) { impl_->finishedHandler_ = std::move(handler); }
+bool GameServer::Resume(const std::vector<std::uint8_t>& snapshot, const std::string& seatsJson, std::string* error) { return impl_->Resume(snapshot, seatsJson, error); }
 
 }  // namespace w2f::net

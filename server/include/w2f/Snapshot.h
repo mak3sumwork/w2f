@@ -39,7 +39,7 @@ namespace w2f {
 enum class MatchPhase : std::uint8_t { NotStarted, MotherNature, Planning, Combat, Resolution, MatchOver };
 
 constexpr std::uint32_t kSnapshotMagic = 0x53463257u;  // bytes 'W' '2' 'F' 'S'
-constexpr std::uint32_t kSnapshotVersion = 3;
+constexpr std::uint32_t kSnapshotVersion = 4;   // 4: combat events carry the presentation fields (windup, flight, kind, shape, size)
 
 // What a snapshot says about itself, readable without restoring it.
 struct SnapshotInfo {

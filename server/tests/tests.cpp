@@ -7,7 +7,9 @@
 #include <set>
 #include <algorithm>
 #include <deque>
+#include <fstream>
 #include <functional>
+#include <sstream>
 #include <limits>
 #include <string>
 #include <vector>
@@ -958,10 +960,11 @@ static void TestUnitEventsThroughMatch() {
     CHECK(log.events.back().kind == UnitEvent::Sold && log.events.back().number == 3);  // 2-star, 1-cost: 3 gold
     CHECK(match->VerifyPoolIntegrity() && match->VerifyRosterLayouts());
 
-    // Outside Planning, unit management is locked like the rest of the economy.
+    // Combat: the bench stays open (the unit is gone, so these answer InvalidUnit rather than WrongPhase -- TestShopAndBenchDuringCombat has the rules).
     while (match->Phase() != MatchPhase::Combat) match->Tick();
-    CHECK(match->TryMoveUnit(0, unit, LocationType::Bench, 0, 0) == ActionResult::WrongPhase);
-    CHECK(match->TrySellUnit(0, unit) == ActionResult::WrongPhase);
+    CHECK(match->TryMoveUnit(0, unit, LocationType::Bench, 0, 0) == ActionResult::InvalidUnit);
+    CHECK(match->TrySellUnit(0, unit) == ActionResult::InvalidUnit);
+    CHECK(match->TryPickGift(0, 0) == ActionResult::WrongPhase);   // (Mother Nature's gifts are for her phase only)
 }
 
 static void TestEliminationWithMergedUnits() {
@@ -1050,7 +1053,8 @@ static void TestMatchFlowPhases() {
     CHECK(m2->Players().Get(0)->Gold() == 13 - 4 - 2);
     for (int i = 0; i < 5; ++i) m2->Tick();
     CHECK(m2->Phase() == MatchPhase::Combat);
-    CHECK(m2->TryRerollShop(0) == ActionResult::WrongPhase);
+    CHECK(m2->TryRerollShop(0) == ActionResult::Ok);   // the shop stays open in Combat (7 gold left)
+    CHECK(m2->TryPickGift(0, 0) == ActionResult::WrongPhase);
     CHECK(m2->CurrentMatchups().size() == 4);
     CHECK(m2->VerifyPoolIntegrity());
 }
@@ -1377,16 +1381,21 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
     std::map<UnitId, V> units;
     std::map<std::pair<int, int>, UnitId> occupied;
     int lastTick = 0;
+    // Overtime (see CombatConfig): from `overtimeAt` on, movement and attacks run `speed` times faster; the stream says so with an Overtime event.
+    const int overtimeAt = cfg.regulationTicks;
+    const int limit = std::min(maxTicks, cfg.hardLimitTicks);
+    int overtimeEvents = 0;
+    const auto speedAt = [&](int tick) { return overtimeEvents > 0 && tick >= overtimeAt ? cfg.overtimeSpeed : 1; };
     auto fail = [&](const char* msg, const CombatEvent& e) {
         if (why) *why = std::string(msg) + " (tick " + std::to_string(e.tick) + ", unit " + std::to_string(e.unit) + ")";
         return false;
     };
     for (const CombatEvent& e : log.events) {
         if (e.tick < lastTick) return fail("ticks went backwards", e);
-        if (e.tick > maxTicks) return fail("event after time limit", e);
+        if (e.tick > limit) return fail("event after time limit", e);
         lastTick = e.tick;
         auto self = units.find(e.unit);
-        if (e.type != CombatEventType::Spawn && e.type != CombatEventType::TraitActivated && self == units.end()) return fail("event for an unknown unit", e);
+        if (e.type != CombatEventType::Spawn && e.type != CombatEventType::TraitActivated && e.type != CombatEventType::Overtime && self == units.end()) return fail("event for an unknown unit", e);
         switch (e.type) {
             case CombatEventType::Spawn: {
                 const bool summon = (e.flags & kFlagSummon) != 0;
@@ -1418,8 +1427,10 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 if (!(v.pos == e.from)) return fail("move: not where the log says", e);
                 if (hex::Distance(e.from, e.to) != 1) return fail("move: not one hex", e);
                 if (!hex::InBounds(e.to, kArenaColumns, kArenaRows) || occupied.count({e.to.x, e.to.y})) return fail("move: into occupied/out of bounds", e);
-                if (e.tick - v.lastMove < cfg.ticksPerHexMove) return fail("move: faster than move speed", e);
-                if (e.amount != cfg.ticksPerHexMove) return fail("move: wrong duration", e);
+                const int stepTicks = std::max(1, cfg.ticksPerHexMove / speedAt(e.tick));
+                // (a step taken just before overtime started may be followed sooner than a full step: its timer was shortened at the switch)
+                if (e.tick - v.lastMove < (v.lastMove >= overtimeAt || speedAt(e.tick) == 1 ? stepTicks : 1)) return fail("move: faster than move speed", e);
+                if (e.amount != stepTicks) return fail("move: wrong duration", e);
                 occupied.erase({e.from.x, e.from.y});
                 occupied[{e.to.x, e.to.y}] = e.unit;
                 v.pos = e.to; v.lastMove = e.tick;
@@ -1435,7 +1446,21 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 if (e.tick < a.stunnedUntil || e.tick < a.lockedUntil) return fail("attack: while stunned / casting", e);
                 if (e.tick < a.blindUntil) return fail("attack: while blind", e);
                 if (hex::Distance(a.pos, t->second.pos) > a.def->stats.attackRange) return fail("attack: out of range", e);
-                if (!a.everStatus && e.tick - a.lastAttack < a.def->stats.AttackIntervalTicks()) return fail("attack: faster than attack speed", e);
+                const int interval = std::max(1, a.def->stats.AttackIntervalTicks() / speedAt(e.tick));
+                if (!a.everStatus && e.tick - a.lastAttack < (a.lastAttack >= overtimeAt || speedAt(e.tick) == 1 ? interval : 1)) return fail("attack: faster than attack speed", e);
+                {   // The presentation contract: the swing / projectile timings follow from the data, the positions from the stream.
+                    const CombatStats& st = a.def->stats;
+                    const int speed = st.projectileSpeedMilli >= 0 ? st.projectileSpeedMilli : (st.attackRange >= 2 ? cfg.defaultRangedProjectileSpeedMilli : 0);
+                    const int factor = speedAt(e.tick);
+                    const int expectedWindup = (st.attackWindupTicks >= 0 ? st.attackWindupTicks : cfg.defaultAttackWindupTicks) / factor;
+                    int expectedFlight = 0;
+                    if (speed > 0) {
+                        const long long distance = std::max(1, hex::Distance(a.pos, t->second.pos));
+                        expectedFlight = std::max<int>(1, static_cast<int>((distance * kTicksPerSecond * 1000 + speed - 1) / speed) / factor);
+                    }
+                    if (e.windup != expectedWindup || e.flight != expectedFlight || e.kind != (speed > 0 ? 1 : 0)) return fail("attack: wrong windup / flight / style", e);
+                    if (!(e.from == a.pos) || !(e.to == t->second.pos)) return fail("attack: from / to are not the two units' hexes", e);
+                }
                 a.lastAttack = e.tick;
                 break;
             }
@@ -1452,6 +1477,11 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                     if (hex::Distance(c.pos, t->second.pos) > c.def->stats.attackRange) return fail("cast: target out of range", e);
                     if (e.duration != c.def->ability.castLockTicks + c.def->ability.channelTicks) return fail("cast: wrong lock time", e);
                     c.lockedUntil = e.tick + e.duration;
+                    const AreaDescription area = DescribeArea(c.def->ability);
+                    const int expectedWindup = (c.def->ability.windupTicks >= 0 ? c.def->ability.windupTicks : cfg.defaultCastWindupTicks) / speedAt(e.tick);
+                    if (e.windup != expectedWindup || e.shape != static_cast<int>(area.shape) || e.size != std::min(area.size, 255)) return fail("cast: wrong windup / area", e);
+                    const bool aroundTarget = area.shape == AreaShape::Circle || area.shape == AreaShape::Line || area.shape == AreaShape::Cone || area.shape == AreaShape::Single;
+                    if (!(e.from == c.pos) || !(e.to == (aroundTarget ? t->second.pos : c.pos))) return fail("cast: from / to are not the caster's hex and the area's centre", e);
                 } else if (!c.def->ability.castOnDeath || c.alive) {
                     return fail("cast-on-death by a living unit or an ability without it", e);
                 }
@@ -1524,6 +1554,9 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 if (e.hpAfter != h.hp) return fail("heal: hp arithmetic", e);
                 break;
             }
+            case CombatEventType::Overtime:
+                if (++overtimeEvents != 1 || e.tick != overtimeAt || e.amount != cfg.overtimeSpeed || e.duration != 0 || e.unit != kInvalidUnitId) return fail("overtime: bad marker", e);
+                break;
             case CombatEventType::TraitActivated:
                 if (e.tick != 0 || e.team > 1 || e.traitId == 0 || e.amount < 1 || e.subtype < 1) return fail("trait: bad activation", e);
                 break;
@@ -1569,7 +1602,7 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
         if (why) *why = "checksum mismatch";
         return false;
     }
-    if (alive[0] > 0 && alive[1] > 0 && log.endTick != maxTicks) {
+    if (alive[0] > 0 && alive[1] > 0 && log.endTick != limit) {
         if (why) *why = "fight stopped with both teams alive before the time limit";
         return false;
     }
@@ -1618,6 +1651,301 @@ struct Duel {
     }
 };
 
+static void TestCombatOvertime() {
+    const auto attackTicks = [](const CombatLog& log, UnitId unit) {
+        std::vector<int> ticks;
+        for (const CombatEvent& e : log.events) {
+            if (e.type == CombatEventType::Attack && e.unit == unit) ticks.push_back(e.tick);
+        }
+        return ticks;
+    };
+    const auto overtimeEvents = [](const CombatLog& log) {
+        std::vector<CombatEvent> found;
+        for (const CombatEvent& e : log.events) {
+            if (e.type == CombatEventType::Overtime) found.push_back(e);
+        }
+        return found;
+    };
+    const CombatConfig defaults;
+    CHECK(defaults.regulationTicks == Seconds(30) && defaults.overtimeSpeed == 4 && defaults.hardLimitTicks == Seconds(120));
+
+    {   // A fight nobody can win quickly (1,000,000 hp each): 30 s at normal speed, then endless 4x overtime. Only the safety limit ends it -- and it
+        // is decided (the one that hit harder is ahead), never a draw.
+        CombatConfig cfg;
+        cfg.hardLimitTicks = Seconds(40);
+        Duel d;
+        d.Add(Fighter(1, 1000000, 0, 10), 1, 0, {3, 3});
+        d.Add(Fighter(2, 1000000, 0, 5), 2, 1, {3, 4});
+        d.Finish();
+        CombatSimulator sim{cfg};
+        const FightResult r = sim.RunFight(d.specs, Seconds(60));
+        CHECK(r.winner == CombatWinner::Home && r.log.endTick == Seconds(40) && r.log.survivors[0] == 1 && r.log.survivors[1] == 1);
+        const std::vector<CombatEvent> ot = overtimeEvents(r.log);
+        CHECK(ot.size() == 1 && ot[0].tick == Seconds(30) && ot[0].amount == 4 && ot[0].duration == 0 && ot[0].unit == kInvalidUnitId);   // no end: duration 0
+        // Attack speed: one attack every 30 ticks until overtime, one every 7 (30 / 4) after it, all the way to the end.
+        const std::vector<int> ticks = attackTicks(r.log, 1);
+        int regulation = 0, overtime = 0;
+        bool gapsRight = ticks.size() > 40;
+        for (std::size_t i = 0; i + 1 < ticks.size(); ++i) {
+            const int gap = ticks[i + 1] - ticks[i];
+            if (ticks[i + 1] < Seconds(30)) { gapsRight = gapsRight && gap == 30; ++regulation; }
+            else if (ticks[i] >= Seconds(30)) { gapsRight = gapsRight && gap == 7; ++overtime; }
+        }
+        CHECK(gapsRight && regulation >= 28 && overtime >= 40);   // (10 s of 4x overtime = ~42 attacks)
+        CHECK(ValidateCombatLog(r.log, *d.db, cfg, Seconds(60)));
+        const FightResult again = sim.RunFight(d.specs, Seconds(60));
+        CHECK(again.log.checksum == r.log.checksum && again.log.events.size() == r.log.events.size());   // deterministic
+        const std::uint64_t reference = r.log.checksum;
+        CHECK(CombatSimulator{cfg}.RunFight(d.specs, Seconds(60)).log.checksum == reference);
+        // The viewer hook: an ICombatEventSink is told.
+        struct OvertimeSink : ICombatEventSink { int calls = 0, tick = 0, speed = 0, length = -1;
+            void OnOvertime(int t, int s, int l) override { ++calls; tick = t; speed = s; length = l; } } sink;
+        ReplayCombatLog(r.log, sink);
+        CHECK(sink.calls == 1 && sink.tick == Seconds(30) && sink.speed == 4 && sink.length == 0);
+        // Equal HP at the safety limit: a coin from the seed -- both sides can win, never a draw.
+        Duel even;
+        even.Add(Fighter(1, 1000000, 0, 10), 1, 0, {3, 3});
+        even.Add(Fighter(1, 1000000, 0, 10), 2, 1, {3, 4});
+        even.Finish();
+        bool sawHome = false, sawAway = false, neverDraw = true;
+        for (std::uint64_t seed = 1; seed <= 24; ++seed) {
+            const CombatWinner w = sim.RunFight(even.specs, Seconds(60), seed).winner;
+            neverDraw = neverDraw && w != CombatWinner::Draw;
+            sawHome = sawHome || w == CombatWinner::Home;
+            sawAway = sawAway || w == CombatWinner::Away;
+        }
+        CHECK(neverDraw && sawHome && sawAway);
+    }
+    {   // Overtime has no end: a fight that takes 58 s (A needs 150 hits on B: 30 at 1 a second, then 120 at 7 ticks each) still ends with B wiped out.
+        Duel d;
+        d.Add(Fighter(1, 1000000, 0, 10), 1, 0, {3, 3});
+        d.Add(Fighter(2, 1500, 0, 1), 2, 1, {3, 4});
+        d.Finish();
+        const FightResult r = CombatSimulator{defaults}.RunFight(d.specs, Seconds(125));
+        CHECK(r.winner == CombatWinner::Home && r.log.survivors[1] == 0 && r.log.survivors[0] == 1);
+        CHECK(overtimeEvents(r.log).size() == 1 && r.log.endTick > Seconds(50) && r.log.endTick < Seconds(70));   // far past the old 35 s cap
+        CHECK(ValidateCombatLog(r.log, *d.db, defaults, Seconds(125)));
+        CombatConfig noOvertime = defaults;
+        noOvertime.overtimeSpeed = 1;   // without the speed-up the same fight needs 150 s: the safety limit decides it instead (Home is ahead)
+        const FightResult slow = CombatSimulator{noOvertime}.RunFight(d.specs, Seconds(125));
+        CHECK(slow.winner == CombatWinner::Home && slow.log.endTick == Seconds(120) && overtimeEvents(slow.log).empty() && slow.log.survivors[1] == 1);
+    }
+    {   // Both teams wiped out on the same tick is the only draw (nobody is left to win).
+        Duel d;
+        d.Add(Fighter(1, 100, 0, 100), 1, 0, {3, 3});
+        d.Add(Fighter(2, 100, 0, 100), 2, 1, {3, 4});
+        d.Finish();
+        const FightResult r = CombatSimulator{defaults}.RunFight(d.specs, Seconds(125));
+        CHECK(r.winner == CombatWinner::Draw && r.log.survivors[0] == 0 && r.log.survivors[1] == 0);
+    }
+    {   // Movement runs 4x faster too. (A short regulation makes the units still be walking when overtime starts.)
+        CombatConfig cfg;
+        cfg.regulationTicks = 20;
+        Duel d;
+        d.Add(Fighter(1, 100, 0, 10), 1, 0, {3, 0});
+        d.Add(Fighter(2, 100, 0, 10), 2, 1, {3, 7});
+        d.Finish();
+        const FightResult r = CombatSimulator{cfg}.RunFight(d.specs, 1000);
+        int slowSteps = 0, fastSteps = 0;
+        bool amountsRight = true;
+        for (const CombatEvent& e : r.log.events) {
+            if (e.type != CombatEventType::Move) continue;
+            (e.tick < 20 ? slowSteps : fastSteps) += 1;
+            amountsRight = amountsRight && e.amount == (e.tick < 20 ? cfg.ticksPerHexMove : cfg.ticksPerHexMove / 4);
+        }
+        CHECK(amountsRight && slowSteps >= 2 && fastSteps >= 2);
+        CHECK(ValidateCombatLog(r.log, *d.db, cfg, 1000));
+    }
+    {   // Mana regeneration (and the attacks that also feed the mana bar) run 4x faster: Alesk casts far more often in overtime.
+        CombatConfig cfg;
+        cfg.regulationTicks = 300;
+        cfg.hardLimitTicks = 600;
+        Duel d;
+        d.Add(Legacy(kChampionAlesk), 1, 0, {3, 3});
+        d.Add(Fighter(2, 100000000, 0, 1), 2, 1, {3, 4});
+        d.Finish();
+        const FightResult r = CombatSimulator{cfg}.RunFight(d.specs, 1000);
+        int before = 0, after = 0;
+        for (const CombatEvent& e : r.log.events) {
+            if (e.type == CombatEventType::SpellCast) (e.tick < 300 ? before : after) += 1;
+        }
+        CHECK(before >= 1 && after >= 2 * before);
+        CHECK(ValidateCombatLog(r.log, *d.db, cfg, 1000));
+    }
+}
+
+static void TestPresentationContract() {
+    // ---- the data: windups, projectile speed, typed DoTs ----
+    {
+        std::string err;
+        const char* good = R"({"version": 1, "champions": [ {"id": 1, "name": "X", "cost": 1,
+            "stats": {"hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 10, "attackSpeed": 1.0, "range": 3, "attackWindupSeconds": 0.5, "projectileSpeed": 20},
+            "ability": {"id": 2, "name": "a", "trigger": "EveryNthAttack", "attackCount": 2, "windupSeconds": 1.0, "effects": [
+              {"type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": 10, "durationSeconds": 2, "intervalSeconds": 1, "visual": "Bleed"} ]} } ]})";
+        auto db = w2f::LoadChampionDatabaseFromJson(good, &err);
+        CHECK(db != nullptr);
+        if (db) {
+            const ChampionDefinition* x = db->Find(1);
+            CHECK(x->stats.attackWindupTicks == 15 && x->stats.projectileSpeedMilli == 20000 && x->ability.windupTicks == 30);
+            const auto* dot = std::get_if<DotEffect>(&x->ability.effects[0].payload);
+            CHECK(dot != nullptr && dot->visual == StatusType::Bleed);
+        }
+        auto plain = w2f::LoadChampionDatabaseFromJson(R"({"version": 1, "champions": [ {"id": 1, "name": "X", "cost": 1,
+            "stats": {"hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 10, "attackSpeed": 1.0, "range": 1}} ]})", &err);
+        CHECK(plain && plain->Find(1)->stats.attackWindupTicks == -1 && plain->Find(1)->stats.projectileSpeedMilli == -1);   // "not set": the config defaults apply
+        struct Bad { const char* replace; const char* with; const char* mention; };
+        const Bad bad[] = {
+            {"\"visual\": \"Bleed\"", "\"visual\": \"Frost\"", "visual"},
+            {"\"projectileSpeed\": 20", "\"projectileSpeed\": -1", "projectileSpeed"},
+            {"\"attackWindupSeconds\": 0.5", "\"attackWindupSeconds\": 0.5, \"attackWindupTicks\": 5", "attackWindup"},
+            {"\"windupSeconds\": 1.0", "\"windupSeconds\": \"soon\"", "windup"},
+        };
+        for (const Bad& b : bad) {
+            std::string text = good;
+            const std::size_t at = text.find(b.replace);
+            CHECK(at != std::string::npos);
+            if (at == std::string::npos) continue;
+            text.replace(at, std::string(b.replace).size(), b.with);
+            std::string e;
+            const bool refused = w2f::LoadChampionDatabaseFromJson(text, &e) == nullptr && e.find(b.mention) != std::string::npos;
+            if (!refused) std::printf("  not refused as expected (%s): %s\n", b.with, e.c_str());
+            CHECK(refused);
+        }
+    }
+    // ---- the area a spell covers ----
+    {
+        const auto ability = [](std::initializer_list<TargetSpec> targets) {
+            AbilityDefinition a;
+            a.id = 1;
+            for (const TargetSpec& t : targets) {
+                AbilityEffect e;
+                e.target = t;
+                a.effects.push_back(e);
+            }
+            return a;
+        };
+        const auto area = [](const AbilityDefinition& a) { return DescribeArea(a); };
+        CHECK(area(AbilityDefinition{}).shape == AreaShape::None);
+        CHECK(area(ability({TargetSpec::Self()})).shape == AreaShape::None);
+        CHECK(area(ability({TargetSpec::CurrentTarget()})).shape == AreaShape::Single);
+        CHECK(area(ability({TargetSpec::AroundTarget(2, true)})).shape == AreaShape::Circle && area(ability({TargetSpec::AroundTarget(2, true)})).size == 2);
+        CHECK(area(ability({TargetSpec::AroundSelf(3, false)})).shape == AreaShape::CircleSelf && area(ability({TargetSpec::AroundSelf(3, false)})).size == 3);
+        CHECK(area(ability({TargetSpec::LineBehind(4)})).shape == AreaShape::Line && area(ability({TargetSpec::LineBehind(4)})).size == 4);
+        CHECK(area(ability({TargetSpec::StartLine()})).shape == AreaShape::Row);
+        CHECK(area(ability({TargetSpec::Closest(3)})).shape == AreaShape::Circle && area(ability({TargetSpec::Closest(1)})).shape == AreaShape::Single);
+        TargetSpec cone;
+        cone.mode = TargetMode::ConeTowardTarget;
+        cone.radius = 3;
+        TargetSpec all;
+        all.mode = TargetMode::AllEnemies;
+        // The widest effect names the spell: a single hit plus a circle is a circle, a circle plus everyone is "all", and of two circles the bigger.
+        CHECK(area(ability({TargetSpec::CurrentTarget(), TargetSpec::AroundTarget(1, true)})).shape == AreaShape::Circle);
+        CHECK(area(ability({TargetSpec::AroundTarget(1, true), all})).shape == AreaShape::All);
+        CHECK(area(ability({TargetSpec::AroundTarget(1, true), cone})).shape == AreaShape::Cone && area(ability({TargetSpec::AroundTarget(1, true), cone})).size == 3);
+        CHECK(area(ability({TargetSpec::AroundTarget(1, true), TargetSpec::AroundTarget(2, true)})).size == 2);
+    }
+    // ---- in the log ----
+    const CombatConfig cfg;
+    const auto events = [](const CombatLog& log, CombatEventType type, UnitId unit) {
+        std::vector<CombatEvent> out;
+        for (const CombatEvent& e : log.events) {
+            if (e.type == type && (unit == 0 || e.unit == unit)) out.push_back(e);
+        }
+        return out;
+    };
+    {   // Attacks: a ranged unit shoots (flight = ceil(distance x 30 / 12 hexes a second) = 8 ticks at 3 hexes), a melee unit swings; both get the default windup.
+        Duel d;
+        d.Add(Fighter(1, 100000, 0, 10, 1000, 4), 1, 0, {3, 3});
+        d.Add(Fighter(2, 100000, 0, 10, 1000, 1), 2, 1, {3, 6});   // three hexes from the archer
+        d.Finish();
+        const FightResult r = CombatSimulator{cfg}.RunFight(d.specs, 60);
+        const std::vector<CombatEvent> shots = events(r.log, CombatEventType::Attack, 1);
+        CHECK(!shots.empty() && shots[0].kind == 1 && shots[0].windup == cfg.defaultAttackWindupTicks && shots[0].flight == 8);
+        CHECK(shots[0].from == HexCoord({3, 3}) && shots[0].to == HexCoord({3, 6}) && shots[0].other == 2);
+        const std::vector<CombatEvent> blows = events(r.log, CombatEventType::Attack, 2);
+        bool melee = !blows.empty();
+        for (const CombatEvent& e : blows) melee = melee && e.kind == 0 && e.flight == 0 && e.windup == cfg.defaultAttackWindupTicks;
+        CHECK(melee);
+        CHECK(ValidateCombatLog(r.log, *d.db, cfg, 60));
+    }
+    {   // Per-champion numbers win over the defaults: a slow arrow, a long draw, a melee unit that throws, and an archer that does not (projectileSpeed 0).
+        ChampionDefinition slow = Fighter(1, 100000, 0, 10, 1000, 4);
+        slow.stats.projectileSpeedMilli = 3000;   // 3 hexes a second
+        slow.stats.attackWindupTicks = 20;
+        ChampionDefinition thrower = Fighter(2, 100000, 0, 10, 1000, 1);
+        thrower.stats.projectileSpeedMilli = 6000;
+        ChampionDefinition beam = Fighter(3, 100000, 0, 10, 1000, 4);
+        beam.stats.projectileSpeedMilli = 0;
+        Duel d;
+        d.Add(slow, 1, 0, {3, 3});
+        d.Add(thrower, 2, 1, {3, 4});   // adjacent to the archer
+        d.Add(beam, 3, 0, {5, 3});
+        d.Finish();
+        const FightResult r = CombatSimulator{cfg}.RunFight(d.specs, 60);
+        const std::vector<CombatEvent> slowShots = events(r.log, CombatEventType::Attack, 1);
+        CHECK(!slowShots.empty() && slowShots[0].windup == 20 && slowShots[0].kind == 1 && slowShots[0].flight == 10);   // 1 hex at 3 hexes/s = 10 ticks
+        const std::vector<CombatEvent> throws = events(r.log, CombatEventType::Attack, 2);
+        CHECK(!throws.empty() && throws[0].kind == 1 && throws[0].flight == 5);
+        const std::vector<CombatEvent> beams = events(r.log, CombatEventType::Attack, 3);
+        CHECK(!beams.empty() && beams[0].kind == 0 && beams[0].flight == 0);
+        CHECK(ValidateCombatLog(r.log, *d.db, cfg, 60));
+    }
+    {   // Overtime speeds the presentation up with the fight: windup and flight are divided by the same factor.
+        CombatConfig c;
+        c.regulationTicks = 10;
+        Duel d;
+        d.Add(Fighter(1, 1000000, 0, 10, 1000, 4), 1, 0, {3, 3});
+        d.Add(Fighter(2, 1000000, 0, 5, 1000, 1), 2, 1, {3, 6});
+        d.Finish();
+        c.hardLimitTicks = 200;
+        const FightResult r = CombatSimulator{c}.RunFight(d.specs, 300);
+        bool early = false, late = false;
+        for (const CombatEvent& e : events(r.log, CombatEventType::Attack, 1)) {
+            if (e.tick < 10) early = early || (e.windup == 6 && e.flight >= 5);
+            else late = late || (e.windup == 6 / 4 && e.flight > 0 && e.flight <= 2);
+        }
+        CHECK(early && late);
+        CHECK(ValidateCombatLog(r.log, *d.db, c, 300));
+    }
+    // ---- typed damage over time and spell areas, with the real roster ----
+    auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    auto traits = sample::LoadProductionTraits();
+    CHECK(roster != nullptr && traits != nullptr);
+    if (!roster || !traits) return;
+    const auto duelWith = [&](ChampionId id) {
+        auto d = std::make_unique<Duel>();
+        d->Add(*roster->Find(id), 1, 0, {3, 3});
+        d->Add(Fighter(2, 100000000, 0, 1), 2, 1, {3, 4});
+        d->Finish();
+        return d;
+    };
+    for (const auto& [id, visual, name] : {std::tuple<ChampionId, StatusType, const char*>{9018, StatusType::Poison, "Rot"}, {9027, StatusType::Drain, "Lich"}, {9002, StatusType::Burn, "Baira"}}) {
+        auto d = duelWith(id);
+        const FightResult r = CombatSimulator(cfg, traits.get()).RunFight(d->specs, Seconds(20));
+        bool applied = false, ended = false, damageTagged = false, untypedElsewhere = true;
+        for (const CombatEvent& e : r.log.events) {
+            if (e.type == CombatEventType::StatusApplied && e.unit == 2 && e.subtype == static_cast<std::uint8_t>(visual)) applied = true;
+            if (e.type == CombatEventType::StatusEnded && e.unit == 2 && e.subtype == static_cast<std::uint8_t>(visual)) ended = true;
+            if (e.type == CombatEventType::Damage && (e.flags & kFlagDot) != 0 && e.kind == static_cast<std::uint8_t>(visual)) damageTagged = true;
+            if (e.type == CombatEventType::Damage && (e.flags & kFlagDot) == 0 && e.kind != 0) untypedElsewhere = false;
+        }
+        if (!(applied && ended && damageTagged && untypedElsewhere)) std::printf("  %s: applied %d ended %d tagged %d clean %d\n", name, applied, ended, damageTagged, untypedElsewhere);
+        CHECK(applied && ended && damageTagged && untypedElsewhere);
+        CHECK(ValidateCombatLog(r.log, *d->db, cfg, Seconds(20)));
+    }
+    {   // A cast carries its windup and area: Baira's burn covers 3 hexes around her target, Alesk's shield only himself.
+        auto d = duelWith(9002);
+        const FightResult r = CombatSimulator(cfg, traits.get()).RunFight(d->specs, Seconds(20));
+        const std::vector<CombatEvent> casts = events(r.log, CombatEventType::SpellCast, 1);
+        CHECK(!casts.empty() && casts[0].shape == static_cast<std::uint8_t>(AreaShape::Circle) && casts[0].size == 3 && casts[0].windup == cfg.defaultCastWindupTicks);
+        CHECK(casts[0].from == HexCoord({3, 3}) && casts[0].to == HexCoord({3, 4}));   // centred on her target
+        auto a = duelWith(9001);
+        const FightResult ra = CombatSimulator(cfg, traits.get()).RunFight(a->specs, Seconds(20));
+        const std::vector<CombatEvent> shield = events(ra.log, CombatEventType::SpellCast, 1);
+        CHECK(!shield.empty() && shield[0].shape == static_cast<std::uint8_t>(AreaShape::None) && shield[0].to == shield[0].from);
+    }
+}
+
 static void TestDuelAdjacent() {
     Duel d;
     d.Add(Fighter(1, 100, 0, 10), 1, 0, {3, 3});  // hits for 10, 1 attack/s
@@ -1660,21 +1988,28 @@ static void TestCombatSimultaneityAndTimeout() {
         CHECK(r.winner == CombatWinner::Draw && r.log.survivors[0] == 0 && r.log.survivors[1] == 0 && r.log.endTick == 0);
     }
     {
-        // Nobody can finish in time. Timeout goes to more survivors, then more total HP.
+        // A phase that cuts a fight off before anybody has won still gets a winner (there are no timeouts): more survivors, then more total HP, then a coin.
         Duel d;
         d.Add(Fighter(1, 100000, 0, 10), 1, 0, {3, 3});
         d.Add(Fighter(2, 100000, 0, 5), 2, 1, {3, 4});
         d.Finish();
         const FightResult r = sim.RunFight(d.specs, 100);
-        CHECK(r.winner == CombatWinner::Home && r.log.endTick == 100);
+        CHECK(r.winner == CombatWinner::Home && r.log.endTick == 100);   // (the same 100000 hp each, but Home hit harder)
         CHECK(r.log.survivors[0] == 1 && r.log.survivors[1] == 1);
         CHECK(ValidateCombatLog(r.log, *d.db, CombatConfig{}, 100));
 
-        Duel same;  // perfectly symmetric: equal HP at the horn -> draw
+        Duel same;  // perfectly symmetric: equal HP at the horn -> a coin from the fight's seed, never a draw
         same.Add(Fighter(1, 100000, 0, 10), 1, 0, {3, 3});
         same.Add(Fighter(1, 100000, 0, 10), 2, 1, {3, 4});
         same.Finish();
-        CHECK(sim.RunFight(same.specs, 100).winner == CombatWinner::Draw);
+        bool sawHome = false, sawAway = false, neverDraw = true;
+        for (std::uint64_t seed = 1; seed <= 20; ++seed) {
+            const CombatWinner w = sim.RunFight(same.specs, 100, seed).winner;
+            neverDraw = neverDraw && w != CombatWinner::Draw && w == sim.RunFight(same.specs, 100, seed).winner;   // (and the same seed gives the same coin)
+            sawHome = sawHome || w == CombatWinner::Home;
+            sawAway = sawAway || w == CombatWinner::Away;
+        }
+        CHECK(neverDraw && sawHome && sawAway);
 
         Duel numbers;  // 2v1, nobody dies: more survivors wins even with less HP
         numbers.Add(Fighter(1, 1000, 0, 1), 1, 0, {2, 3});
@@ -2927,11 +3262,56 @@ static void TestLoaderErrors() {
     CHECK(!LoadErr(Doc(Champ())).empty() && LoadErr(Doc(Champ())).find("loaded without error") != std::string::npos);  // a valid minimal doc really loads
 }
 
+static void TestProductionDataKeepsTheDesignerStructure() {
+    // data/champions.json and data/traits.json are retuned by the balance passes (docs/balance.md), but only NUMBERS may move: the same champions,
+    // costs, roles, traits, abilities and synergy breakpoints must remain, and no stat may drift wildly from the designer's sheet.
+    std::string err;
+    auto spec = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath(), &err);
+    auto prod = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath(), &err);
+    auto specTraits = sample::LoadSpecTraits();
+    auto prodTraits = sample::LoadProductionTraits();
+    CHECK(spec && prod && specTraits && prodTraits);
+    if (!spec || !prod || !specTraits || !prodTraits) return;
+    CHECK(spec->All().size() == prod->All().size());
+    int moved = 0;
+    for (const ChampionDefinition& a : spec->All()) {
+        const ChampionDefinition* b = prod->Find(a.id);
+        CHECK(b != nullptr);
+        if (!b) continue;
+        const bool same = a.name == b->name && a.cost == b->cost && a.role == b->role && a.traits == b->traits && a.summon == b->summon &&
+                          a.ability.id == b->ability.id && a.ability.name == b->ability.name && a.ability.trigger == b->ability.trigger &&
+                          a.passive.id == b->passive.id && a.onAttack.id == b->onAttack.id && a.triggers.size() == b->triggers.size() &&
+                          a.auras.size() == b->auras.size() && a.ability.effects.size() == b->ability.effects.size() && a.stats.maxMana == b->stats.maxMana &&
+                          a.stats.attackRange == b->stats.attackRange;
+        if (!same) std::printf("  %s (%u) no longer has the designer's structure\n", a.name.c_str(), a.id);
+        CHECK(same);
+        for (std::size_t star = 0; star < static_cast<std::size_t>(kMaxStarLevel); ++star) {   // a number may move, not run away
+            const int room = a.id == kChampionBaira ? 6 : 3;   // (Baira's sheet has 100/150/200 hp, a fraction of every other champion: the balance pass lifted it on purpose)
+            const auto within = [room](int specValue, int prodValue) { return prodValue >= specValue * 3 / 10 && prodValue <= specValue * room + 1; };
+            const bool ok = within(a.stats.maxHp[star], b->stats.maxHp[star]) && within(a.stats.attackDamage[star], b->stats.attackDamage[star]);
+            if (!ok) std::printf("  %s star %zu: hp %d -> %d, attack %d -> %d\n", a.name.c_str(), star + 1, a.stats.maxHp[star], b->stats.maxHp[star], a.stats.attackDamage[star], b->stats.attackDamage[star]);
+            CHECK(ok);
+        }
+        moved += a.stats.maxHp != b->stats.maxHp ? 1 : 0;
+    }
+    CHECK(moved > 0);   // (the balance pass really is in the data: this test would notice if someone reverted to the spec by mistake and forgot the report)
+    CHECK(specTraits->All().size() == prodTraits->All().size());
+    for (const TraitDefinition& a : specTraits->All()) {
+        const TraitDefinition* b = prodTraits->FindById(a.id);
+        CHECK(b != nullptr && b->name == a.name && b->breakpoints.size() == a.breakpoints.size());
+        if (!b || b->breakpoints.size() != a.breakpoints.size()) continue;
+        for (std::size_t i = 0; i < a.breakpoints.size(); ++i) {
+            CHECK(a.breakpoints[i].count == b->breakpoints[i].count && a.breakpoints[i].effects.size() == b->breakpoints[i].effects.size() &&
+                  a.breakpoints[i].triggers.size() == b->breakpoints[i].triggers.size());
+        }
+    }
+}
+
 static void TestProductionDataMatchesDesignerSpec() {
     // A snapshot of the designer's latest numbers. It WILL need updating when the designer changes them --
     // that is the point: a change to data/champions.json shows up here as a deliberate, reviewed edit.
     std::string err;
-    auto db = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath(), &err);
+    auto db = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath(), &err);
     CHECK(db != nullptr);
     if (!db) { std::printf("  %s\n", err.c_str()); return; }
     {   // The whole roster of the design doc: 30 champions (8 / 7 / 6 / 5 / 4 per cost tier) plus the two summons (Skeleton, Lost Soul).
@@ -3053,7 +3433,7 @@ static void TestProductionDataMatchesDesignerSpec() {
 
 static void TestPassivesAtStartOfCombat() {
     CombatConfig cfg;
-    auto prod = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    auto prod = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath());
     CHECK(prod != nullptr);
     if (!prod) return;
 
@@ -3165,7 +3545,7 @@ static void TestPassivesAtStartOfCombat() {
 
 static void TestBairaWoundAndNewBurn() {
     CombatConfig cfg;
-    auto prod = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    auto prod = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath());
     CHECK(prod != nullptr);
     if (!prod) return;
     const ChampionDefinition baira = *prod->Find(kChampionBaira);
@@ -3457,7 +3837,8 @@ static std::unique_ptr<TraitDatabase> MustLoadTraits(const std::string& json) {
     if (!db) std::printf("  traits: %s\n", err.c_str());
     return db;
 }
-static std::unique_ptr<ChampionDatabase> ProdDb() { return w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath()); }
+// (Despite the name: the DESIGNER SPEC roster, so retuning data/champions.json never breaks a mechanics test -- see tests/data/designer_spec_champions.json.)
+static std::unique_ptr<ChampionDatabase> ProdDb() { return w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath()); }
 static void AddProd(Duel& d, const ChampionDatabase& prod, ChampionId champion, UnitId id, int team, HexCoord pos, int star = 1) {
     d.Add(*prod.Find(champion), id, team, pos, star);
 }
@@ -4945,13 +5326,14 @@ static void TestItemData() {
     CHECK(prod != nullptr);
     if (!prod) { std::printf("  %s\n", err.c_str()); return; }
     {   // The design doc's whole item system: 8 components + the Seed, 28 legendaries, 8 emblems.
-        int components = 0, seeds = 0, legendaries = 0, emblems = 0;
+        int components = 0, seeds = 0, legendaries = 0, emblems = 0, consumables = 0;
         for (const ItemDefinition& item : prod->All()) {
-            if (!item.IsCombined()) { (item.HasEffect() ? components : seeds) += 1; }
+            if (item.IsConsumable()) ++consumables;
+            else if (!item.IsCombined()) { (item.HasEffect() ? components : seeds) += 1; }
             else if (!item.grantsTraits.empty()) ++emblems;
             else ++legendaries;
         }
-        CHECK(prod->All().size() == 45 && components == 8 && seeds == 1 && legendaries == 28 && emblems == 8);
+        CHECK(prod->All().size() == 46 && components == 8 && seeds == 1 && legendaries == 28 && emblems == 8 && consumables == 1);   // ... + the Item Remover
     }
     const ItemDefinition* sword = prod->Find(3);
     const ItemDefinition* heart = prod->Find(8);
@@ -5116,9 +5498,9 @@ static void TestItemInventory() {
         CHECK((p->ItemBag() == std::vector<ItemId>{1, 2, 5, 1, 1, 2}) && p->Roster().Count() == 0);
         CHECK(match->VerifyPoolIntegrity());
 
-        // Items can only be moved during Planning.
+        // (u1 was sold above.) Items follow the unit rules: in Combat only a BENCH unit may be handled -- see TestShopAndBenchDuringCombat.
         while (match->Phase() != MatchPhase::Combat) match->Tick();
-        CHECK(match->TryEquipItem(0, u1, 1) == ActionResult::WrongPhase && match->TryUnequipItem(0, u1, 0) == ActionResult::WrongPhase);
+        CHECK(match->TryEquipItem(0, u1, 1) == ActionResult::InvalidUnit && match->TryUnequipItem(0, u1, 0) == ActionResult::InvalidUnit);
         return match->StateHash();
     };
 
@@ -5529,6 +5911,334 @@ static void TestSnapshotRoundTripThroughAWholeMatch() {
     std::printf("  %d snapshots round-tripped (largest %zu bytes)\n", coverage.snapshots, coverage.largest);
 }
 
+static void TestShopAndBenchDuringCombat() {
+    std::string err;
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+    auto db = ChampionDatabase::Create({Def(101, "A", 1)}, &err);   // every shop slot is an A
+    CHECK(items != nullptr && db != nullptr);
+    if (!items || !db) return;
+
+    {   // The exact rules, one at a time. Two A's: one fights (on the board), one waits on the bench.
+        auto match = PlanningMatch(*db, items.get(), 3, 2);
+        PlayerState* p = match->PlayersMutable().Get(0);
+        p->AddGold(300);
+        CHECK(match->TryBuyShopUnit(0, 0) == ActionResult::Ok && match->TryBuyShopUnit(0, 1) == ActionResult::Ok);
+        const UnitId onBoard = p->Roster().BenchAt(0)->id;
+        const UnitId onBench = p->Roster().BenchAt(1)->id;
+        CHECK(match->TryMoveUnit(0, onBoard, LocationType::Board, 3, 3) == ActionResult::Ok);
+        for (ItemId item : {7u, 4u, 8u, 50u, 50u, 3u}) CHECK(p->AddItemToBag(item));
+        CHECK(match->TryEquipItem(0, onBoard, 7) == ActionResult::Ok && match->TryEquipItem(0, onBench, 4) == ActionResult::Ok);
+        while (match->Phase() != MatchPhase::Combat) match->Tick();
+
+        // The shop is open: reroll and XP cost gold as usual.
+        const int gold = p->Gold();
+        CHECK(match->TryRerollShop(0) == ActionResult::Ok && match->TryBuyXp(0) == ActionResult::Ok && p->Gold() == gold - 2 - 4);
+        // A third A would have to merge with the fighter: refused (nothing changes: no gold, no unit, the slot stays).
+        const int goldBefore = p->Gold();
+        const std::uint64_t before = match->StateHash();
+        CHECK(match->TryBuyShopUnit(0, 2) == ActionResult::UnitInCombat && p->Gold() == goldBefore && match->StateHash() == before);
+        // The board is locked: no selling, moving, equipping or unequipping a unit that is on it ...
+        CHECK(match->TrySellUnit(0, onBoard) == ActionResult::UnitInCombat);
+        CHECK(match->TryMoveUnit(0, onBoard, LocationType::Bench, 5, 0) == ActionResult::UnitInCombat);
+        CHECK(match->TryMoveUnit(0, onBench, LocationType::Board, 2, 3) == ActionResult::UnitInCombat);
+        CHECK(match->TryEquipItem(0, onBoard, 3) == ActionResult::UnitInCombat && match->TryEquipItem(0, onBoard, 50) == ActionResult::UnitInCombat);
+        CHECK(match->TryUnequipItem(0, onBoard, 0) == ActionResult::UnitInCombat);
+        CHECK(match->StateHash() == before);
+        // ... but the bench is free: equip (4 + 3 combine into Deadbeat), an Item Remover, unequip, moving between bench slots, selling.
+        CHECK(match->TryEquipItem(0, onBench, 3) == ActionResult::Ok && p->Roster().Find(onBench)->items[0] == 25);
+        CHECK(match->TryEquipItem(0, onBench, 50) == ActionResult::Ok && p->Roster().Find(onBench)->ItemCount() == 0);
+        CHECK(match->TryEquipItem(0, onBench, 8) == ActionResult::Ok && match->TryUnequipItem(0, onBench, 0) == ActionResult::Ok);
+        CHECK(match->TryMoveUnit(0, onBench, LocationType::Bench, 6, 0) == ActionResult::Ok && p->Roster().BenchAt(6) != nullptr);
+        CHECK(match->TrySellUnit(0, onBench) == ActionResult::Ok && match->VerifyPoolIntegrity());
+        // With the twin gone a second A is fine: it waits on the bench (one A fighting, one A benched).
+        CHECK(match->TryBuyShopUnit(0, 2) == ActionResult::Ok);
+        CHECK(p->Roster().BoardCount() == 1 && p->Roster().BenchCount() == 1 && p->Roster().Count() == 2);
+        // Resolution locks the board the same way, and the shop is still open; Planning opens the board again.
+        while (match->Phase() != MatchPhase::Resolution) match->Tick();
+        CHECK(match->TrySellUnit(0, onBoard) == ActionResult::UnitInCombat && match->TryRerollShop(0) == ActionResult::Ok);
+        while (match->Phase() != MatchPhase::Planning) match->Tick();
+        CHECK(match->TrySellUnit(0, onBoard) == ActionResult::Ok);
+    }
+    {   // Copies that are all on the bench merge on the bench: two A's benched, a third bought in Combat.
+        auto match = PlanningMatch(*db, items.get(), 5, 2);
+        PlayerState* p = match->PlayersMutable().Get(0);
+        p->AddGold(300);
+        CHECK(match->TryBuyShopUnit(0, 0) == ActionResult::Ok && match->TryBuyShopUnit(0, 1) == ActionResult::Ok);
+        while (match->Phase() != MatchPhase::Combat) match->Tick();
+        CHECK(p->Roster().BoardCount() == 0 && match->TryBuyShopUnit(0, 2) == ActionResult::Ok);
+        CHECK(p->Roster().Count() == 1 && p->Roster().Units()[0].starLevel == 2 && p->Roster().Units()[0].location == LocationType::Bench);
+        CHECK(match->VerifyPoolIntegrity());
+    }
+    {   // No room: a full bench refuses a purchase in Combat even with empty board cells (in Planning it would have been fielded).
+        auto champs = ChampionDatabase::Create([] { std::vector<ChampionDefinition> d; for (ChampionId id = 101; id <= 120; ++id) d.push_back(Def(id, "F", 1)); return d; }());
+        auto match = PlanningMatch(*champs, items.get(), 9, 2);
+        PlayerState* p = match->PlayersMutable().Get(0);
+        p->AddGold(1000);
+        for (ChampionId id = 101; p->Roster().BenchCount() < kBenchSlots; ++id) CHECK(p->AcquireUnit(champs->Find(id)) == ActionResult::Ok);
+        while (match->Phase() != MatchPhase::Combat) match->Tick();
+        std::size_t slot = 5;
+        for (int tries = 0; tries < 60 && slot == 5; ++tries) {
+            for (std::size_t i = 0; i < p->Shop().Slots().size() && slot == 5; ++i) {
+                if (p->Shop().Slots()[i] != nullptr && p->Roster().CountOf(p->Shop().Slots()[i], 1) == 0) slot = i;   // one that is not a copy of what she owns
+            }
+            if (slot == 5) CHECK(match->TryRerollShop(0) == ActionResult::Ok);
+        }
+        CHECK(slot < 5 && match->TryBuyShopUnit(0, slot) == ActionResult::RosterFull);
+    }
+    {   // The shop rule still holds in Combat: closed in round 1 (the opening) and in Mother Nature's rounds.
+        auto motherNature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get(), &err);
+        auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+        GameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.player.startingGold = 100;
+        auto match = MatchManager::Create(cfg, *roster, 4, nullptr, &err, items.get(), nullptr, motherNature.get());
+        CHECK(match != nullptr && motherNature != nullptr);
+        if (!match) return;
+        match->Start();
+        while (match->Phase() != MatchPhase::Combat) match->Tick();
+        CHECK(match->Round() == 1 && match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed && match->TryBuyXp(0) == ActionResult::Ok);
+        while (match->Round() < 2 || match->Phase() != MatchPhase::Combat) match->Tick();
+        CHECK(match->Round() == 2 && match->TryRerollShop(0) == ActionResult::Ok);   // round 2: open in Combat
+        while (match->Round() < 3 || match->Phase() != MatchPhase::MotherNature) match->Tick();
+        CHECK(match->TryBuyXp(0) == ActionResult::WrongPhase && match->TryRerollShop(0) == ActionResult::WrongPhase);   // her phase: gifts only
+        while (match->Phase() != MatchPhase::Combat) match->Tick();
+        CHECK(match->Round() == 3 && match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed);
+        while (match->Phase() != MatchPhase::Resolution) match->Tick();
+        CHECK(match->TryRerollShop(0) == ActionResult::ShopClosed);
+    }
+}
+
+static void TestMotherNatureUnitGiftsScaleWithTheStage() {
+    // Over whole matches: the unit Mother Nature offers costs 1 in stage 1, 1-2 in stage 2, 3-4 in stages 3-4 and 5 from stage 5.
+    auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    CHECK(roster != nullptr);
+    if (!roster) return;
+    struct Seen : IMatchListener {
+        const MatchManager* match = nullptr;
+        std::map<int, std::set<int>> costsByStage;
+        int unitOffers = 0;
+        void OnGiftsOffered(PlayerId, const std::vector<GiftOffer>& offers) override {
+            for (const GiftOffer& o : offers) {
+                if (o.type != GiftType::Unit || o.champion == nullptr) continue;
+                costsByStage[match->CurrentStageRound().stage].insert(o.champion->cost);
+                ++unitOffers;
+            }
+        }
+    };
+    Seen seen;
+    for (std::uint64_t seed : {101ull, 202ull, 303ull, 404ull}) {
+        auto live = LiveMatch::Create(*roster, seed);
+        seen.match = live->match.get();
+        live->match->AddListener(&seen);
+        live->match->Start();
+        for (long tick = 0; tick < 3'000'000 && !live->match->IsFinished(); ++tick) live->Step();
+    }
+    bool right = seen.unitOffers > 20;
+    for (const auto& [stage, costs] : seen.costsByStage) {
+        for (int cost : costs) {
+            const bool ok = stage == 1 ? cost == 1 : stage == 2 ? (cost == 1 || cost == 2) : stage <= 4 ? (cost == 3 || cost == 4) : cost == 5;
+            if (!ok) std::printf("  stage %d offered a %d-cost unit\n", stage, cost);
+            right = right && ok;
+        }
+    }
+    CHECK(right && seen.costsByStage.count(2) && seen.costsByStage.count(3));
+    std::printf("  unit gifts by stage:");
+    for (const auto& [stage, costs] : seen.costsByStage) {
+        std::printf(" stage %d {", stage);
+        for (int c : costs) std::printf("%d", c);
+        std::printf("}");
+    }
+    std::printf("\n");
+}
+
+static void TestRoundRhythmAndShopRule() {
+    // A whole match under the real rules: how long every phase lasts, that no fight outlasts 35 s, and that the shop is open in EVERY round's
+    // planning phase except round 1 (the opening) and Mother Nature's rounds.
+    auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    CHECK(roster != nullptr);
+    if (!roster) return;
+    for (std::uint64_t seed : {77ull, 4242ull}) {
+        auto live = LiveMatch::Create(*roster, seed);
+        const MatchConfig& mc = live->cfg.match;
+        live->match->Start();
+        MatchPhase previous = MatchPhase::NotStarted;
+        int previousRound = 0;
+        int planningChecked = 0, closedRounds = 0, openRounds = 0, combatChecked = 0, longestFight = 0, drawsAtLimit = 0, overtimeFights = 0;
+        bool phasesRight = true, shopRight = true, refusalsRight = true, fightsRight = true;
+        for (long tick = 0; tick < 3'000'000 && !live->match->IsFinished(); ++tick) {
+            live->Step();
+            MatchManager& m = *live->match;
+            if (m.Phase() == previous && m.Round() == previousRound) continue;
+            previous = m.Phase();
+            previousRound = m.Round();
+            switch (m.Phase()) {
+                case MatchPhase::MotherNature:
+                    phasesRight = phasesRight && m.PhaseTicks() == mc.motherNatureTicks && m.IsShopClosed();
+                    break;
+                case MatchPhase::Planning: {
+                    phasesRight = phasesRight && m.PhaseTicks() == mc.planningTicks;
+                    const bool mustBeClosed = m.Round() == 1 || m.IsMotherNatureRound();
+                    shopRight = shopRight && m.IsShopClosed() == mustBeClosed;
+                    for (PlayerId p : m.Players().AlivePlayerIds()) {
+                        const PlayerState* me = m.Players().Get(p);
+                        int filled = 0;
+                        for (const ChampionDefinition* slot : me->Shop().Slots()) filled += slot != nullptr ? 1 : 0;
+                        shopRight = shopRight && (mustBeClosed ? filled == 0 : filled == live->cfg.shop.slotCount);
+                        if (mustBeClosed) {   // locked completely: no buying, no rerolling, nothing changes
+                            const int gold = me->Gold();
+                            refusalsRight = refusalsRight && m.TryBuyShopUnit(p, 0) == ActionResult::ShopClosed &&
+                                            m.TryRerollShop(p) == ActionResult::ShopClosed && me->Gold() == gold;
+                        }
+                    }
+                    ++(mustBeClosed ? closedRounds : openRounds);
+                    ++planningChecked;
+                    break;
+                }
+                case MatchPhase::Combat: {
+                    int lastEnd = 0;
+                    for (const CombatOutcome& o : m.CurrentCombatOutcomes()) {
+                        lastEnd = std::max(lastEnd, o.log.endTick);
+                        fightsRight = fightsRight && o.log.endTick <= live->cfg.combat.hardLimitTicks;
+                        for (const CombatEvent& e : o.log.events) {
+                            fightsRight = fightsRight && e.tick <= live->cfg.combat.hardLimitTicks;
+                            overtimeFights += e.type == CombatEventType::Overtime ? 1 : 0;
+                        }
+                        // Every fight has a winner: one side is wiped out, or (only if it could never end) the safety limit decided it. A draw is a mutual wipe-out.
+                        const bool wiped = o.log.survivors[0] == 0 || o.log.survivors[1] == 0;
+                        fightsRight = fightsRight && (wiped || o.log.endTick == live->cfg.combat.hardLimitTicks || o.log.events.empty());
+                        if (o.winner == CombatWinner::Draw) fightsRight = fightsRight && o.log.survivors[0] == 0 && o.log.survivors[1] == 0 && !o.log.events.empty();
+                        if (o.log.endTick > Seconds(35)) ++drawsAtLimit;   // (counted as: fights that needed more than the old 35 s cap)
+                    }
+                    longestFight = std::max(longestFight, lastEnd);
+                    // The phase lasts until the last fight ended plus the linger: at least the minimum, at most 35 s.
+                    phasesRight = phasesRight && m.PhaseTicks() == std::min(mc.combatTicks, std::max(mc.combatMinTicks, lastEnd + mc.combatLingerTicks)) &&
+                                  m.PhaseTicks() <= mc.combatTicks && m.PhaseTicks() >= mc.combatMinTicks;
+                    ++combatChecked;
+                    break;
+                }
+                case MatchPhase::Resolution: phasesRight = phasesRight && m.PhaseTicks() == mc.resolutionTicks; break;
+                case MatchPhase::NotStarted:
+                case MatchPhase::MatchOver: break;
+            }
+        }
+        CHECK(phasesRight && shopRight && refusalsRight && fightsRight);
+        CHECK(planningChecked > 20 && closedRounds > 5 && openRounds > 15 && combatChecked > 20);
+        CHECK(longestFight > 0 && longestFight <= live->cfg.combat.hardLimitTicks);
+        std::printf("  seed %llu: %d rounds, longest fight %.1f s, %d overtime fights, %d fights lasted more than 35 s\n", static_cast<unsigned long long>(seed), combatChecked,
+                    static_cast<double>(longestFight) / kTicksPerSecond, overtimeFights, drawsAtLimit);
+    }
+    // The defaults themselves.
+    const GameConfig defaults;
+    CHECK(defaults.match.planningTicks == Seconds(30) && defaults.match.combatTicks == Seconds(125) && defaults.match.resolutionTicks == Seconds(3));
+    CHECK(defaults.match.combatEndsWithFights && defaults.combat.hardLimitTicks + defaults.match.combatLingerTicks <= defaults.match.combatTicks);
+}
+
+// ---- golden fights ---------------------------------------------------------------------------------------------------------------------
+// A dozen fixed fights on the PRODUCTION data (the real champions, synergies and items) with their exact results recorded in tests/golden/fights.golden:
+// the event count, the last tick, the winner and the log's checksum. CI runs this on every platform and compiler: the fights must come out the same
+// everywhere, byte for byte, and no engine change may alter a fight unnoticed. After an INTENDED change to the combat rules or to data/*.json,
+// run `make golden` (or `w2f_tests --update-golden`) and commit the new file together with the change.
+#ifndef W2F_GOLDEN_DIR
+#define W2F_GOLDEN_DIR "tests/golden"
+#endif
+
+namespace {
+struct GoldenFight {
+    std::string name;
+    std::size_t events = 0;
+    int endTick = 0;
+    int winner = 0;
+    std::uint64_t checksum = 0;
+    bool operator==(const GoldenFight& o) const { return name == o.name && events == o.events && endTick == o.endTick && winner == o.winner && checksum == o.checksum; }
+};
+
+std::vector<GoldenFight> PlayGoldenFights() {
+    std::vector<GoldenFight> out;
+    auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    auto traits = sample::LoadProductionTraits();
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+    if (!roster || !traits || !items) return out;
+    std::vector<const ChampionDefinition*> real;
+    for (const ChampionDefinition& c : roster->All()) {
+        if (!c.summon) real.push_back(&c);
+    }
+    std::vector<const ItemDefinition*> finished;
+    for (const ItemDefinition& item : items->All()) {
+        if (item.IsCombined() && item.grantsTraits.empty()) finished.push_back(&item);
+    }
+    for (int index = 0; index < 12; ++index) {
+        Rng rng(0x601DE000ull + static_cast<std::uint64_t>(index), 7);
+        std::vector<FightUnitSpec> specs;
+        UnitId next = 1000;
+        for (int team = 0; team < 2; ++team) {
+            const int count = 3 + index % 7;   // 3..9 units a side
+            std::vector<HexCoord> cells;
+            for (int y = 0; y < kBoardRows; ++y) {
+                for (int x = 0; x < kBoardColumns; ++x) cells.push_back({x, y});
+            }
+            for (int k = 0; k < count; ++k) {
+                const std::size_t cell = rng.NextBelow(static_cast<std::uint32_t>(cells.size()));
+                const HexCoord at = cells[cell];
+                cells.erase(cells.begin() + static_cast<std::ptrdiff_t>(cell));
+                FightUnitSpec spec;
+                spec.id = ++next;
+                spec.champion = real[rng.NextBelow(static_cast<std::uint32_t>(real.size()))];
+                spec.starLevel = 1 + static_cast<int>(rng.NextBelow(10) == 0) + static_cast<int>(rng.NextBelow(3) == 0);
+                spec.team = team;
+                spec.position = BoardToArena(at.x, at.y, team == 0 ? ArenaSide::Home : ArenaSide::Away);
+                if (index % 2 == 1 && rng.NextBelow(2) == 0) spec.items.push_back(finished[rng.NextBelow(static_cast<std::uint32_t>(finished.size()))]);
+                specs.push_back(spec);
+            }
+        }
+        CombatConfig cfg;
+        cfg.hardLimitTicks = Seconds(90);   // (a bounded test: the safety limit decides the rare unwinnable fight)
+        const FightResult r = CombatSimulator(cfg, traits.get(), items.get()).RunFight(specs, Seconds(125), 0xF1647ull + static_cast<std::uint64_t>(index));
+        out.push_back({"fight-" + std::to_string(index + 1), r.log.events.size(), r.log.endTick, static_cast<int>(r.winner), r.log.checksum});
+    }
+    return out;
+}
+
+std::string GoldenText(const std::vector<GoldenFight>& fights) {
+    std::string text = "# name events end_tick winner(0 home,1 away,2 draw) checksum -- see TestGoldenFights in tests/tests.cpp; re-record with `make golden`\n";
+    for (const GoldenFight& f : fights) {
+        char line[160];
+        std::snprintf(line, sizeof(line), "%s %zu %d %d %016llx\n", f.name.c_str(), f.events, f.endTick, f.winner, static_cast<unsigned long long>(f.checksum));
+        text += line;
+    }
+    return text;
+}
+}  // namespace
+
+static void TestGoldenFights() {
+    const std::vector<GoldenFight> played = PlayGoldenFights();
+    CHECK(played.size() == 12);
+    const std::string path = std::string(W2F_GOLDEN_DIR) + "/fights.golden";
+    std::ifstream in(path);
+    std::vector<GoldenFight> recorded;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream fields(line);
+        GoldenFight f;
+        std::string checksum;
+        int winner = 0;
+        fields >> f.name >> f.events >> f.endTick >> winner >> checksum;
+        f.winner = winner;
+        f.checksum = std::strtoull(checksum.c_str(), nullptr, 16);
+        recorded.push_back(f);
+    }
+    CHECK(recorded.size() == played.size());
+    int differing = 0;
+    for (std::size_t i = 0; i < played.size() && i < recorded.size(); ++i) {
+        if (!(played[i] == recorded[i])) {
+            if (differing++ < 3) std::printf("  %s differs from tests/golden/fights.golden (events %zu vs %zu, checksum %016llx vs %016llx)\n", played[i].name.c_str(), played[i].events, recorded[i].events,
+                                             static_cast<unsigned long long>(played[i].checksum), static_cast<unsigned long long>(recorded[i].checksum));
+        }
+    }
+    if (differing > 0) std::printf("  %d golden fight(s) changed. If that is intended (combat rules or data/*.json), run `make golden` and commit tests/golden/fights.golden.\n", differing);
+    CHECK(differing == 0);
+}
+
 static void TestSnapshotLockstepContinuation() {
     // Fork the running match into restored twins at several awkward moments (mid-planning, mid-fight, resolution,
     // right after an elimination...) and keep BOTH going: they must stay identical tick for tick, through shop rolls,
@@ -5551,7 +6261,7 @@ static void TestSnapshotLockstepContinuation() {
     struct Trigger { MatchPhase phase; int round; int ticks; const char* label; bool chain; bool done; };
     std::vector<Trigger> triggers = {
         {MatchPhase::Planning, 2, 40, "planning r2", false, false},
-        {MatchPhase::Combat, 3, 500, "mid-fight r3", true, false},
+        {MatchPhase::Combat, 3, 45, "mid-fight r3", true, false},
         {MatchPhase::Resolution, 4, 10, "resolution r4", false, false},
         {MatchPhase::Planning, 6, 1, "planning r6, first tick", true, false},
         {MatchPhase::Combat, 9, 1, "combat r9, first tick", false, false},
@@ -6283,13 +6993,13 @@ static void TestEncounterDataAndSelection() {
     auto prod = w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), champions.get(), items.get(), &err);
     CHECK(champions && items && prod != nullptr);
     if (!prod) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(prod->Monsters().All().size() == 4 && prod->All().size() == 4 && prod->DefaultDrops().size() == 3);
+    CHECK(prod->Monsters().All().size() == 4 && prod->All().size() == 4 && prod->DefaultDrops().size() == 4);   // gold, champion, any item, Item Remover
     // 1-1 / 1-2 / 1-3 have their own boards; X-7 of ANY stage is the boss (stage 0 = any); nothing is defined for the other rounds.
     CHECK(prod->Select(1, 1, 0)->id == 1 && prod->Select(1, 2, 0)->id == 2 && prod->Select(1, 3, 0)->id == 3);
     CHECK(prod->Select(2, 7, 0)->id == 4 && prod->Select(3, 7, 99)->id == 4 && prod->Select(9, 7, 5)->id == 4);
     CHECK(prod->Select(2, 2, 0) == nullptr && prod->Select(1, 4, 0) == nullptr);
-    // The boss has its own table (items and gold only); the others use the defaults.
-    CHECK(prod->DropsFor(*prod->Find(4)).size() == 2 && &prod->DropsFor(*prod->Find(1)) == &prod->DefaultDrops());
+    // The boss has its own table (items, Item Removers and gold only); the others use the defaults.
+    CHECK(prod->DropsFor(*prod->Find(4)).size() == 3 && &prod->DropsFor(*prod->Find(1)) == &prod->DefaultDrops());
     // Monsters are outside the champions' database and disjoint from it.
     for (const ChampionDefinition& m : prod->Monsters().All()) CHECK(champions->Find(m.id) == nullptr);
     CHECK(prod->ContentHash() == w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), champions.get(), items.get())->ContentHash());
@@ -6402,6 +7112,160 @@ static void TestEncounterDataAndSelection() {
     // Monsters need no cost, and a cost is tolerated.
     CHECK(w2f::LoadEncounterDatabaseFromJson(wrap("", drops), champions.get(), items.get(), &err) != nullptr);
     CHECK(w2f::LoadEncounterDatabaseFromFile("/nonexistent/pve.json", nullptr, nullptr, &err) == nullptr && err.find("cannot open") != std::string::npos);
+}
+
+static void TestItemRemover() {
+    std::string err;
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+    auto db = ChampionDatabase::Create({Def(101, "A", 1)}, &err);
+    CHECK(items != nullptr && db != nullptr);
+    if (!items || !db) return;
+
+    {   // The data: a consumable that is nobody's ingredient and cannot be crafted.
+        const ItemDefinition* remover = items->Find(50);
+        CHECK(remover != nullptr && remover->name == "Item Remover" && remover->use == ItemUse::RemoveAllItems && remover->IsConsumable());
+        CHECK(remover && !remover->IsCombined() && remover->stats.IsEmpty() && remover->grantsTraits.empty() && remover->abilities.empty() && !items->IsComponent(50));
+        for (ItemId other = 1; other <= 9; ++other) CHECK(items->FindCombination(50, other) == nullptr);
+        for (const ItemDefinition& def : items->All()) CHECK(!def.IsCombined() || (def.components[0] != 50 && def.components[1] != 50));
+    }
+    {   // Loader / database refusals.
+        struct Bad { const char* json; const char* mentions; };
+        const Bad bad[] = {
+            {R"({"version": 1, "items": [ {"id": 1, "name": "R", "consumable": "Explode"} ]})", "consumable"},
+            {R"({"version": 1, "items": [ {"id": 1, "name": "R", "consumable": 5} ]})", "consumable"},
+            {R"({"version": 1, "items": [ {"id": 1, "name": "R", "consumable": "RemoveAllItems", "stats": {"armor": 5}} ]})", "consumable"},
+            {R"({"version": 1, "items": [ {"id": 1, "name": "R", "consumable": "RemoveAllItems", "grantsTraits": ["X"]} ]})", "consumable"},
+            {R"({"version": 1, "items": [ {"id": 1, "name": "A", "stats": {"armor": 5}}, {"id": 2, "name": "B", "stats": {"armor": 5}},
+                                          {"id": 3, "name": "R", "consumable": "RemoveAllItems", "components": [1, 2]} ]})", "consumable"},
+        };
+        for (const Bad& b : bad) {
+            std::string e;
+            const bool refused = w2f::LoadItemDatabaseFromJson(b.json, &e) == nullptr && e.find(b.mentions) != std::string::npos;
+            if (!refused) std::printf("  not refused as expected: %s (%s)\n", b.json, e.c_str());
+            CHECK(refused);
+        }
+        CHECK(w2f::LoadItemDatabaseFromJson(R"({"version": 1, "items": [ {"id": 1, "name": "R", "consumable": "RemoveAllItems"} ]})", &err) != nullptr);   // valid without any effect
+        // The consumable is part of the data hash.
+        auto plain = w2f::LoadItemDatabaseFromJson(R"({"version": 1, "items": [ {"id": 1, "name": "R", "stats": {"armor": 5}} ]})");
+        auto cons = w2f::LoadItemDatabaseFromJson(R"({"version": 1, "items": [ {"id": 1, "name": "R", "consumable": "RemoveAllItems"} ]})");
+        CHECK(plain && cons && plain->ContentHash() != cons->ContentHash());
+    }
+    {   // Using it: every item comes off the unit into the bag, the remover is used up, no slot is needed.
+        ItemEventLog log;
+        struct ConsumedLog : ItemEventLog {
+            struct Use { PlayerId player; UnitId unit; ItemId item; std::vector<ItemId> returned; };
+            std::vector<Use> uses;
+            void OnItemConsumed(PlayerId p, const UnitInstance& u, ItemId item, const std::vector<ItemId>& returned) override { uses.push_back({p, u.id, item, returned}); }
+        } events;
+        auto match = PlanningMatch(*db, items.get());
+        match->AddListener(&events);
+        PlayerState* p = match->PlayersMutable().Get(0);
+        CHECK(match->TryBuyShopUnit(0, 0) == ActionResult::Ok && match->TryBuyShopUnit(0, 1) == ActionResult::Ok);
+        const UnitId loaded = p->Roster().BenchAt(0)->id;
+        const UnitId bare = p->Roster().BenchAt(1)->id;
+        for (ItemId item : {7u, 4u, 8u, 50u, 50u, 50u}) CHECK(p->AddItemToBag(item));   // a player can hold several removers
+        for (ItemId item : {7u, 4u, 8u}) CHECK(match->TryEquipItem(0, loaded, item) == ActionResult::Ok);
+        CHECK((p->Roster().Find(loaded)->items == std::array<ItemId, 3>{7, 4, 8}) && p->Roster().Find(loaded)->ItemCount() == kMaxItemsPerUnit);   // full
+        CHECK((p->ItemBag() == std::vector<ItemId>{50, 50, 50}));
+        const int totalBefore = CountAllItems(*match);
+        const std::uint64_t hashBefore = match->StateHash();
+
+        // A refused use changes nothing: a unit with no items (the remover is kept), an unknown unit, an item that is not in the bag.
+        CHECK(match->TryEquipItem(0, bare, 50) == ActionResult::NoItemsToRemove && p->ItemBag().size() == 3 && match->StateHash() == hashBefore);
+        CHECK(match->TryEquipItem(0, 0xDEAD, 50) == ActionResult::InvalidUnit && p->ItemBag().size() == 3);
+        CHECK(match->TryEquipItem(1, loaded, 50) == ActionResult::InvalidItem);   // player 1 holds none (and it is not their unit)
+        CHECK(std::string(ToString(ActionResult::NoItemsToRemove)) == "NoItemsToRemove");
+
+        // The real thing, on a unit that already carries the maximum.
+        CHECK(match->TryEquipItem(0, loaded, 50) == ActionResult::Ok);
+        CHECK((p->Roster().Find(loaded)->items == std::array<ItemId, 3>{0, 0, 0}));
+        CHECK((p->ItemBag() == std::vector<ItemId>{50, 50, 7, 4, 8}));   // one remover used up, the rest waiting; the items back in slot order
+        CHECK(CountAllItems(*match) == totalBefore - 1);                 // the only item that left the game is the remover
+        CHECK(events.equipped.size() == 3 && events.unequipped.size() == 3);   // (the three equips before; using the remover is not an "equip")
+        CHECK(events.unequipped[0].item == 7 && events.unequipped[1].item == 4 && events.unequipped[2].item == 8 && events.unequipped[2].unitItems[0] == 0);
+        CHECK(events.uses.size() == 1 && events.uses[0].player == 0 && events.uses[0].unit == loaded && events.uses[0].item == 50 &&
+              (events.uses[0].returned == std::vector<ItemId>{7, 4, 8}));
+        // Now that the unit is bare, another remover is refused and kept; the items can go straight back on.
+        CHECK(match->TryEquipItem(0, loaded, 50) == ActionResult::NoItemsToRemove && p->ItemBag().size() == 5);
+        CHECK(match->TryEquipItem(0, loaded, 7) == ActionResult::Ok);
+
+        // Finished (combined) items come back as themselves, and a BENCH unit works like a fielded one.
+        CHECK(p->AddItemToBag(3) && p->AddItemToBag(3));
+        CHECK(match->TryEquipItem(0, bare, 3) == ActionResult::Ok && match->TryEquipItem(0, bare, 3) == ActionResult::Ok);   // Soul's Sword (24)
+        CHECK(p->Roster().Find(bare)->items[0] == 24);
+        CHECK(match->TryEquipItem(0, bare, 50) == ActionResult::Ok && p->Roster().Find(bare)->ItemCount() == 0);
+        CHECK(std::count(p->ItemBag().begin(), p->ItemBag().end(), ItemId{24}) == 1 && std::count(p->ItemBag().begin(), p->ItemBag().end(), ItemId{50}) == 1);
+        // It can be used only in the planning phase, like any equip.
+        while (match->Phase() == MatchPhase::Planning) match->Tick();
+        CHECK(match->TryEquipItem(0, loaded, 50) == ActionResult::Ok && p->Roster().Find(loaded)->ItemCount() == 0);   // (a BENCH unit may be handled in Combat)
+    }
+    {   // A snapshot with removers in the bag restores exactly.
+        auto match = PlanningMatch(*db, items.get());
+        PlayerState* p = match->PlayersMutable().Get(0);
+        CHECK(p->AddItemToBag(50) && p->AddItemToBag(50) && p->AddItemToBag(3));
+        TestGameConfig cfg;
+        cfg.match.playerCount = 4;
+        cfg.player.startingGold = 100;
+        auto restored = MatchManager::Restore(match->Snapshot(), cfg, *db, nullptr, &err, items.get());
+        CHECK(restored != nullptr && restored->StateHash() == match->StateHash() && restored->Players().Get(0)->ItemBag() == p->ItemBag());
+    }
+    {   // Drops: a table that names the remover gives it (and only it); "any item" never does; the real tables can give it.
+        auto combat = sample::MakeCombatDatabase();
+        CHECK(combat != nullptr);
+        if (!combat) return;
+        {
+            auto enc = w2f::LoadEncounterDatabaseFromJson(PveJson(R"([{"type": "Item", "weight": 1, "items": [50]}])"), combat.get(), items.get(), &err);
+            CHECK(enc != nullptr);
+            if (!enc) { std::printf("  %s\n", err.c_str()); return; }
+            auto run = PveRun::Start(*combat, items.get(), enc.get(), 5);
+            run->RunToResolution(1);
+            int drops = 0;
+            for (const CombatOutcome& o : run->match->CurrentCombatOutcomes()) {
+                CHECK(o.drop.type == PveDropType::Item && o.drop.item == 50);
+                CHECK(run->match->Players().Get(o.matchup.home)->ItemBag().back() == 50);
+                ++drops;
+            }
+            CHECK(drops == 4);
+        }
+        {
+            auto enc = w2f::LoadEncounterDatabaseFromJson(PveJson(R"([{"type": "Item", "weight": 1}])"), combat.get(), items.get(), &err);
+            CHECK(enc != nullptr);
+            if (!enc) return;
+            int drops = 0, removers = 0;
+            for (std::uint64_t seed = 1; seed <= 40; ++seed) {
+                auto run = PveRun::Start(*combat, items.get(), enc.get(), seed);
+                run->RunToResolution(1);
+                for (const CombatOutcome& o : run->match->CurrentCombatOutcomes()) {
+                    drops += o.drop.type == PveDropType::Item ? 1 : 0;
+                    removers += o.drop.type == PveDropType::Item && o.drop.item == 50 ? 1 : 0;
+                }
+            }
+            CHECK(drops >= 100 && removers == 0);   // ~160 random items, none of them the remover
+        }
+        // The production tables: over whole matches the remover does drop (roughly one PvE win in nine).
+        auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+        CHECK(roster != nullptr);
+        if (!roster) return;
+        int removerDrops = 0, itemDrops = 0, pveWins = 0;
+        struct DropCount : IMatchListener {
+            int* removers; int* itemsDropped; int* wins;
+            void OnPveDrop(PlayerId, const PveDrop& d) override {
+                ++*wins;
+                *itemsDropped += d.type == PveDropType::Item ? 1 : 0;
+                *removers += d.type == PveDropType::Item && d.item == 50 ? 1 : 0;
+            }
+        };
+        for (std::uint64_t seed : {11ull, 12ull, 13ull}) {
+            auto live = LiveMatch::Create(*roster, seed);
+            DropCount counter;
+            counter.removers = &removerDrops; counter.itemsDropped = &itemDrops; counter.wins = &pveWins;
+            live->match->AddListener(&counter);
+            live->match->Start();
+            for (long tick = 0; tick < 3'000'000 && !live->match->IsFinished(); ++tick) live->Step();
+        }
+        std::printf("  Item Remover drops over 3 matches: %d of %d PvE wins (%d item drops)\n", removerDrops, pveWins, itemDrops);
+        CHECK(pveWins > 100 && removerDrops >= 5 && removerDrops < pveWins / 3);
+    }
 }
 
 static void TestPveRoundWinDropsGoldItemChampion() {
@@ -9387,7 +10251,7 @@ static std::vector<CombatEvent> TraitEvents(const FightResult& r, TraitId trait,
 
 static void TestHeliosPhaisaHexagonSeliniNajmi() {
     auto prod = ProdDb();
-    auto traits = sample::LoadProductionTraits();
+    auto traits = sample::LoadSpecTraits();
     CHECK(prod != nullptr && traits != nullptr);
     if (!prod || !traits) return;
     ChampionDefinition wall = Dummy(9999, 1000000);   // an enemy nothing can kill
@@ -9490,7 +10354,7 @@ static const std::vector<ChampionId> kSixCoregons = {9017, 9018, 9022, 9027, 901
 
 static void TestCoregonsFromTheDesignDoc() {
     auto prod = ProdDb();
-    auto traits = sample::LoadProductionTraits();
+    auto traits = sample::LoadSpecTraits();
     CHECK(prod != nullptr && traits != nullptr);
     if (!prod || !traits) return;
     std::string err;
@@ -9938,7 +10802,7 @@ static void TestTwinSnipersEverySecond() {
 static void TestFishscaleOmnivampAndAssassin() {
     auto items = P10Items();
     auto prod = ProdDb();
-    auto traits = sample::LoadProductionTraits();
+    auto traits = sample::LoadSpecTraits();
     CHECK(items != nullptr && prod != nullptr && traits != nullptr);
     if (!items || !prod || !traits) return;
     CombatConfig cfg;
@@ -10108,23 +10972,28 @@ static void TestMotherNatureDataFile() {
     auto data = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get(), &err);
     CHECK(items != nullptr && data != nullptr);
     if (!items || !data) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(data->Options() == 2 && data->Tiers().size() == 2);
+    CHECK(data->Options() == 2 && data->Tiers().size() == 3);
     const MotherNatureTier& early = data->Tiers()[0];
-    const MotherNatureTier& late = data->Tiers()[1];
-    CHECK(early.id == 1 && early.fromStage == 1 && late.id == 3 && late.fromStage == 4);
-    CHECK(&data->TierFor(1) == &early && &data->TierFor(3) == &early && &data->TierFor(4) == &late && &data->TierFor(9) == &late);
-    // Tier 1: a component, +5 gold, +4 XP, Mother's Blessing (+3 HP), a 2/3-cost unit.
+    const MotherNatureTier& mid = data->Tiers()[1];
+    const MotherNatureTier& late = data->Tiers()[2];
+    CHECK(early.id == 1 && early.fromStage == 1 && mid.id == 2 && mid.fromStage == 3 && late.id == 3 && late.fromStage == 5);
+    CHECK(&data->TierFor(1) == &early && &data->TierFor(2) == &early && &data->TierFor(3) == &mid && &data->TierFor(4) == &mid && &data->TierFor(5) == &late && &data->TierFor(9) == &late);
+    // Tier 1 (stages 1-2): a component, +5 gold, +4 XP, Mother's Blessing (+3 HP), a unit whose cost scales with the stage.
     CHECK(early.gifts.size() == 5);
     const auto find = [](const MotherNatureTier& t, GiftType type) { std::vector<const GiftDefinition*> out; for (const GiftDefinition& g : t.gifts) if (g.type == type) out.push_back(&g); return out; };
     CHECK(find(early, GiftType::Gold).size() == 1 && find(early, GiftType::Gold)[0]->amount == 5);
     CHECK(find(early, GiftType::Xp).size() == 1 && find(early, GiftType::Xp)[0]->amount == 4);
     CHECK(find(early, GiftType::Heal).size() == 1 && find(early, GiftType::Heal)[0]->amount == 3 && find(early, GiftType::Heal)[0]->name == "Mother's Blessing");
-    CHECK(find(early, GiftType::Unit).size() == 1 && find(early, GiftType::Unit)[0]->costs == std::vector<int>({2, 3}));
+    CHECK(find(early, GiftType::Unit).size() == 1 && find(early, GiftType::Unit)[0]->costs.empty());
+    const GiftDefinition& wanderer = *find(early, GiftType::Unit)[0];
+    CHECK(wanderer.CostsAt(1) == std::vector<int>({1}) && wanderer.CostsAt(2) == std::vector<int>({1, 2}));   // stage 1: 1-cost; stage 2: 1- or 2-cost
+    // Tier 2 (stages 3-4) gifts 3- or 4-cost units; tier 3 (stage 5+) 5-cost ones.
+    CHECK(find(mid, GiftType::Unit).size() == 1 && find(mid, GiftType::Unit)[0]->CostsAt(3) == std::vector<int>({3, 4}) && find(mid, GiftType::Unit)[0]->CostsAt(4) == std::vector<int>({3, 4}));
     CHECK(find(early, GiftType::Item).size() == 1 && find(early, GiftType::Item)[0]->itemClass == ItemClass::Component);
     // Tier 3: a completed legendary item, an emblem (low chance), +15 gold, Mother's Miracle (+7 HP), a 5-cost unit.
     CHECK(late.gifts.size() == 5);
     CHECK(find(late, GiftType::Gold)[0]->amount == 15 && find(late, GiftType::Heal)[0]->amount == 7 && find(late, GiftType::Heal)[0]->name == "Mother's Miracle");
-    CHECK(find(late, GiftType::Unit)[0]->costs == std::vector<int>({5}));
+    CHECK(find(late, GiftType::Unit)[0]->CostsAt(5) == std::vector<int>({5}) && find(late, GiftType::Unit)[0]->CostsAt(9) == std::vector<int>({5}));
     int legendaryWeight = 0, emblemWeight = 0;
     for (const GiftDefinition* g : find(late, GiftType::Item)) (g->itemClass == ItemClass::Emblem ? emblemWeight : legendaryWeight) += g->weight;
     CHECK(emblemWeight > 0 && emblemWeight < legendaryWeight);   // "low chance"
@@ -10139,7 +11008,7 @@ static void TestMotherNatureDataFile() {
     gift.itemClass = ItemClass::Emblem;
     CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({40, 41, 42, 43, 44, 45, 46, 47})));
     gift.itemClass = ItemClass::Any;
-    CHECK(w2f::GiftItemChoices(gift, *items).size() == items->All().size());
+    CHECK(w2f::GiftItemChoices(gift, *items).size() == items->All().size() - 1);   // "any" never means the Item Remover
     gift.items = {3, 4};
     CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({3, 4})));   // an explicit list wins
 
@@ -10171,7 +11040,13 @@ static void TestMotherNatureDataFile() {
         {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "colour": "red"})"), "colour"},
         {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit"})"), "costs"},
         {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costs": [6]})"), "costs"},
-        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costs": []})"), "cost tier"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costs": []})"), "costs"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costs": [1], "costsByStage": [ {"fromStage": 1, "costs": [1]} ]})"), "not both"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costsByStage": [ {"fromStage": 2, "costs": [1]} ]})"), "start at fromStage 1"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costsByStage": [ {"fromStage": 1, "costs": [1]}, {"fromStage": 1, "costs": [2]} ]})"), "ascend"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costsByStage": [ {"fromStage": 1, "costs": []} ]})"), "at least one cost"},
+        {MnJson(1, R"({"id": 1, "name": "U", "type": "Unit", "costsByStage": [ {"fromStage": 1, "costs": [7]} ]})"), "costs"},
+        {MnJson(1, R"({"id": 1, "name": "G", "type": "Gold", "amount": 5, "costsByStage": [ {"fromStage": 1, "costs": [1]} ]})"), "costsByStage"},
         {MnJson(1, R"({"id": 1, "name": "I", "type": "Item"})"), "itemClass"},
         {MnJson(1, R"({"id": 1, "name": "I", "type": "Item", "itemClass": "Component", "items": [1]})"), "either"},
         {MnJson(1, R"({"id": 1, "name": "I", "type": "Item", "itemClass": "Shiny"})"), "unknown value"},
@@ -10538,7 +11413,7 @@ static void TestRefreshingBurnAndAssassinCrit() {
     CHECK(w2f::LoadChampionDatabaseFromJson(head + R"({ "type": "DoT", "target": "CurrentTarget", "damageType": "True", "amount": 5, "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ]})", &err) != nullptr);
 
     // The production Helios synergy uses it, and the Assassins' synergy now also grants crit CHANCE (+15% at 2, +30% at 4).
-    auto traits = sample::LoadProductionTraits();
+    auto traits = sample::LoadSpecTraits();
     CHECK(traits != nullptr);
     if (!traits) return;
     for (const TraitBreakpoint& bp : traits->FindByName("Helios")->breakpoints) {
@@ -10574,7 +11449,14 @@ static void TestRefreshingBurnAndAssassinCrit() {
     }
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1 && std::string(argv[1]) == "--update-golden") {   // re-record tests/golden/fights.golden (see TestGoldenFights)
+        const std::vector<GoldenFight> fights = PlayGoldenFights();
+        if (fights.size() != 12) { std::printf("cannot play the golden fights (data failed to load)\n"); return 1; }
+        std::ofstream(std::string(W2F_GOLDEN_DIR) + "/fights.golden") << GoldenText(fights);
+        std::printf("wrote %s/fights.golden\n", W2F_GOLDEN_DIR);
+        return 0;
+    }
     const std::vector<std::pair<const char*, std::function<void()>>> tests = {
         {"Rng", TestRng},
         {"ChampionDatabase", TestDatabase},
@@ -10606,6 +11488,13 @@ int main() {
         {"Fixed-point combat math", TestFixedPointCombatMath},
         {"Duel: adjacent melee", TestDuelAdjacent},
         {"Combat: simultaneity + timeout", TestCombatSimultaneityAndTimeout},
+        {"Combat: endless overtime, no draws", TestCombatOvertime},
+        {"Presentation contract: windups, projectiles, typed DoTs, spell areas", TestPresentationContract},
+        {"Golden fights: the same results on every platform", TestGoldenFights},
+        {"Shop + bench during Combat, board locked", TestShopAndBenchDuringCombat},
+        {"Mother Nature: unit gifts scale with the stage", TestMotherNatureUnitGiftsScaleWithTheStage},
+        {"Match rhythm: phase lengths, safety limit, shop rule", TestRoundRhythmAndShopRule},
+        {"Item Remover (consumable)", TestItemRemover},
         {"Combat: movement + targeting", TestCombatMovementAndTargeting},
         {"Combat: determinism + path caching", TestCombatDeterminismAndPathCaching},
         {"Combat through MatchManager", TestCombatThroughMatch},
@@ -10625,6 +11514,7 @@ int main() {
         {"Loader: designer-friendly values", TestLoaderReadsDesignerFriendlyValues},
         {"Loader: every mistake names its path", TestLoaderErrors},
         {"Production data matches the designer spec", TestProductionDataMatchesDesignerSpec},
+        {"Production data keeps the designer's structure (balance moves numbers only)", TestProductionDataKeepsTheDesignerStructure},
         {"Passives at start of combat (Alesk)", TestPassivesAtStartOfCombat},
         {"Baira: wound passive + new burn", TestBairaWoundAndNewBurn},
         {"Attack count resets on target change", TestResetCountOnTargetChange},

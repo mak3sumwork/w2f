@@ -17,7 +17,7 @@
       "id": 9001, "name": "Alesk", "cost": 4, "role": "Tank",
       "traits": ["Helios"],
       "stats": {
-        "hp": [325, 475, 650], "armor": [31, 45, 63], "magicResist": [17, 24, 29], "attackDamage": [30, 35, 40],
+        "hp": [360, 525, 720], "armor": [36, 52, 72], "magicResist": [20, 28, 34], "attackDamage": [30, 35, 40],
         "attackSpeed": 1.0, "range": 1,
         "maxMana": 60, "manaRegen": 10.0     // 100-scale (was 6 and 1.0 on the old small scale: identical behaviour)
       },
@@ -28,7 +28,7 @@
         "effects": [
           {
             "type": "Shield", "target": "Self",
-            "amount": { "terms": [ { "source": "SelfMaxHp", "percent": [7, 15, 30] } ] },
+            "amount": { "terms": [ { "source": "SelfMaxHp", "percent": [12, 22, 40] } ] },
             "durationSeconds": [1.75, 2.0, 2.25],
             "damageReductionPercent": [5, 12, 25]
           }
@@ -51,9 +51,10 @@
       "id": 9002, "name": "Baira", "cost": 3, "role": "Damage",
       "traits": ["Phaisa"],
       "stats": {
-        "hp": [100, 150, 200], "armor": [10, 15, 20], "magicResist": [5, 9, 13], "attackDamage": [20, 25, 29],
-        "abilityDamage": [15, 21, 40],            // the sheet's "AP"
-        "attackSpeed": 0.5, "range": 4            // range ASSUMED (marksman)
+        "hp": [300, 540, 970], "armor": [10, 15, 20], "magicResist": [5, 9, 13], "attackDamage": [30, 38, 45],
+        "abilityDamage": [60, 90, 160],            // the sheet's "AP" was 15/21/40; raised in the balance pass (her burn did almost nothing)
+        "attackSpeed": 0.6, "range": 4,           // range ASSUMED (marksman)
+        "projectileSpeed": 14, "attackWindupSeconds": 0.25   // presentation only (ASSUMED): a fast arrow, a long draw
         // no maxMana: Baira does not use mana
       },
       // Every 5th attack (the count restarts when she changes target or her target dies):
@@ -87,7 +88,7 @@
       "id": 9003, "name": "Cyla", "cost": 2, "role": "Damage",
       "traits": ["Hexagon"],
       "stats": {
-        "hp": [90, 140, 180], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [50, 60, 80],
+        "hp": [80, 125, 160], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [50, 60, 80],
         "crit": [15, 25, 50],
         "attackSpeed": 0.78, "range": 4,          // range ASSUMED (marksman)
         "maxMana": 60, "manaRegen": 10.0
@@ -116,7 +117,7 @@
       "id": 9005, "name": "Faire", "cost": 3, "role": "Damage",
       "traits": ["Hexagon"],
       "stats": {
-        "hp": [225, 333, 427], "armor": [20, 32, 41], "magicResist": [15, 20, 25], "attackDamage": [25, 30, 35],
+        "hp": [200, 300, 385], "armor": [20, 32, 41], "magicResist": [15, 20, 25], "attackDamage": [25, 30, 35],
         "abilityDamage": [28, 45, 60],
         "attackSpeed": 0.75, "range": 3,          // range 3 (per the designer)
         "maxMana": 50, "manaRegen": 10.0,
@@ -154,7 +155,7 @@
       "id": 9006, "name": "Les", "cost": 5, "role": "Tank",
       "traits": ["Omnilium", "Protector"],
       "stats": {
-        "hp": [1000, 2000, 3500], "armor": [60, 80, 300], "magicResist": [50, 70, 285], "attackDamage": [40, 60, 70],
+        "hp": [675, 1350, 2360], "armor": [47, 63, 235], "magicResist": [39, 55, 223], "attackDamage": [40, 60, 70],
         "attackSpeed": 1.0, "range": 1,
         "maxMana": 70, "manaRegen": 10.0
       },
@@ -186,7 +187,7 @@
       "id": 9007, "name": "Lum", "cost": 5, "role": "Tank",
       "traits": ["Omnilium", "Protector"],
       "stats": {
-        "hp": [600, 1000, 2500], "armor": [45, 50, 100], "magicResist": [35, 40, 100], "attackDamage": [40, 60, 70],
+        "hp": [405, 675, 1690], "armor": [35, 39, 78], "magicResist": [28, 31, 78], "attackDamage": [40, 60, 70],
         "attackSpeed": 1.0, "range": 1,
         "maxMana": 70, "manaRegen": 10.0
       },
@@ -226,7 +227,7 @@
       "id": 9008, "name": "Astra", "cost": 1, "role": "Damage",
       "traits": ["Najmi"],
       "stats": {
-        "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 20,
+        "hp": [450, 810, 1460], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 20,
         "attackSpeed": 0.65, "range": 3, "maxMana": 60
       },
       // Tethers to the ALLY THAT DEALT THE MOST DAMAGE in the last 5 s ("highest DPS") for 5 s: 30% of the damage that ally
@@ -248,7 +249,7 @@
       "id": 9009, "name": "Lunis", "cost": 2, "role": "Damage",
       "traits": ["Selini", "Assassin"],
       "stats": {
-        "hp": [550, 990, 1780], "armor": [25, 35, 50], "magicResist": [25, 35, 50], "attackDamage": [45, 68, 102],
+        "hp": [495, 890, 1600], "armor": [25, 35, 50], "magicResist": [25, 35, 50], "attackDamage": [45, 68, 102],
         "attackSpeed": 0.80, "range": 1, "maxMana": 40
       },
       // Passive: at the start of combat he jumps to the farthest enemy (landing on its far side) and is untargetable for 2 s.
@@ -284,7 +285,7 @@
       "passive": {
         "id": 110, "name": "Undying Shell",
         "effects": [
-          { "type": "Shield", "target": "Self", "amount": [800, 1200, 1800], "permanent": true },
+          { "type": "Shield", "target": "Self", "amount": [560, 840, 1300], "permanent": true },
           { "type": "Status", "target": "Self", "status": "Wound", "percent": 100, "permanent": true }
         ]
       },
@@ -318,7 +319,7 @@
       "id": 9011, "name": "Myna", "cost": 4, "role": "Damage",
       "traits": ["Selini"],
       "stats": {
-        "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 30, "abilityDamage": [40, 60, 90],
+        "hp": [630, 1135, 2040], "armor": 30, "magicResist": 30, "attackDamage": 30, "abilityDamage": [40, 60, 90],
         "attackSpeed": 0.70, "range": 4, "maxMana": 80
       },
       // Heals the lowest-HP ally for 200/300/500 and deals 200/300/500 magic damage to the highest-HP enemy inside a zone
@@ -339,7 +340,7 @@
       "id": 9012, "name": "Vega", "cost": 5, "role": "Damage",
       "traits": ["Najmi"],
       "stats": {
-        "hp": [850, 1530, 2754], "armor": 35, "magicResist": 35, "attackDamage": 40, "abilityDamage": [80, 120, 180],
+        "hp": [765, 1375, 2480], "armor": 35, "magicResist": 35, "attackDamage": 40, "abilityDamage": [80, 120, 180],
         "attackSpeed": 0.75, "range": 4, "maxMana": 100
       },
       // Channels for 4 s. Every 0.5 s (8 pulses) she hits a random enemy for 100/150/400 magic damage. If the channel is
@@ -347,10 +348,10 @@
       "ability": {
         "id": 12, "name": "Starfall Channel", "trigger": "Mana", "channelSeconds": 4,
         "effects": [
-          { "type": "Damage", "target": "RandomEnemy", "damageType": "Magic", "amount": [100, 150, 400],
+          { "type": "Damage", "target": "RandomEnemy", "damageType": "Magic", "amount": [75, 115, 300],
             "delaySeconds": 0.5, "repeat": { "count": 8, "everySeconds": 0.5 } },
           { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 15, "includeCenter": false, "side": "Enemies" },
-            "damageType": "Magic", "amount": [500, 800, 2000], "delaySeconds": 4 }
+            "damageType": "Magic", "amount": [375, 600, 1500], "delaySeconds": 4 }
         ]
       }
     }
@@ -366,10 +367,10 @@
     {
       "id": 9013, "name": "Ignis", "cost": 1, "role": "Tank",
       "traits": ["Helios"],
-      "stats": { "hp": [500, 900, 1620], "armor": 30, "magicResist": 30, "attackDamage": 30, "attackSpeed": 0.60, "range": 1, "maxMana": 50 },
+      "stats": { "hp": [340, 610, 1095], "armor": 24, "magicResist": 24, "attackDamage": 30, "attackSpeed": 0.60, "range": 1, "maxMana": 50 },
       "ability": {
         "id": 20, "name": "Ember Ward", "trigger": "Mana", "castLockTicks": 15,   // lock ASSUMED
-        "effects": [ { "type": "Shield", "target": "Self", "amount": [200, 300, 450], "durationSeconds": 4 } ]
+        "effects": [ { "type": "Shield", "target": "Self", "amount": [120, 180, 270], "durationSeconds": 3 } ]
       }
     },
 
@@ -377,7 +378,7 @@
     {
       "id": 9014, "name": "Pyra", "cost": 1, "role": "Damage",
       "traits": ["Helios"],
-      "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 40, "attackSpeed": 0.70, "range": 4, "maxMana": 60 },
+      "stats": { "hp": [405, 730, 1310], "armor": 15, "magicResist": 15, "attackDamage": 40, "attackSpeed": 0.70, "range": 4, "maxMana": 60 },
       // A piercing arrow: the target and the unit standing 1 hex behind it.
       "ability": {
         "id": 21, "name": "Piercing Arrow", "trigger": "Mana", "castLockTicks": 15,
@@ -392,7 +393,7 @@
     {
       "id": 9015, "name": "Vex", "cost": 1, "role": "Damage",
       "traits": ["Phaisa", "Assassin"],
-      "stats": { "hp": [450, 810, 1458], "armor": 20, "magicResist": 20, "attackDamage": 45, "attackSpeed": 0.75, "range": 1, "maxMana": 40 },
+      "stats": { "hp": [405, 730, 1310], "armor": 20, "magicResist": 20, "attackDamage": 45, "attackSpeed": 0.75, "range": 1, "maxMana": 40 },
       // Blinks next to the enemy with the least HP (landing on its far side, and fighting it from then on) and hits it.
       "ability": {
         "id": 22, "name": "Cull", "trigger": "Mana", "castLockTicks": 15,
@@ -408,7 +409,7 @@
       "id": 9016, "name": "Null", "cost": 1, "role": "Tank",
       "traits": ["Phaisa"],
       // Range 3 (the design doc says 1, but a pull needs a target that is not already adjacent: the designer chose 3).
-      "stats": { "hp": [550, 990, 1782], "armor": 35, "magicResist": 35, "attackDamage": 30, "abilityDamage": 20, "attackSpeed": 0.55, "range": 3, "maxMana": 70 },
+      "stats": { "hp": [370, 665, 1200], "armor": 28, "magicResist": 28, "attackDamage": 30, "abilityDamage": 20, "attackSpeed": 0.55, "range": 3, "maxMana": 70 },
       // Magic damage and a pull 1 hex toward Null.
       "ability": {
         "id": 23, "name": "Gravity Well", "trigger": "Mana", "castLockTicks": 15,
@@ -423,7 +424,7 @@
     {
       "id": 9017, "name": "Bone", "cost": 1, "role": "Tank",
       "traits": ["Coregons"],
-      "stats": { "hp": [500, 900, 1620], "armor": 25, "magicResist": 25, "attackDamage": 40, "attackSpeed": 0.65, "range": 1, "maxMana": 60 },
+      "stats": { "hp": [340, 610, 1095], "armor": 19, "magicResist": 19, "attackDamage": 40, "attackSpeed": 0.65, "range": 1, "maxMana": 60 },
       "ability": {
         "id": 24, "name": "Skull Bash", "trigger": "Mana", "castLockTicks": 15,
         "effects": [
@@ -437,13 +438,13 @@
     {
       "id": 9018, "name": "Rot", "cost": 1, "role": "Damage",
       "traits": ["Coregons"],
-      "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 20, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 50 },
-      // Poison: the damage is the TOTAL over 3 s, one tick every 0.5 s (ASSUMED). (Shown to the client as the generic damage-over-time status.)
+      "stats": { "hp": [405, 730, 1310], "armor": 15, "magicResist": 15, "attackDamage": 20, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 50 },
+      // Poison: the damage is the TOTAL over 3 s, one tick every 0.5 s (ASSUMED). "visual": "Poison" tells the client to draw a toxin, not a burn.
       "ability": {
-        "id": 25, "name": "Blight", "trigger": "Mana", "castLockTicks": 15,
+        "id": 25, "name": "Blight", "trigger": "Mana", "castLockTicks": 15, "windupSeconds": 0.4,   // (windup: presentation only, ASSUMED)
         "effects": [
-          { "type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": [90, 140, 220], "amountIsTotal": true,
-            "durationSeconds": 3, "intervalSeconds": 0.5 }
+          { "type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": [120, 180, 280], "amountIsTotal": true,
+            "durationSeconds": 3, "intervalSeconds": 0.5, "visual": "Poison" }
         ]
       }
     },
@@ -452,7 +453,7 @@
     {
       "id": 9019, "name": "Bit", "cost": 1, "role": "Tank",
       "traits": ["Hexagon"],
-      "stats": { "hp": [500, 900, 1620], "armor": 25, "magicResist": 25, "attackDamage": 45, "attackSpeed": 0.65, "range": 1, "maxMana": 50 },
+      "stats": { "hp": [340, 610, 1095], "armor": 19, "magicResist": 19, "attackDamage": 45, "attackSpeed": 0.65, "range": 1, "maxMana": 50 },
       // Dashes through the target (lands on its far side, keeps fighting it) and hits it.
       "ability": {
         "id": 26, "name": "Breakthrough", "trigger": "Mana", "castLockTicks": 15,
@@ -468,7 +469,7 @@
     {
       "id": 9020, "name": "Solis", "cost": 2, "role": "Tank",
       "traits": ["Helios"],
-      "stats": { "hp": [600, 1080, 1944], "armor": 30, "magicResist": 30, "attackDamage": 50, "attackSpeed": 0.70, "range": 1, "maxMana": 50 },
+      "stats": { "hp": [405, 730, 1315], "armor": 24, "magicResist": 24, "attackDamage": 50, "attackSpeed": 0.70, "range": 1, "maxMana": 50 },
       // "Next attack deals 150/225/350 Physical Damage and shreds 20% Armor for 3 s": the cast arms ONE charge (it lapses after 8 s, ASSUMED); the
       // next basic attack then carries the damage as a bonus hit on top of the normal attack (ASSUMED: the doc does not say "instead of").
       "ability": {
@@ -488,7 +489,7 @@
     {
       "id": 9021, "name": "Xul", "cost": 2, "role": "Damage",
       "traits": ["Phaisa"],
-      "stats": { "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 40, "attackSpeed": 0.65, "range": 4, "maxMana": 60 },
+      "stats": { "hp": [450, 810, 1460], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 40, "attackSpeed": 0.65, "range": 4, "maxMana": 60 },
       // A void bolt that bounces to 1 adjacent enemy (the one nearest the first target; the bounce hits as hard as the bolt).
       "ability": {
         "id": 29, "name": "Void Bolt", "trigger": "Mana", "castLockTicks": 15,
@@ -504,7 +505,7 @@
     {
       "id": 9022, "name": "Grave", "cost": 2, "role": "Damage",
       "traits": ["Coregons"],
-      "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 80 },
+      "stats": { "hp": [495, 890, 1605], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 80 },
       // A Skeleton (champion 9101, a summon) with 300/500/800 HP and 30 AD on the nearest free hex.
       "ability": {
         "id": 30, "name": "Raise Skeleton", "trigger": "Mana", "castLockTicks": 15,
@@ -516,10 +517,10 @@
     {
       "id": 9023, "name": "Byte", "cost": 2, "role": "Damage",
       "traits": ["Hexagon"],
-      "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 25, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 60 },
+      "stats": { "hp": [495, 890, 1605], "armor": 25, "magicResist": 25, "attackDamage": 25, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 60 },
       "ability": {
         "id": 31, "name": "Firewall", "trigger": "Mana", "castLockTicks": 15,
-        "effects": [ { "type": "Shield", "target": "LowestHpAlly", "amount": [200, 300, 500], "durationSeconds": 4 } ]
+        "effects": [ { "type": "Shield", "target": "LowestHpAlly", "amount": [150, 225, 375], "durationSeconds": 3 } ]
       }
     },
 
@@ -527,7 +528,7 @@
     {
       "id": 9024, "name": "Orion", "cost": 2, "role": "Damage",
       "traits": ["Najmi"],
-      "stats": { "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 55, "attackSpeed": 0.75, "range": 4, "maxMana": 70 },
+      "stats": { "hp": [450, 810, 1460], "armor": 20, "magicResist": 20, "attackDamage": 55, "attackSpeed": 0.75, "range": 4, "maxMana": 70 },
       // A heavy shot that knocks the target back 1 hex (away from Orion; stops at a blocked hex or the arena edge).
       "ability": {
         "id": 32, "name": "Concussive Shot", "trigger": "Mana", "castLockTicks": 15,
@@ -543,7 +544,7 @@
     {
       "id": 9025, "name": "Nyx", "cost": 3, "role": "Tank",
       "traits": ["Phaisa"],
-      "stats": { "hp": [650, 1170, 2106], "armor": 35, "magicResist": 35, "attackDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 60 },
+      "stats": { "hp": [440, 790, 1420], "armor": 28, "magicResist": 28, "attackDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 60 },
       "ability": {
         "id": 33, "name": "Cleave", "trigger": "Mana", "castLockTicks": 15,
         "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "damageType": "Physical", "amount": [150, 225, 350] } ]
@@ -554,7 +555,7 @@
     {
       "id": 9026, "name": "Flare", "cost": 3, "role": "Damage",
       "traits": ["Helios"],
-      "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 50, "attackSpeed": 0.70, "range": 4, "maxMana": 80 },
+      "stats": { "hp": [540, 970, 1750], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 50, "attackSpeed": 0.70, "range": 4, "maxMana": 80 },
       // A sunbeam on the target: everything within 1 hex of it.
       "ability": {
         "id": 34, "name": "Sunbeam", "trigger": "Mana", "castLockTicks": 15,
@@ -566,13 +567,13 @@
     {
       "id": 9027, "name": "Lich", "cost": 3, "role": "Damage",
       "traits": ["Coregons"],
-      "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 55, "attackSpeed": 0.65, "range": 3, "maxMana": 70 },
+      "stats": { "hp": [540, 970, 1750], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 55, "attackSpeed": 0.65, "range": 3, "maxMana": 70 },
       // Drain: 250/375/600 magic damage over 2 s (a tick every 0.5 s, ASSUMED); each tick heals Lich for 100% of the damage it does.
       "ability": {
-        "id": 35, "name": "Soul Drain", "trigger": "Mana", "castLockTicks": 15,
+        "id": 35, "name": "Soul Drain", "trigger": "Mana", "castLockTicks": 15, "windupSeconds": 0.5,
         "effects": [
           { "type": "DoT", "target": "CurrentTarget", "damageType": "Magic", "amount": [250, 375, 600], "amountIsTotal": true,
-            "durationSeconds": 2, "intervalSeconds": 0.5, "healPercent": 100 }
+            "durationSeconds": 2, "intervalSeconds": 0.5, "healPercent": 100, "visual": "Drain" }
         ]
       }
     },
@@ -582,7 +583,7 @@
     {
       "id": 9028, "name": "Raa", "cost": 4, "role": "Damage",
       "traits": ["Helios", "Assassin"],
-      "stats": { "hp": [700, 1260, 2268], "armor": 40, "magicResist": 40, "attackDamage": 70, "attackSpeed": 0.85, "range": 1, "maxMana": 70 },
+      "stats": { "hp": [630, 1135, 2040], "armor": 40, "magicResist": 40, "attackDamage": 70, "attackSpeed": 0.85, "range": 1, "maxMana": 70 },
       "ability": {
         "id": 36, "name": "Solar Leap", "trigger": "Mana", "castLockTicks": 15,
         "effects": [
@@ -596,7 +597,7 @@
     {
       "id": 9029, "name": "Kryx", "cost": 4, "role": "Tank",
       "traits": ["Phaisa"],
-      "stats": { "hp": [800, 1440, 2592], "armor": 45, "magicResist": 45, "attackDamage": 65, "attackSpeed": 0.80, "range": 1, "maxMana": 50 },
+      "stats": { "hp": [540, 970, 1750], "armor": 35, "magicResist": 35, "attackDamage": 65, "attackSpeed": 0.80, "range": 1, "maxMana": 50 },
       // Frenzy for 5 s: +50/75/150% attack speed, and every hit he takes deals 10% more. Casting again refreshes it.
       "ability": {
         "id": 37, "name": "Frenzy", "trigger": "Mana", "castLockTicks": 0,
@@ -611,7 +612,7 @@
     {
       "id": 9030, "name": "Mortis", "cost": 4, "role": "Damage",
       "traits": ["Coregons"],
-      "stats": { "hp": [650, 1170, 2106], "armor": 30, "magicResist": 30, "attackDamage": 75, "attackSpeed": 0.80, "range": 4, "maxMana": 60 },
+      "stats": { "hp": [585, 1055, 1895], "armor": 30, "magicResist": 30, "attackDamage": 60, "attackSpeed": 0.80, "range": 4, "maxMana": 60 },
       // "His next 3 basic attacks deal 150/225/400 bonus Physical Damage and ignore 50% Armor": the cast arms 3 charges (they lapse after
       // 10 s, ASSUMED); each of the next 3 attacks carries a bonus hit that ignores half the victim's armor. (The armor bypass applies to the
       // bonus hit, not to the normal attack itself.)
@@ -621,7 +622,7 @@
       },
       "triggers": [
         { "id": 39, "name": "Death's Volley (hit)", "trigger": "OnBasicAttack", "requiresCharge": true,
-          "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [150, 225, 400], "armorPenPercent": 50 } ] }
+          "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [115, 175, 300], "armorPenPercent": 50 } ] }
       ]
     },
 
@@ -630,7 +631,7 @@
     {
       "id": 9031, "name": "Umbra", "cost": 5, "role": "Tank",
       "traits": ["Selini"],
-      "stats": { "hp": [900, 1620, 2916], "armor": 50, "magicResist": 50, "attackDamage": 50, "abilityDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 100 },
+      "stats": { "hp": [610, 1095, 1965], "armor": 39, "magicResist": 39, "attackDamage": 50, "abilityDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 100 },
       // Eclipse: enemies within 2 hexes are blinded for 3 s (they cannot basic attack; they still walk and cast) and take 300/450/1000 magic damage.
       "ability": {
         "id": 40, "name": "Eclipse", "trigger": "Mana", "castLockTicks": 15,
@@ -654,7 +655,7 @@
     // summons it at star 1 / 2 / 3 for the 3 / 6 / 8 breakpoints, so the per-star percent below IS the breakpoint's echo. (AD / speed / range ASSUMED.)
     {
       "id": 9102, "name": "Lost Soul", "summon": true,
-      "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 30, "attackSpeed": 0.80, "range": 1, "attackType": "Magic" },
+      "stats": { "hp": 100, "armor": 0, "magicResist": 0, "attackDamage": 20, "attackSpeed": 0.80, "range": 1, "attackType": "Magic" },
       "passive": {
         "id": 130, "name": "Incorporeal",
         "effects": [ { "type": "Status", "target": "Self", "status": "Untargetable", "permanent": true } ]
@@ -663,7 +664,7 @@
         { "id": 131, "name": "Echo", "trigger": "OnAllyDealDamage",
           "effects": [
             { "type": "Damage", "target": "TriggerVictim", "damageType": "Magic",
-              "amount": { "terms": [ { "source": "TriggerDamage", "percent": [5, 8, 12] } ] } }
+              "amount": { "terms": [ { "source": "TriggerDamage", "percent": [3, 5, 8] } ] } }
           ] }
       ]
     }

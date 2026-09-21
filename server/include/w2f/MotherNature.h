@@ -38,6 +38,12 @@ constexpr const char* ToString(GiftType t) {
     return "?";
 }
 
+// A Unit gift whose cost tiers depend on the stage: from `fromStage` on (until a later entry takes over) the unit is drawn from one of `costs`.
+struct StageCosts {
+    int fromStage = 1;
+    std::vector<int> costs;
+};
+
 struct GiftDefinition {
     std::uint32_t id = 0;        // > 0, unique across the whole file; offers refer to it
     std::string name;            // "Mother's Blessing"
@@ -46,7 +52,17 @@ struct GiftDefinition {
     int amount = 0;              // Gold / Xp / Heal: how much
     ItemClass itemClass = ItemClass::Any;   // Item without an explicit `items` list
     std::vector<ItemId> items;   // Item: explicit candidates (overrides itemClass)
-    std::vector<int> costs;      // Unit: the cost tiers it may come from
+    std::vector<int> costs;      // Unit: the cost tiers it may come from (the same at every stage) ...
+    std::vector<StageCosts> costsByStage;   // ... or, instead, tiers that SCALE with the stage: the entry with the largest fromStage <= the stage applies
+
+    // The cost tiers a Unit gift draws from at `stage`.
+    const std::vector<int>& CostsAt(int stage) const {
+        const std::vector<int>* best = &costs;
+        for (const StageCosts& entry : costsByStage) {
+            if (entry.fromStage <= stage) best = &entry.costs;
+        }
+        return *best;
+    }
 };
 
 struct MotherNatureTier {

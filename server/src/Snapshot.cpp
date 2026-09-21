@@ -102,7 +102,7 @@ constexpr std::size_t kTrailerBytes = 8;
 
 // Serialized size of one CombatEvent (kept next to the writer so the two cannot drift apart unnoticed: the round-trip
 // test would fail).
-constexpr std::size_t kEventBytes = 4 + 1 + 1 + 4 + 4 + 16 + 4 + 4 + 4 + 1 + 4 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 4;
+constexpr std::size_t kEventBytes = 4 + 1 + 1 + 4 + 4 + 16 + 4 + 4 + 4 + 1 + 4 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 1 + 1 + 1;
 constexpr std::size_t kUnitBytes = 4 + 4 + 1 + 1 + 4 + 4 + 4 * kMaxItemsPerUnit;
 constexpr std::size_t kMaxUnitsPerPlayer = static_cast<std::size_t>(kBenchSlots + kBoardRows * kBoardColumns);
 constexpr std::size_t kMaxItemBag = 65535;
@@ -136,6 +136,11 @@ void WriteEvent(ByteWriter& w, const CombatEvent& e) {
     w.I32(e.manaRegen);
     w.I32(e.reduced);
     w.U32(e.traitId);
+    w.I32(e.windup);
+    w.I32(e.flight);
+    w.U8(e.kind);
+    w.U8(e.shape);
+    w.U8(e.size);
 }
 
 bool ReadEvent(ByteReader& r, CombatEvent& e) {
@@ -161,7 +166,12 @@ bool ReadEvent(ByteReader& r, CombatEvent& e) {
     e.manaRegen = r.I32();
     e.reduced = r.I32();
     e.traitId = r.U32();
-    if (type > static_cast<std::uint32_t>(CombatEventType::SpellInterrupted)) return false;
+    e.windup = r.I32();
+    e.flight = r.I32();
+    e.kind = static_cast<std::uint8_t>(r.U8());
+    e.shape = static_cast<std::uint8_t>(r.U8());
+    e.size = static_cast<std::uint8_t>(r.U8());
+    if (type > static_cast<std::uint32_t>(CombatEventType::Overtime)) return false;
     e.type = static_cast<CombatEventType>(type);
     return r.ok();
 }
@@ -499,6 +509,7 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
     for (const CombatOutcome& o : match->outcomes_) {
         if (!validMatchup(o.matchup)) return fail("a fight names a seat that does not exist");
     }
+    match->combatPhaseTicks_ = match->ComputeCombatTicks();   // derived from the fights, never stored
 
     // The proof: what we rebuilt must be a consistent match AND hash to exactly what the original hashed to.
     if (!match->VerifyRosterLayouts()) return fail("restored rosters violate the layout invariants");

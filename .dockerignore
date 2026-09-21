@@ -1,0 +1,7 @@
+.git
+server/build
+server/docs
+server/tests
+client
+**/.DS_Store
+*.w2fsave

@@ -33,7 +33,11 @@
 #include "w2f/CombatSimulator.h"
 #include "w2f/Json.h"
 #include "w2f/Rng.h"
+#include <fstream>
+#include <sstream>
 #include "w2f/net/Encoding.h"
+#include "w2f/net/Messages.h"
+#include "w2f/net/ResumeFile.h"
 #include "w2f/net/GameServer.h"
 #include "w2f/net/JsonWriter.h"
 #include "w2f/net/Protocol.h"
@@ -531,7 +535,7 @@ struct Rig {
         data.encounters = encounters.get();
         data.config.match.motherNatureTicks = 30;
         data.config.match.planningTicks = 90;
-        data.config.match.combatTicks = 300;
+        data.config.match.combatTicks = Seconds(125);   // the real maximum: a fight that a shorter phase cut off would be decided by the tie-break, not fought to the end
         data.config.match.resolutionTicks = 30;
         data.config.player.startingGold = 20;
         data.config.match.shopClosedOpeningRounds = 0;   // the protocol tests want a shop from round 1 and a free-form board;
@@ -605,7 +609,7 @@ static void TestLobby() {
     const ConnectionId a = r.Connect();
     CHECK(r.Types(a) == std::vector<std::string>({"welcome", "lobby"}));
     const json::Value wa = r.Last(a, "welcome");
-    CHECK(Num(wa, "player_id") == 0 && Num(wa, "protocol") == kProtocolVersion && Num(wa, "seats") == 3 && Num(wa, "connected") == 1 &&
+    CHECK(Num(wa, "player_id") == 0 && Num(wa, "protocol") == kProtocolVersion && Num(wa, "protocol_revision") == kProtocolRevision && Num(wa, "seats") == 3 && Num(wa, "connected") == 1 &&
           wa.Find("reconnected")->AsBool() == false && wa.Find("match_running")->AsBool() == false);
     const std::string tokenA = Str(wa, "token");
     CHECK(tokenA.size() == 32 && IsLowerHex(tokenA));
@@ -650,7 +654,7 @@ static void TestLobby() {
     const json::Value started = r.Last(ghostReturn, "match_started");
     CHECK(Num(started, "player_id") == 1 && Num(started, "seats") == 3 && Num(started, "tick_rate") == kTicksPerSecond &&
           Num(*started.Find("phase_ticks"), "planning") == 90 && Num(*started.Find("board"), "columns") == kBoardColumns &&
-          started.Find("combat_event_types")->Items().size() == 15);
+          started.Find("combat_event_types")->Items().size() == 16);
 
     // The match is full of its own players: a 4th connection is turned away, and the seat holders are unaffected.
     const ConnectionId late = r.Connect();
@@ -833,10 +837,22 @@ static void TestCommandRouting() {
     for (const Seen& s : observed) consistent = consistent && s.tick <= r.server->tickCount();
     CHECK(consistent);
 
-    // Moving past the end of the Planning phase: the engine itself refuses, and the client learns why.
+    // Past the end of the Planning phase the shop stays open (buy, reroll, XP), but the engine itself refuses what is only for Planning or Mother
+    // Nature's phase, and the client learns why.
     CHECK(r.RunUntil([&] { return r.Match().Phase() == MatchPhase::Combat; }, 300));
-    r.Say(a, R"({"action": "reroll_shop"})");
+    r.Say(a, R"({"action": "pick_gift", "gift_index": 0})");
     CHECK(Str(r.Last(a, "result"), "result") == "WrongPhase");
+    r.Say(a, R"({"action": "reroll_shop"})");
+    const std::string inCombat = Str(r.Last(a, "result"), "result");
+    CHECK(inCombat == "Ok" || inCombat == "NotEnoughGold");
+    // The board is locked while units fight: a board unit cannot be sold (the bench stays open).
+    const PlayerState* seat0 = r.Match().Players().Get(0);
+    for (const UnitInstance& u : seat0->Roster().Units()) {
+        if (u.location != LocationType::Board) continue;
+        r.Say(a, R"({"action": "sell_unit", "unit_id": )" + std::to_string(u.id) + "}");
+        CHECK(Str(r.Last(a, "result"), "result") == "UnitInCombat");
+        break;
+    }
 }
 
 static void TestMotherNatureOverTheProtocol() {
@@ -981,6 +997,82 @@ static void TestItemCombinationOverTheProtocol() {
     CHECK(carried == 10);
     // Private: the other player never hears about any of it.
     CHECK(r.CountType(b, "unit_event") == 0 && r.CountType(b, "state") == 0);
+}
+
+static void TestItemRemoverOverTheProtocol() {
+    Rig r(2, {}, sample::ProductionItemsPath());
+    const ConnectionId a = r.Connect();
+    const ConnectionId b = r.Connect();
+    CHECK(r.RunUntil([&] { return IsPlanning(r); }, 200));
+    r.Say(a, R"({"action": "buy_unit", "shop_index": 0})");
+    PlayerState* player = const_cast<MatchManager*>(r.server->match())->PlayersMutable().Get(0);   // admin access: items normally arrive as PvE drops
+    CHECK(player->Roster().Count() == 1);
+    for (ItemId item : {7u, 4u, 50u, 50u}) CHECK(player->AddItemToBag(item));
+    const std::string unit = std::to_string(player->Roster().Units()[0].id);
+    r.Say(a, R"({"action": "equip_item", "unit_id": )" + unit + R"(, "item_id": 7})");
+    r.Say(a, R"({"action": "equip_item", "unit_id": )" + unit + R"(, "item_id": 4})");
+    r.net.sent.clear();
+
+    r.Say(a, R"({"action": "equip_item", "unit_id": )" + unit + R"(, "item_id": 50, "id": 9})");
+    CHECK(Str(r.Last(a, "result"), "result") == "Ok" && Num(r.Last(a, "result"), "id") == 9);
+    std::vector<long long> unequipped;
+    json::Value used;
+    for (const json::Value& v : r.Inbox(a)) {
+        if (Str(v, "type") != "unit_event") continue;
+        long long item = 0;
+        if (Str(v, "event") == "item_unequipped" && v.Find("item")->ToInt(item)) unequipped.push_back(item);
+        if (Str(v, "event") == "consumable_used") used = v;
+    }
+    CHECK((unequipped == std::vector<long long>{7, 4}));
+    CHECK(Str(used, "event") == "consumable_used" && Num(used, "item") == 50 && used.Find("returned")->Items().size() == 2 && used.Find("unit")->Find("items")->Items().empty());
+    const json::Value state = r.Last(a, "state");
+    std::vector<long long> bag;
+    for (const json::Value& item : state.Find("item_bag")->Items()) {
+        long long id = 0;
+        item.ToInt(id);
+        bag.push_back(id);
+    }
+    CHECK((bag == std::vector<long long>{50, 7, 4}));   // one remover used up, the other still there, the unit's items back in the bag
+    // Nothing left to remove: refused, the remover stays.
+    r.net.sent.clear();
+    r.Say(a, R"({"action": "equip_item", "unit_id": )" + unit + R"(, "item_id": 50, "id": 10})");
+    CHECK(Str(r.Last(a, "result"), "result") == "NoItemsToRemove" && !r.Last(a, "result").Find("ok")->AsBool() && r.CountType(a, "unit_event") == 0);
+    CHECK(player->ItemBag().size() == 3);
+    CHECK(r.CountType(b, "unit_event") == 0 && r.CountType(b, "state") == 0);   // private to the owner
+
+    // The catalog tells a client which items are consumables.
+    r.Say(a, R"({"action": "get_catalog"})");
+    bool removerFlagged = false, swordPlain = false;
+    const json::Value catalog = r.Last(a, "catalog");
+    for (const json::Value& item : catalog.Find("items")->Items()) {
+        if (Num(item, "id") == 50) removerFlagged = Str(item, "name") == "Item Remover" && item.Find("consumable")->AsBool() && item.Find("components")->Items().empty();
+        if (Num(item, "id") == 3) swordPlain = !item.Find("consumable")->AsBool();
+    }
+    CHECK(removerFlagged && swordPlain);
+}
+
+static void TestCombatPhaseLengthOnTheWire() {
+    // The Combat phase lasts as long as the round's fights (plus a short linger, at most 35 s): the phase message says how long, from its first tick.
+    Rig r(2);
+    const ConnectionId a = r.Connect();
+    r.Connect();
+    const json::Value started = r.Last(a, "match_started");
+    CHECK(Num(*started.Find("phase_ticks"), "combat") == r.data.config.match.combatTicks && Num(*started.Find("phase_ticks"), "resolution") == r.data.config.match.resolutionTicks);
+    int combatPhases = 0;
+    bool lengthsRight = true;
+    for (int round = 0; round < 6; ++round) {
+        CHECK(r.RunUntil([&] { return r.Match().Phase() == MatchPhase::Combat && r.Match().TicksInPhase() > 0; }, 5000));
+        const json::Value phase = r.Last(a, "phase");
+        const MatchConfig& mc = r.data.config.match;
+        int lastEnd = 0;
+        for (const CombatOutcome& o : r.Match().CurrentCombatOutcomes()) lastEnd = std::max(lastEnd, o.log.endTick);
+        lengthsRight = lengthsRight && Str(phase, "phase") == "Combat" && Num(phase, "duration_ticks") == r.Match().PhaseTicks() &&
+                       Num(phase, "duration_ticks") == std::min(mc.combatTicks, std::max(mc.combatMinTicks, lastEnd + mc.combatLingerTicks)) &&
+                       Num(phase, "ticks_remaining") <= Num(phase, "duration_ticks") && Num(phase, "duration_ticks") <= r.data.config.match.combatTicks;
+        ++combatPhases;
+        CHECK(r.RunUntil([&] { return r.Match().Phase() != MatchPhase::Combat; }, 5000));
+    }
+    CHECK(combatPhases == 6 && lengthsRight);
 }
 
 static void TestMalformedTrafficNeverReachesTheEngine() {
@@ -1167,9 +1259,9 @@ static void TestPrivacyAndDelivery() {
                     ++combatSeen[i];
                     const bool mine = Num(v, "home") == me || (Num(v, "away") == me && !v.Find("away_is_ghost")->AsBool() && !v.Find("away_is_monsters")->AsBool());
                     if (!mine) ++misroutedCombat;
-                    if (v.Find("columns")->Items().size() != 22) ++malformedRows;
+                    if (v.Find("columns")->Items().size() != 27) ++malformedRows;
                     for (const json::Value& row : v.Find("events")->Items()) {
-                        if (row.Items().size() != 22) { ++malformedRows; break; }
+                        if (row.Items().size() != 27) { ++malformedRows; break; }
                     }
                 }
             }
@@ -2079,6 +2171,318 @@ static void TestBotSeats() {
     }
 }
 
+// ==== JSON Schemas (docs/schemas): the files a UE5 client is built from must describe exactly what the server sends ============================
+
+#ifndef W2F_SCHEMA_DIR
+#define W2F_SCHEMA_DIR "docs/schemas"
+#endif
+
+namespace {
+
+std::string ReadWholeFile(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+// A small JSON Schema checker: the subset the W2F schemas use (draft 2020-12 spelling). $ref (local #/$defs/...), type, enum, const, properties, required,
+// additionalProperties, items, minItems / maxItems, minimum / maximum, minLength / maxLength, oneOf, anyOf. Everything else (title, description...) is ignored.
+class SchemaChecker {
+public:
+    explicit SchemaChecker(const json::Value& root) : root_(root) {}
+
+    // Empty string = valid; otherwise where and why not.
+    std::string Check(const json::Value& schema, const json::Value& value) const { return Walk(schema, value, "$"); }
+
+private:
+    static bool TypeMatches(const std::string& type, const json::Value& v) {
+        long long ignored = 0;
+        if (type == "object") return v.IsObject();
+        if (type == "array") return v.IsArray();
+        if (type == "string") return v.IsString();
+        if (type == "boolean") return v.IsBool();
+        if (type == "null") return v.IsNull();
+        if (type == "integer") return v.IsNumber() && v.ToInt(ignored);
+        if (type == "number") return v.IsNumber();
+        return false;
+    }
+
+    std::string Walk(const json::Value& schema, const json::Value& v, const std::string& at) const {
+        if (const json::Value* ref = schema.Find("$ref")) {
+            const std::string name = ref->AsString();
+            const json::Value* defs = root_.Find("$defs");
+            const json::Value* target = defs != nullptr && name.rfind("#/$defs/", 0) == 0 ? defs->Find(name.substr(8)) : nullptr;
+            return target != nullptr ? Walk(*target, v, at) : at + ": unresolved $ref " + name;
+        }
+        if (const json::Value* type = schema.Find("type")) {
+            bool ok = false;
+            if (type->IsString()) ok = TypeMatches(type->AsString(), v);
+            else for (const json::Value& t : type->Items()) ok = ok || TypeMatches(t.AsString(), v);
+            if (!ok) return at + ": wrong type (expected " + (type->IsString() ? type->AsString() : std::string("one of several")) + ")";
+        }
+        if (const json::Value* c = schema.Find("const")) {
+            long long a = 0, b = 0;
+            const bool same = c->IsString() ? v.IsString() && v.AsString() == c->AsString() : c->IsNumber() ? v.IsNumber() && c->ToInt(a) && v.ToInt(b) && a == b : false;
+            if (!same) return at + ": not the constant";
+        }
+        if (const json::Value* e = schema.Find("enum")) {
+            bool found = false;
+            for (const json::Value& option : e->Items()) found = found || (option.IsString() && v.IsString() && option.AsString() == v.AsString());
+            if (!found) return at + ": not one of the allowed values" + (v.IsString() ? " (\"" + v.AsString() + "\")" : "");
+        }
+        long long n = 0;
+        if (v.IsNumber() && v.ToInt(n)) {
+            long long bound = 0;
+            if (const json::Value* m = schema.Find("minimum")) { if (m->ToInt(bound) && n < bound) return at + ": below the minimum"; }
+            if (const json::Value* m = schema.Find("maximum")) { if (m->ToInt(bound) && n > bound) return at + ": above the maximum"; }
+        }
+        if (v.IsString()) {
+            long long bound = 0;
+            if (const json::Value* m = schema.Find("minLength")) { if (m->ToInt(bound) && static_cast<long long>(v.AsString().size()) < bound) return at + ": too short"; }
+            if (const json::Value* m = schema.Find("maxLength")) { if (m->ToInt(bound) && static_cast<long long>(v.AsString().size()) > bound) return at + ": too long"; }
+        }
+        if (v.IsArray()) {
+            long long bound = 0;
+            if (const json::Value* m = schema.Find("minItems")) { if (m->ToInt(bound) && static_cast<long long>(v.Items().size()) < bound) return at + ": too few items"; }
+            if (const json::Value* m = schema.Find("maxItems")) { if (m->ToInt(bound) && static_cast<long long>(v.Items().size()) > bound) return at + ": too many items"; }
+            if (const json::Value* items = schema.Find("items")) {
+                for (std::size_t i = 0; i < v.Items().size(); ++i) {
+                    const std::string why = Walk(*items, v.Items()[i], at + "[" + std::to_string(i) + "]");
+                    if (!why.empty()) return why;
+                }
+            }
+        }
+        if (v.IsObject()) {
+            if (const json::Value* required = schema.Find("required")) {
+                for (const json::Value& key : required->Items()) {
+                    if (v.Find(key.AsString()) == nullptr) return at + ": missing required field \"" + key.AsString() + "\"";
+                }
+            }
+            const json::Value* properties = schema.Find("properties");
+            const json::Value* additional = schema.Find("additionalProperties");
+            for (std::size_t i = 0; i < v.MemberCount(); ++i) {
+                const std::string& key = v.MemberKey(i);
+                const json::Value* sub = properties != nullptr ? properties->Find(key) : nullptr;
+                if (sub != nullptr) {
+                    const std::string why = Walk(*sub, v.MemberValue(i), at + "." + key);
+                    if (!why.empty()) return why;
+                } else if (additional != nullptr && additional->IsBool() && !additional->AsBool()) {
+                    return at + ": unexpected field \"" + key + "\"";
+                }
+            }
+        }
+        if (const json::Value* any = schema.Find("oneOf")) {
+            int matches = 0;
+            std::string firstWhy;
+            for (const json::Value& option : any->Items()) {
+                const std::string why = Walk(option, v, at);
+                if (why.empty()) ++matches;
+                else if (firstWhy.empty() || why.size() > firstWhy.size()) firstWhy = why;   // (the most specific complaint is usually the longest path)
+            }
+            if (matches != 1) return matches == 0 ? at + ": matches none of the alternatives; e.g. " + firstWhy : at + ": matches several alternatives";
+        }
+        return "";
+    }
+
+    const json::Value& root_;
+};
+
+}  // namespace
+
+static void TestJsonSchemas() {
+    const std::string serverText = ReadWholeFile(std::string(W2F_SCHEMA_DIR) + "/server-message.schema.json");
+    const std::string clientText = ReadWholeFile(std::string(W2F_SCHEMA_DIR) + "/client-command.schema.json");
+    json::Value serverSchema, clientSchema;
+    std::string err;
+    CHECK(json::Parse(serverText, serverSchema, &err) && json::Parse(clientText, clientSchema, &err));
+    if (!serverSchema.IsObject() || !clientSchema.IsObject()) { std::printf("  cannot read the schemas: %s\n", err.c_str()); return; }
+    const SchemaChecker server(serverSchema), client(clientSchema);
+    std::map<std::string, int> validated;
+    int problems = 0;
+    const auto checkMessage = [&](const std::string& text) {
+        const json::Value v = ParseJson(text);
+        const std::string why = server.Check(serverSchema, v);
+        if (!why.empty() && problems++ < 8) std::printf("  schema mismatch in a '%s' message: %s\n    %s\n", Str(v, "type").c_str(), why.c_str(), text.substr(0, 300).c_str());
+        const std::string type = Str(v, "type");
+        ++validated[type == "unit_event" || type == "gift_event" ? type + ":" + Str(v, "event") : type];
+    };
+
+    // 1. Every builder, called by hand with awkward arguments (all the optional fields, both sides of every enum).
+    {
+        Rig r(3, {}, sample::ProductionItemsPath());
+        auto motherNature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), r.items.get());
+        const ChampionDefinition* champion = r.champions->Find(sample::kChampionAlesk);
+        CHECK(champion != nullptr && motherNature != nullptr);
+        UnitInstance unit;
+        unit.id = (1u << 24) | 5u;
+        unit.champion = champion;
+        unit.starLevel = 2;
+        unit.location = LocationType::Board;
+        unit.x = 4;
+        unit.y = 2;
+        unit.items = {3, 7, 0};
+        checkMessage(msg::Welcome(2, std::string(32, 'a'), true, 2, 8, 6, true));
+        checkMessage(msg::Lobby({0, 1}, 8, 6));
+        checkMessage(msg::Error("wrong_type", "detail", true, 12));
+        checkMessage(msg::Error("invalid_json", "detail"));
+        checkMessage(msg::Pong(true, 4));
+        checkMessage(msg::Pong(false, 0));
+        Command command;
+        command.type = CommandType::EquipItem;
+        command.hasId = true;
+        command.id = 9;
+        checkMessage(msg::Result(command, ActionResult::NoItemsToRemove));
+        command.hasId = false;
+        for (int result = 0; result <= static_cast<int>(ActionResult::UnitInCombat); ++result) checkMessage(msg::Result(command, static_cast<ActionResult>(result)));
+        IncomeBreakdown income;
+        income.baseGold = 5;
+        income.interestGold = 2;
+        income.streakGold = 1;
+        income.passiveXp = 2;
+        checkMessage(msg::Income(3, 12, income));
+        for (PveDropType type : {PveDropType::Gold, PveDropType::Champion, PveDropType::Item, PveDropType::None}) {
+            PveDrop drop;
+            drop.type = type;
+            drop.gold = 3;
+            drop.champion = 9001;
+            drop.item = 4;
+            checkMessage(msg::PveDropMsg(drop));
+        }
+        std::vector<GiftOffer> offers(5);
+        offers[0].type = GiftType::Gold;   offers[0].gift = 102; offers[0].amount = 5;
+        offers[1].type = GiftType::Xp;     offers[1].gift = 103; offers[1].amount = 4;
+        offers[2].type = GiftType::Heal;   offers[2].gift = 104; offers[2].amount = 3;
+        offers[3].type = GiftType::Item;   offers[3].gift = 101; offers[3].item = 3;
+        offers[4].type = GiftType::Unit;   offers[4].gift = 105; offers[4].champion = champion;
+        checkMessage(msg::GiftsOffered({offers[0], offers[3], offers[4], offers[1]}, motherNature.get()));   // (at most 4 offers: gift_index 0..3)
+        for (const GiftOffer& offer : offers) {
+            checkMessage(msg::GiftPicked(1, offer, motherNature.get(), false, 0));
+            checkMessage(msg::GiftPicked(0, offer, motherNature.get(), true, 4));
+        }
+        checkMessage(msg::UnitBought(unit, 3));
+        checkMessage(msg::UnitSold(unit, 2));
+        UnitMove move;
+        move.unit = unit;
+        move.fromLocation = LocationType::Bench;
+        move.fromX = 3;
+        move.fromY = 0;
+        checkMessage(msg::UnitMoved(move));
+        UnitMerge merge;
+        merge.upgraded = unit;
+        merge.consumed = {(1u << 24) | 6u, (1u << 24) | 7u};
+        merge.previousStarLevel = 1;
+        merge.overflowItems = {4, 5};
+        checkMessage(msg::UnitMerged(merge));
+        checkMessage(msg::ItemEquipped(unit, 3));
+        checkMessage(msg::ItemUnequipped(unit, 3));
+        ItemCombination combination;
+        combination.first = 3;
+        combination.second = 3;
+        combination.result = 24;
+        checkMessage(msg::ItemsCombined(unit, combination));
+        checkMessage(msg::ItemConsumed(unit, 50, {3, 4}));
+        checkMessage(msg::PlayerDamaged(1, 7, 93));
+        checkMessage(msg::PlayerEliminated(4, 6));
+        checkMessage(msg::MatchStarted(r.data.config, 8, 0, 3, {1, 2, 3, 4, 5, 6, 7}));
+        checkMessage(msg::Phase(r.data.config, MatchPhase::Combat, 5, 10, 600, 12345678901ull, false, false));
+        checkMessage(msg::Phase(r.data.config, MatchPhase::MotherNature, 3, 0, 600, 0, true, true));
+        checkMessage(msg::Catalog(*r.champions, r.items.get(), r.traits.get(), r.encounters.get(), r.data.config.combat));
+    }
+
+    // 2. Whole matches: everything every client is sent (state, public_state, phases, fights, results, gifts, drops, events...).
+    for (int variant = 0; variant < 2; ++variant) {
+        std::unique_ptr<MotherNatureDatabase> mn;
+        Rig r(3, [&](GameData& d, GameServerConfig& c) {
+            c.bots = variant;   // one variant with only humans, one with a bot seat
+            d.config.player.startingHealth = 30;
+            d.config.damage.baseDamageByStage = {8, 12};
+            d.config.match.shopClosedOpeningRounds = 1;   // the real opening rules for this test
+            d.config.match.openingUnitCosts = {1};
+            d.config.player.limitBoardToLevel = true;
+        });
+        mn = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), r.items.get());
+        GameData withNature = r.data;
+        withNature.motherNature = mn.get();
+        // (The rig's server was built without Mother Nature: make a second server that has her, on the same fake transport.)
+        r.server = std::make_unique<GameServer>(r.cfg, withNature, r.net);
+        std::vector<ConnectionId> conns;
+        for (int i = 0; i < 3 - variant; ++i) conns.push_back(r.Connect());
+        std::vector<Bot> bots;
+        for (ConnectionId c : conns) bots.emplace_back(r, c);
+        for (int tick = 0; tick < 30000 && r.server->state() == GameServer::State::Running; ++tick) {
+            for (Bot& bot : bots) bot.Poll();
+            r.Tick();
+            if (tick % 400 == 100) {   // now and then: state requests, fights of other players, and a few commands the engine will refuse
+                for (ConnectionId c : conns) { r.Say(c, R"({"action": "get_state"})"); r.Say(c, R"({"action": "get_fight", "fight_index": 1})"); r.Say(c, R"({"action": "sell_unit", "unit_id": 99})"); }
+                r.now += 1000;
+            }
+        }
+        for (ConnectionId c : conns) {
+            r.Say(c, R"({"action": "get_catalog"})");
+            for (const std::string& text : r.net.sent[c]) checkMessage(text);
+        }
+    }
+    for (const char* needed : {"welcome", "lobby", "catalog", "match_started", "phase", "state", "public_state", "income", "result", "error", "pong", "pve_drop", "gift_event:offered",
+                               "gift_event:picked", "unit_event:bought", "unit_event:sold", "unit_event:moved", "unit_event:merged", "unit_event:item_equipped", "unit_event:item_unequipped",
+                               "unit_event:items_combined", "unit_event:consumable_used", "combat_summary", "combat", "player_damaged", "player_eliminated", "match_over"}) {
+        if (validated[needed] == 0) std::printf("  no '%s' message was validated\n", needed);
+        CHECK(validated[needed] > 0 || std::string(needed) == "pong" || std::string(needed) == "error" || std::string(needed) == "match_over" || std::string(needed) == "player_eliminated");
+    }
+    // 2b. The sample fights handed to the UE5 developers (docs/sample_fights) are real messages: they must satisfy the schema too.
+    for (const char* file : {"catalog", "01-melee-brawl", "02-ranged-projectiles-and-dots", "03-spell-areas", "04-overtime"}) {
+        const std::string text = ReadWholeFile(std::string(W2F_SCHEMA_DIR) + "/../sample_fights/" + file + ".json");
+        CHECK(!text.empty());
+        if (!text.empty()) checkMessage(text);
+    }
+    CHECK(problems == 0);
+    std::printf("  %zu kinds of message validated against docs/schemas/server-message.schema.json\n", validated.size());
+
+    // 3. The commands: the schema accepts every command the parser accepts (over thousands of mutated messages), and refuses the malformed ones.
+    {
+        const char* valid[] = {R"({"action": "buy_unit", "shop_index": 2})", R"({"action":"buy_unit","shop_index":0,"id":17})", R"({"id": 0, "action": "reroll_shop"})", R"({"action": "buy_xp"})",
+                               R"({"action": "pick_gift", "gift_index": 3})", R"({"action": "sell_unit", "unit_id": 16777217})", R"({"action": "move_unit", "unit_id": 5, "location": "bench", "x": 8})",
+                               R"({"action": "move_unit", "unit_id": 5, "location": "board", "x": 6, "y": 3})", R"({"action": "equip_item", "unit_id": 5, "item_id": 3})",
+                               R"({"action": "unequip_item", "unit_id": 5, "slot": 2})", R"({"action": "get_state"})", R"({"action": "get_fight", "fight_index": 7})", R"({"action": "get_catalog"})",
+                               R"({"action": "ping", "id": 9007199254740991})"};
+        for (const char* text : valid) {
+            const json::Value v = ParseJson(text);
+            const std::string why = client.Check(clientSchema, v);
+            if (!why.empty()) std::printf("  a valid command is refused by the schema: %s (%s)\n", text, why.c_str());
+            CHECK(why.empty() && ParseCommand(text).ok);
+        }
+        const char* invalid[] = {R"({"action": "buy_unit"})", R"({"action": "buy_unit", "shop_index": -1})", R"({"action": "buy_unit", "shop_index": 64})", R"({"action": "buy_unit", "shop_index": 1.5})",
+                                 R"({"action": "buy_unit", "shop_index": 1, "extra": 1})", R"({"action": "fly"})", R"({"action": "sell_unit", "unit_id": "1"})", R"({"action": "pick_gift", "gift_index": 4})",
+                                 R"({"action": "move_unit", "unit_id": 5, "location": "moon", "x": 1})", R"({"action": "equip_item", "unit_id": 5, "item_id": 0})", R"({"action": "unequip_item", "unit_id": 5, "slot": 3})",
+                                 R"({"action": "get_fight", "fight_index": 8})", R"({"action": "ping", "id": -1})", R"({"action": 5})", R"({})", R"([])"};
+        for (const char* text : invalid) {
+            json::Value v;
+            std::string e;
+            if (!json::Parse(text, v, &e)) continue;
+            CHECK(!client.Check(clientSchema, v).empty() && !ParseCommand(text).ok);
+        }
+        Rng rng(4);
+        int accepted = 0, mismatches = 0;
+        for (int i = 0; i < 30000; ++i) {
+            std::string text = valid[rng.NextBelow(static_cast<std::uint32_t>(sizeof(valid) / sizeof(valid[0])))];
+            const int edits = 1 + static_cast<int>(rng.NextBelow(2));
+            for (int k = 0; k < edits && !text.empty(); ++k) {
+                const std::size_t at = rng.NextBelow(static_cast<std::uint32_t>(text.size()));
+                if (rng.NextBelow(3) == 0) text.erase(at, 1);
+                else text[at] = "0123456789 \":,{}"[rng.NextBelow(16)];
+            }
+            if (!ParseCommand(text).ok) continue;
+            ++accepted;
+            json::Value v;
+            std::string e;
+            if (!json::Parse(text, v, &e) || !client.Check(clientSchema, v).empty()) {   // the parser took it: the schema must too
+                if (mismatches++ < 5) std::printf("  the parser accepts, the schema refuses: %s (%s)\n", text.c_str(), e.c_str());
+            }
+        }
+        CHECK(accepted > 200 && mismatches == 0);
+    }
+}
+
 static void TestOpeningRoundOverTheWire() {
     // The real rules: round 1 has no shop and a free unit for everyone, and the board holds `level` units. One human and three bots.
     Rig r(4, [](GameData& d, GameServerConfig& c) {
@@ -2119,6 +2523,307 @@ static void TestOpeningRoundOverTheWire() {
         filled += slot.ToInt(id) && id != 0 ? 1 : 0;
     }
     CHECK(filled == r.Match().Config().shop.slotCount);
+}
+
+// ==== Phase C: crash recovery, private servers =====================================================================================
+
+static void TestResumeAfterACrash() {
+    const auto tweak = [](GameData& d, GameServerConfig& c) {
+        c.bots = 2;
+        d.config.match.shopClosedOpeningRounds = 1;
+        d.config.match.openingUnitCosts = {1};
+        d.config.player.limitBoardToLevel = true;
+    };
+    // Server A plays; every Planning phase hands its autosave (snapshot + seats) to the sink, like `--autosave` does.
+    Rig a(4, tweak);
+    struct Save { int round = 0; std::vector<std::uint8_t> snapshot; std::string seats; std::uint64_t hash = 0; };
+    Save last;
+    a.server->SetSnapshotSink([&](int round, const std::vector<std::uint8_t>& snapshot, const std::string& seats) {
+        last = Save{round, snapshot, seats, a.server->match() != nullptr ? a.server->match()->StateHash() : 0};
+    });
+    const ConnectionId h0 = a.Connect();
+    const ConnectionId h1 = a.Connect();
+    std::vector<Bot> humans;
+    humans.emplace_back(a, h0);
+    humans.emplace_back(a, h1);
+    CHECK(a.server->state() == GameServer::State::Running);
+    const std::string token0 = Str(a.Last(h0, "welcome"), "token"), token1 = Str(a.Last(h1, "welcome"), "token");
+    for (int tick = 0; tick < 20000 && last.round < 5; ++tick) {
+        for (Bot& bot : humans) bot.Poll();
+        a.Tick();
+    }
+    CHECK(last.round == 5 && !last.snapshot.empty() && last.hash != 0);
+    // The sidecar is the small JSON the docs promise: tokens for the humans, none for the bots, the bots' state.
+    const json::Value sidecar = ParseJson(last.seats);
+    CHECK(Num(sidecar, "format") == 1 && Num(sidecar, "seats") == 4 && sidecar.Find("players")->Items().size() == 4 && sidecar.Find("bots")->Items().size() == 2);
+    CHECK(Str(sidecar.Find("players")->Items()[0], "token") == token0 && Str(sidecar.Find("players")->Items()[1], "token") == token1 && Str(sidecar.Find("players")->Items()[2], "token").empty());
+    int finishedCalls = 0;
+    a.server->SetMatchFinishedHandler([&] { ++finishedCalls; });
+    // A. the crash: a fresh server takes over from the saved pair and the humans reconnect with their old tokens.
+    const std::string saved = last.seats;
+    const std::vector<std::uint8_t> savedSnapshot = last.snapshot;
+    const std::uint64_t savedHash = last.hash;
+    Rig b(4, tweak);
+    std::string error;
+    CHECK(b.server->Resume(savedSnapshot, saved, &error));
+    if (!error.empty()) std::printf("  %s\n", error.c_str());
+    CHECK(b.server->state() == GameServer::State::Running && b.Match().Round() == 5 && b.Match().Phase() == MatchPhase::Planning && b.Match().StateHash() == savedHash);
+    CHECK(b.server->bots() == 2 && b.server->connectedPlayers() == 0);
+    // A stranger is refused; the two humans are welcomed back into THEIR seats and resynced.
+    const ConnectionId stranger = b.Connect();
+    CHECK(Str(b.Last(stranger, "error"), "code") == "match_in_progress");
+    const ConnectionId back0 = b.Connect(token0);
+    const ConnectionId back1 = b.Connect(token1);
+    CHECK(Num(b.Last(back0, "welcome"), "player_id") == 0 && b.Last(back0, "welcome").Find("reconnected")->AsBool() && Num(b.Last(back1, "welcome"), "player_id") == 1);
+    CHECK(Str(b.Last(back0, "phase"), "phase") == "Planning" && b.CountType(back0, "state") == 1 && b.CountType(back0, "public_state") == 1 && b.CountType(back0, "match_started") == 1);
+    // B carries on exactly as A did: same ticks, same bots' decisions, same state (nobody touched anything in either).
+    Rig& aa = a;
+    for (int i = 0; i < 90; ++i) { aa.Tick(); b.Tick(); }
+    CHECK(a.Match().Round() == b.Match().Round() && a.Match().Phase() == b.Match().Phase() && a.Match().StateHash() == b.Match().StateHash());
+    // ... and the resumed bots really acted (they own units), so the check above compared something.
+    CHECK(b.Match().Players().Get(2)->Roster().Count() > 0 && b.Match().Players().Get(3)->Roster().Count() > 0);
+    for (int i = 0; i < 6000; ++i) { aa.Tick(); b.Tick(); }   // and through fights and rounds
+    CHECK(a.Match().StateHash() == b.Match().StateHash() && b.Match().Round() > 5);
+    // (When a match ends the handler fires exactly once -- the server tool deletes its autosave then.)
+    CHECK(finishedCalls == 0);
+    for (int i = 0; i < 90000 && a.server->state() == GameServer::State::Running; ++i) a.Tick();
+    CHECK(a.server->state() == GameServer::State::Finished && finishedCalls == 1);
+
+    // Refusals: each names its reason and leaves the server as it was.
+    const auto refused = [&](Rig& fresh, const std::vector<std::uint8_t>& snapshot, const std::string& seats, const char* mention) {
+        std::string why;
+        const bool ok = !fresh.server->Resume(snapshot, seats, &why) && why.find(mention) != std::string::npos && fresh.server->state() == GameServer::State::Lobby && fresh.server->match() == nullptr;
+        if (!ok) std::printf("  wanted a refusal mentioning '%s', got '%s'\n", mention, why.c_str());
+        return ok;
+    };
+    {
+        Rig fresh(4, tweak);
+        CHECK(refused(fresh, savedSnapshot, "not json", "JSON"));
+        CHECK(refused(fresh, savedSnapshot, "[]", "JSON"));
+        CHECK(refused(fresh, std::vector<std::uint8_t>{1, 2, 3}, saved, "too short to be a snapshot"));
+        std::string edited = saved;
+        edited.replace(edited.find("\"seats\":4"), 9, "\"seats\":5");
+        CHECK(refused(fresh, savedSnapshot, edited, "seats"));
+        edited = saved;
+        edited.replace(edited.find("\"bot\":true"), 10, "\"bot\":false");
+        CHECK(refused(fresh, savedSnapshot, edited, "bots"));
+        Rig otherRules(4, [&](GameData& d, GameServerConfig& c) { tweak(d, c); d.config.player.startingHealth = 77; });
+        CHECK(refused(otherRules, savedSnapshot, saved, "different game configuration"));   // (the engine's own hash check: the rules changed)
+        Rig noBots(4, [](GameData&, GameServerConfig&) {});
+        CHECK(refused(noBots, savedSnapshot, saved, "bots"));
+        Rig busy(4, tweak);
+        busy.Connect();
+        { std::string why; CHECK(!busy.server->Resume(savedSnapshot, saved, &why) && why.find("not fresh") != std::string::npos); }
+    }
+    // The single file: pack / unpack round trip, and it refuses what is not a resume file.
+    {
+        const std::vector<std::uint8_t> file = PackResumeFile(savedSnapshot, saved);
+        std::vector<std::uint8_t> snapshot;
+        std::string seats, why;
+        CHECK(UnpackResumeFile(file, snapshot, seats, &why) && snapshot == savedSnapshot && seats == saved);
+        CHECK(!UnpackResumeFile({}, snapshot, seats, &why) && !UnpackResumeFile(std::vector<std::uint8_t>{'X', '2', 'F', 'R', 0, 0, 0, 0}, snapshot, seats, &why));
+        std::vector<std::uint8_t> cut(file.begin(), file.begin() + 20);
+        CHECK(!UnpackResumeFile(cut, snapshot, seats, &why) && why.find("truncated") != std::string::npos);
+    }
+}
+
+static void TestJoinCodeKeepsStrangersOut() {
+    NetRig n(2, [](TcpServerConfig& c) { c.joinCode = "secret_42"; });
+    const auto handshake = [&](const std::string& path) {
+        RawClient c;
+        std::string head;
+        if (!c.Connect(n.tcp->port())) return std::string("no connection");
+        c.SendRaw(RawClient::HandshakeRequest(path));
+        n.PumpUntil([&] { return c.TakeHttpHead(head); });
+        return head;
+    };
+    CHECK(handshake("/").find("403") != std::string::npos);                   // no code
+    CHECK(handshake("/?code=wrong").find("403") != std::string::npos);        // wrong code
+    CHECK(handshake("/?token=" + std::string(32, 'a')).find("403") != std::string::npos);   // a token alone is not enough
+    CHECK(n.game->connectedPlayers() == 0);                                   // nobody got a seat
+    RawClient a;
+    CHECK(n.Open(a, "/?code=secret_42"));                                     // the right code: a seat, as usual
+    json::Value welcome;
+    CHECK(n.NextJson(a, welcome) && Str(welcome, "type") == "welcome");
+    const std::string token = Str(welcome, "token");
+    a.Drop();
+    CHECK(n.PumpUntil([&] { return n.game->connectedPlayers() == 0; }));
+    RawClient again;
+    CHECK(n.Open(again, "/?code=secret_42&token=" + token));                  // a reconnect brings both
+    CHECK(n.game->connectedPlayers() == 1);
+    // Without a join code configured nothing changes: the query is ignored.
+    NetRig open(2);
+    RawClient c;
+    CHECK(open.Open(c, "/?code=anything"));
+}
+
+// ==== the soak test: eight real clients on real sockets play a whole match, some of them dropping out and coming back ====================================
+
+static void TestEightClientSoak() {
+    const std::string serverText = ReadWholeFile(std::string(W2F_SCHEMA_DIR) + "/server-message.schema.json");
+    json::Value schema;
+    std::string err;
+    CHECK(json::Parse(serverText, schema, &err));
+    if (!schema.IsObject()) return;
+    const SchemaChecker checker(schema);
+
+    NetRig n(8, {}, [](GameData& d, GameServerConfig& c) {
+        c.postMatchTicks = 90;
+        d.config.match.motherNatureTicks = 40;
+        d.config.match.planningTicks = 150;
+        d.config.match.resolutionTicks = 30;
+        d.config.player.startingHealth = 45;
+        d.config.damage.baseDamageByStage = {0, 3, 4, 6, 8, 12};
+        d.config.match.shopClosedOpeningRounds = 1;   // the real rules: opening round, board = level
+        d.config.match.openingUnitCosts = {1};
+        d.config.player.limitBoardToLevel = true;
+    });
+    auto motherNature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), n.rig.items.get());
+    GameData data = n.rig.data;
+    data.motherNature = motherNature.get();
+    n.game = std::make_unique<GameServer>(n.rig.cfg, data, *n.tcp);   // (the same server, now with Mother Nature)
+    n.tcp->SetHandler(n.game.get());
+
+    struct Client {
+        RawClient c;
+        std::string token;
+        int seat = -1;
+        json::Value state;
+        bool haveState = false;
+        std::string phase;
+        int round = 0, plannedRound = 0, giftRound = 0, planningTicks = 0;
+        std::deque<std::string> queue;
+        bool sawOver = false, dropped = false, back = false;
+        std::uint64_t dropAt = 0, backAt = 0;
+        int messages = 0, errors = 0, badSchema = 0;
+    };
+    std::vector<std::unique_ptr<Client>> clients;
+    for (int i = 0; i < 8; ++i) {
+        clients.push_back(std::make_unique<Client>());
+        CHECK(n.Open(clients.back()->c));
+    }
+    n.PumpUntil([&] { return n.game->state() == GameServer::State::Running; });
+    CHECK(n.game->state() == GameServer::State::Running);
+
+    int problems = 0, reconnects = 0;
+    const auto pump = [&](Client& cl) {
+        int op = 0;
+        std::string payload;
+        while (cl.c.TakeFrame(op, payload)) {
+            if (op == 8) { cl.c.closed = true; continue; }
+            if (op != 1) continue;
+            ++cl.messages;
+            const json::Value v = ParseJson(payload);
+            const std::string type = Str(v, "type");
+            const std::string why = checker.Check(schema, v);
+            if (!why.empty()) { ++cl.badSchema; if (problems++ < 5) std::printf("  schema mismatch (%s): %s\n", type.c_str(), why.c_str()); }
+            if (type == "welcome") { cl.seat = static_cast<int>(Num(v, "player_id")); cl.token = Str(v, "token"); }
+            if (type == "error") { ++cl.errors; if (problems++ < 5) std::printf("  a client was told: %s\n", payload.c_str()); }
+            if (type == "phase") {
+                cl.phase = Str(v, "phase");
+                if (Num(v, "round") != cl.round) cl.planningTicks = 0;
+                cl.round = static_cast<int>(Num(v, "round"));
+            }
+            if (type == "state") { cl.state = v; cl.haveState = true; }
+            if (type == "match_over") cl.sawOver = true;
+        }
+    };
+    const auto act = [&](Client& cl, std::uint64_t tick) {
+        if (cl.c.closed || cl.c.fd == kBadSock || !cl.haveState || cl.dropped) return;
+        if (cl.phase == "Planning") ++cl.planningTicks;
+        if (cl.phase == "MotherNature" && cl.giftRound != cl.round && cl.state.Find("gifts") && !cl.state.Find("gifts")->Items().empty() && !cl.state.Find("gift_settled")->AsBool()) {
+            cl.giftRound = cl.round;
+            cl.queue.push_back(R"({"action": "pick_gift", "gift_index": 0})");
+        }
+        if (cl.phase == "Planning" && cl.round != cl.plannedRound && cl.planningTicks == 6) {   // shop first ...
+            const auto& shop = cl.state.Find("shop")->Items();
+            for (std::size_t i = 0; i < shop.size(); ++i) {
+                long long id = 0;
+                if (shop[i].ToInt(id) && id != 0) cl.queue.push_back(R"({"action": "buy_unit", "shop_index": )" + std::to_string(i) + "}");
+            }
+            cl.queue.push_back(R"({"action": "buy_xp"})");
+        }
+        if (cl.phase == "Planning" && cl.round != cl.plannedRound && cl.planningTicks == 40) {   // ... then put the bench on the board, level allowing
+            cl.plannedRound = cl.round;
+            std::set<std::pair<int, int>> taken;
+            for (const json::Value& u : cl.state.Find("board")->Items()) taken.insert({static_cast<int>(Num(u, "x")), static_cast<int>(Num(u, "y"))});
+            int free = static_cast<int>(Num(cl.state, "level")) - static_cast<int>(taken.size());
+            for (const json::Value& u : cl.state.Find("bench")->Items()) {
+                if (!u.IsObject() || free <= 0) continue;
+                for (int y = 3; y >= 0 && free > 0; --y) {
+                    bool placed = false;
+                    for (int x = 0; x < kBoardColumns && !placed; ++x) {
+                        if (taken.count({x, y})) continue;
+                        taken.insert({x, y});
+                        cl.queue.push_back(R"({"action": "move_unit", "unit_id": )" + std::to_string(static_cast<long long>(Num(u, "id"))) + R"(, "location": "board", "x": )" + std::to_string(x) + R"(, "y": )" + std::to_string(y) + "}");
+                        --free;
+                        placed = true;
+                    }
+                    if (placed) break;
+                }
+            }
+        }
+        if (tick % 3 == static_cast<std::uint64_t>(cl.seat) % 3 && !cl.queue.empty()) {   // (three ticks between a client's commands: well inside the rate limit)
+            cl.c.SendRaw(Masked(cl.queue.front()));
+            cl.queue.pop_front();
+        }
+    };
+
+    std::uint64_t tick = 0;
+    bool integrity = true;
+    for (; tick < 90000 && n.game->state() != GameServer::State::Lobby; ++tick) {
+        n.now += 33;
+        n.game->Tick(n.now);
+        n.Step(0);
+        for (auto& cl : clients) pump(*cl);
+        for (auto& cl : clients) act(*cl, tick);
+        // Three clients lose their connection in round 4's planning phase and return with their tokens 60 ticks (2 s) later.
+        for (int i = 0; i < 8; i += 3) {
+            Client& cl = *clients[static_cast<std::size_t>(i)];
+            if (!cl.dropped && !cl.back && cl.round == 4 && cl.phase == "Planning" && cl.planningTicks > 50) {
+                cl.c.Drop();
+                cl.dropped = true;
+                cl.dropAt = tick;
+                cl.queue.clear();
+            }
+            if (cl.dropped && !cl.back && tick >= cl.dropAt + 60) {
+                cl.c.in.clear();
+                cl.c.closed = false;
+                cl.haveState = false;
+                if (n.Open(cl.c, "/?token=" + cl.token)) { cl.back = true; cl.dropped = false; ++reconnects; }
+            }
+        }
+        if (tick % 200 == 0 && n.game->match() != nullptr) integrity = integrity && n.game->match()->VerifyPoolIntegrity() && n.game->match()->VerifyRosterLayouts();
+        if (n.game->state() == GameServer::State::Finished) {   // (leave the post-match grace period running so every client can read match_over)
+            bool all = true;
+            for (auto& cl : clients) all = all && cl->sawOver;
+            if (all) break;
+        }
+    }
+    int finished = 0, reconnected = 0, badSchema = 0, errors = 0;
+    std::size_t messages = 0;
+    for (auto& cl : clients) {
+        pump(*cl);
+        finished += cl->sawOver ? 1 : 0;
+        reconnected += cl->back ? 1 : 0;
+        badSchema += cl->badSchema;
+        errors += cl->errors;
+        messages += static_cast<std::size_t>(cl->messages);
+    }
+    std::printf("  soak: %llu ticks, %zu messages to 8 clients, %d reconnects, longest match round %d\n", static_cast<unsigned long long>(tick), messages, reconnects, n.game->match() != nullptr ? n.game->match()->Round() : 0);
+    CHECK(n.game->state() == GameServer::State::Finished || n.game->state() == GameServer::State::Lobby);
+    CHECK(finished == 8);                       // everybody, the three who dropped out included, was told how it ended
+    CHECK(reconnects == 3 && reconnected == 3);
+    CHECK(integrity);                           // the shared pool and every roster balanced throughout
+    CHECK(badSchema == 0 && errors == 0);       // every message matched the published schema; nobody was ever scolded
+    CHECK(messages > 3000);
+    // A reconnected client was resynced with its real state: its last private state agrees with the engine's books.
+    if (n.game->match() != nullptr) {
+        for (int i = 0; i < 8; i += 3) {
+            const Client& cl = *clients[static_cast<std::size_t>(i)];
+            if (cl.haveState && cl.state.Find("gold")) CHECK(Num(cl.state, "gold") == n.game->match()->Players().Get(static_cast<PlayerId>(cl.seat))->Gold());
+        }
+    }
 }
 
 static void TestCatalog() {
@@ -2181,8 +2886,14 @@ int main() {
         {"Sockets: slow reader is dropped", TestSocketSlowReaderIsDropped},
         {"Sockets: two-player flow + token reconnect", TestSocketFullMatchFlow},
         {"Sockets: the real server loop starts and stops", TestSocketServerLoopRunsAndStops},
+        {"Item Remover over the protocol + catalog flag", TestItemRemoverOverTheProtocol},
+        {"Combat phase length on the wire", TestCombatPhaseLengthOnTheWire},
         {"Bot seats: lobby, play, reset, determinism", TestBotSeats},
+        {"JSON Schemas describe exactly what the server sends", TestJsonSchemas},
         {"Opening round + board = level, over the wire", TestOpeningRoundOverTheWire},
+        {"Crash recovery: resume a server from its autosave", TestResumeAfterACrash},
+        {"Join code keeps strangers out", TestJoinCodeKeepsStrangersOut},
+        {"Soak: 8 real clients, a whole match, 3 reconnects", TestEightClientSoak},
         {"Catalog message", TestCatalog},
     };
     int failedTests = 0;

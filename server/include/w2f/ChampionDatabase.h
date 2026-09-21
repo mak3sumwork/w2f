@@ -44,6 +44,12 @@ struct CombatStats {
     // landing at once (Faire's "exploit"). 0 = instant.
     int attackSpreadTicks = 0;
 
+    // Presentation (never changes the fight; not part of the content hash). -1 = not set in the data: the CombatConfig defaults apply.
+    //  attackWindupTicks: how long before an attack LANDS (the Attack event's tick) its swing animation should start.
+    //  projectileSpeedMilli: hexes per second x 1000 of the attack's projectile; 0 = a melee blow / instant hit; default: ranged champions (range >= 2) shoot, melee ones do not.
+    int attackWindupTicks = -1;
+    int projectileSpeedMilli = -1;
+
     bool IsCombatCapable() const { return maxHp[0] > 0; }
 
     // Attack cooldown in simulation ticks: round(kTicksPerSecond * 1000 / attackSpeedMilli), min 1.

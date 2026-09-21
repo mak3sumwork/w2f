@@ -1,0 +1,72 @@
+== W2F balance report: 300 matches (seeds 1000..1299), 30895 PvP fights, 18.4 s of computing ==
+match length: 38.2 rounds on average
+fight length: mean 19.9 s | median 18.9 s | 90th percentile 29.1 s | 99th 34.7 s | longest 120.0 s
+overtime in 8.7% of fights | 0.9% ran past 35 s | 9 hit the safety limit | 0.10% mutual wipe-outs (draws)
+home side won 49.8% of the decided fights (50 = no bias)
+
+-- win rate by cost (fights each champion of that cost was fielded in) --
+  1-cost   120998 fielded    48.9% won   avg star 1.83
+  2-cost   107931 fielded    52.1% won   avg star 1.77
+  3-cost    92935 fielded    49.6% won   avg star 1.80
+  4-cost    67503 fielded    50.7% won   avg star 1.36
+  5-cost    12616 fielded    51.9% won   avg star 1.12
+  damage   280299 fielded    50.7% won
+  tanks    121684 fielded    49.5% won
+
+-- champions, best win rate first (a fight counts once per champion fielded) --
+  champion     cost role    fielded    won %   star  dmg/fight
+  Vega            5 damage     2839    58.5%   1.15       1802   <- strong outlier
+  Mortis          4 damage    12354    57.3%   1.43       1411 
+  Soul            3 tank      14522    57.1%   1.88        869 
+  Lunis           2 damage    33767    56.2%   1.51       1582 
+  Umbra           5 tank       2418    54.4%   1.16        975 
+  Lich            3 damage    14118    53.8%   1.88        812 
+  Les             5 tank       3601    52.9%   1.11        367 
+  Raa             4 damage    20690    52.7%   1.25       1228 
+  Byte            2 damage    14362    52.6%   1.85        194 
+  Bit             1 tank      20296    52.6%   1.87        534 
+  Orion           2 damage    12104    52.4%   1.90        967 
+  Vex             1 damage    42364    51.8%   1.68        874 
+  Flare           3 damage    14091    51.3%   1.88        990 
+  Nyx             3 tank      14040    51.1%   1.87        842 
+  Pyra            1 damage     9801    50.6%   1.91        796 
+  Myna            4 damage    11956    50.6%   1.41        641 
+  Grave           2 damage    11064    50.3%   1.91        206 
+  Solis           2 tank      11305    50.1%   1.91        648 
+  Xul             2 damage    11541    49.4%   1.90        760 
+  Kryx            4 tank      11234    47.4%   1.40        570 
+  Ignis           1 tank      10185    47.0%   1.93        183 
+  Cyla            2 damage    13788    46.8%   1.83        706 
+  Bone            1 tank       9281    46.3%   1.92        368 
+  Faire           3 damage    23164    46.2%   1.56        325 
+  Lum             5 tank       3758    44.2%   1.09        282 
+  Null            1 tank       9775    44.0%   1.92        283 
+  Alesk           4 tank      11269    43.2%   1.38        240 
+  Rot             1 damage     9273    42.7%   1.92        405 
+  Astra           1 damage    10023    42.3%   1.92        261 
+  Baira           3 damage    13000    39.4%   1.86        546   <- weak outlier
+
+-- stall suspects: the 12 fights longer than 60 s, and the champions over-represented in them (share of long fights / share of all fights) --
+  Ignis        3.8x as common in long fights
+  Byte         2.3x as common in long fights
+  Bone         1.5x as common in long fights
+  Lum          1.5x as common in long fights
+  Cyla         1.4x as common in long fights
+  Myna         1.4x as common in long fights
+
+-- synergies: teams whose highest active tier was this one --
+  synergy        tier (n)       teams    won %
+  Helios         1 (3)           6894    48.2% 
+  Helios         2 (6)              1     0.0% 
+  Phaisa         1 (3)          11419    46.1% 
+  Phaisa         2 (6)              1   100.0% 
+  Hexagon        1 (2)          20942    51.4% 
+  Hexagon        2 (4)            335    63.6%  <- strong outlier
+  Protector      1 (2)           1262    57.4% 
+  Selini         1 (3)            461    65.7%  <- strong outlier
+  Najmi          1 (3)            163    51.5% 
+  Coregons       1 (3)           5268    62.6%  <- strong outlier
+  Assassin       1 (2)          33571    55.6% 
+  Assassin       2 (4)            539    61.2%  <- strong outlier
+
+(Outliers: >= 150 samples and a win rate outside 42-58%. Not everything has to be 50%: a slightly stronger champion or synergy is fine.)

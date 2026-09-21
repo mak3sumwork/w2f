@@ -1,0 +1,1777 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://w2f.example/schemas/server-message.schema.json",
+ "title": "W2F server -> client message (protocol 1)",
+ "description": "Every WebSocket text frame the server sends is exactly one JSON object matching one branch of `oneOf`, told apart by its `type`. Additions within protocol 1 only ever ADD fields; a client must ignore fields it does not know (this schema lists them all, so it uses additionalProperties: false to keep itself honest). See docs/UE5-Integration.md.",
+ "oneOf": [
+  {
+   "$ref": "#/$defs/welcome"
+  },
+  {
+   "$ref": "#/$defs/lobby"
+  },
+  {
+   "$ref": "#/$defs/catalog"
+  },
+  {
+   "$ref": "#/$defs/match_started"
+  },
+  {
+   "$ref": "#/$defs/phase"
+  },
+  {
+   "$ref": "#/$defs/state"
+  },
+  {
+   "$ref": "#/$defs/public_state"
+  },
+  {
+   "$ref": "#/$defs/income"
+  },
+  {
+   "$ref": "#/$defs/result"
+  },
+  {
+   "$ref": "#/$defs/error"
+  },
+  {
+   "$ref": "#/$defs/pong"
+  },
+  {
+   "$ref": "#/$defs/pve_drop"
+  },
+  {
+   "$ref": "#/$defs/gift_event"
+  },
+  {
+   "$ref": "#/$defs/unit_event"
+  },
+  {
+   "$ref": "#/$defs/combat_summary"
+  },
+  {
+   "$ref": "#/$defs/combat"
+  },
+  {
+   "$ref": "#/$defs/player_damaged"
+  },
+  {
+   "$ref": "#/$defs/player_eliminated"
+  },
+  {
+   "$ref": "#/$defs/match_over"
+  }
+ ],
+ "$defs": {
+  "seat": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 7
+  },
+  "unit": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "champion": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "star": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3
+    },
+    "location": {
+     "enum": [
+      "bench",
+      "board",
+      "none"
+     ],
+     "description": "'none' only in a `bought` unit_event: a copy that merged the moment it arrived was never placed (x and y are -1)"
+    },
+    "x": {
+     "type": "integer",
+     "minimum": -1,
+     "maximum": 8
+    },
+    "y": {
+     "type": "integer",
+     "minimum": -1,
+     "maximum": 3
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "maxItems": 3
+    }
+   },
+   "required": [
+    "champion",
+    "id",
+    "items",
+    "location",
+    "star",
+    "x",
+    "y"
+   ],
+   "additionalProperties": false,
+   "description": "A champion the player owns. Unit ids are unique for the whole match: (seat + 1) << 24 | serial."
+  },
+  "gift": {
+   "type": "object",
+   "properties": {
+    "index": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 3
+    },
+    "gift": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "name": {
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "gold",
+      "xp",
+      "heal",
+      "item",
+      "unit"
+     ]
+    },
+    "amount": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "item": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "champion": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "cost": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 5
+    }
+   },
+   "required": [
+    "gift",
+    "index",
+    "kind",
+    "name"
+   ],
+   "additionalProperties": false
+  },
+  "welcome": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "welcome"
+    },
+    "protocol": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "player_id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "token": {
+     "type": "string",
+     "minLength": 32,
+     "maxLength": 32
+    },
+    "reconnected": {
+     "type": "boolean"
+    },
+    "seats": {
+     "type": "integer",
+     "minimum": 2,
+     "maximum": 8
+    },
+    "bots": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "connected": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "match_running": {
+     "type": "boolean"
+    },
+    "protocol_revision": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "bots",
+    "connected",
+    "match_running",
+    "player_id",
+    "protocol",
+    "protocol_revision",
+    "reconnected",
+    "seats",
+    "token",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "lobby": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "lobby"
+    },
+    "seats": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "bots": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "connected": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "players": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+     }
+    }
+   },
+   "required": [
+    "bots",
+    "connected",
+    "players",
+    "seats",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "championPresentation": {
+   "type": "object",
+   "properties": {
+    "attack": {
+     "type": "object",
+     "properties": {
+      "style": {
+       "enum": [
+        "melee",
+        "projectile"
+       ]
+      },
+      "windup_ticks": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "projectile_speed_milli": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "projectile_speed_milli",
+      "style",
+      "windup_ticks"
+     ],
+     "additionalProperties": false
+    },
+    "ability": {
+     "oneOf": [
+      {
+       "type": "null"
+      },
+      {
+       "$ref": "#/$defs/abilityPresentation"
+      }
+     ]
+    }
+   },
+   "required": [
+    "ability",
+    "attack"
+   ],
+   "additionalProperties": false
+  },
+  "abilityPresentation": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "windup_ticks": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "cast_lock_ticks": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "channel_ticks": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "area": {
+     "type": "object",
+     "properties": {
+      "shape": {
+       "enum": [
+        "None",
+        "Single",
+        "Circle",
+        "CircleSelf",
+        "Line",
+        "Cone",
+        "Row",
+        "All"
+       ]
+      },
+      "size": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "shape",
+      "size"
+     ],
+     "additionalProperties": false
+    },
+    "dot_visuals": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "Burn",
+       "Poison",
+       "Bleed",
+       "Drain"
+      ]
+     }
+    }
+   },
+   "required": [
+    "area",
+    "cast_lock_ticks",
+    "channel_ticks",
+    "dot_visuals",
+    "id",
+    "windup_ticks"
+   ],
+   "additionalProperties": false
+  },
+  "catalog": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "catalog"
+    },
+    "enums": {
+     "type": "object",
+     "properties": {
+      "status_types": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "damage_types": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "attack_styles": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "dot_visuals": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "area_shapes": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "damage_flags": {
+       "type": "object",
+       "properties": {
+        "crit": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "dot": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "ability": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "basic": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "on_death": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "redirected": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "triggered": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "summon": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "required": [
+        "ability",
+        "basic",
+        "crit",
+        "dot",
+        "on_death",
+        "redirected",
+        "summon",
+        "triggered"
+       ],
+       "additionalProperties": false
+      }
+     },
+     "required": [
+      "area_shapes",
+      "attack_styles",
+      "damage_flags",
+      "damage_types",
+      "dot_visuals",
+      "status_types"
+     ],
+     "additionalProperties": false
+    },
+    "champions": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "monster": {
+        "type": "boolean"
+       },
+       "id": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "name": {
+        "type": "string"
+       },
+       "cost": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5
+       },
+       "role": {
+        "enum": [
+         "tank",
+         "damage"
+        ]
+       },
+       "summon": {
+        "type": "boolean"
+       },
+       "traits": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "hp": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "minItems": 3,
+        "maxItems": 3
+       },
+       "attack_damage": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "minItems": 3,
+        "maxItems": 3
+       },
+       "attack_speed_milli": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "range": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "max_mana": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "ability": {
+        "type": "string"
+       },
+       "passive": {
+        "type": "string"
+       },
+       "presentation": {
+        "$ref": "#/$defs/championPresentation"
+       }
+      },
+      "required": [
+       "ability",
+       "attack_damage",
+       "attack_speed_milli",
+       "cost",
+       "hp",
+       "id",
+       "max_mana",
+       "monster",
+       "name",
+       "passive",
+       "presentation",
+       "range",
+       "role",
+       "summon",
+       "traits"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "name": {
+        "type": "string"
+       },
+       "components": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "maxItems": 2
+       },
+       "stats": {
+        "type": "object",
+        "properties": {
+         "hp": {
+          "type": "integer"
+         },
+         "armor": {
+          "type": "integer"
+         },
+         "magic_resist": {
+          "type": "integer"
+         },
+         "attack_damage": {
+          "type": "integer"
+         },
+         "ability_damage": {
+          "type": "integer"
+         },
+         "attack_speed_percent": {
+          "type": "integer"
+         },
+         "crit_chance": {
+          "type": "integer"
+         },
+         "start_mana": {
+          "type": "integer"
+         },
+         "mana_regen_milli": {
+          "type": "integer"
+         }
+        },
+        "required": [],
+        "additionalProperties": false
+       },
+       "traits": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "has_effect": {
+        "type": "boolean"
+       },
+       "consumable": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "components",
+       "consumable",
+       "has_effect",
+       "id",
+       "name",
+       "stats",
+       "traits"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "traits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "name": {
+        "type": "string"
+       },
+       "breakpoints": {
+        "type": "array",
+        "items": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      },
+      "required": [
+       "breakpoints",
+       "id",
+       "name"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "champions",
+    "enums",
+    "items",
+    "traits",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "match_started": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "match_started"
+    },
+    "player_id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "seats": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "bot_seats": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+     }
+    },
+    "tick_rate": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "phase_ticks": {
+     "type": "object",
+     "properties": {
+      "mother_nature": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "planning": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "combat": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "resolution": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "combat",
+      "mother_nature",
+      "planning",
+      "resolution"
+     ],
+     "additionalProperties": false
+    },
+    "board": {
+     "type": "object",
+     "properties": {
+      "columns": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "rows": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "bench_slots": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "max_items_per_unit": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "shop_slots": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "bench_slots",
+      "columns",
+      "max_items_per_unit",
+      "rows",
+      "shop_slots"
+     ],
+     "additionalProperties": false
+    },
+    "mother_nature_every": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "combat_event_types": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "board",
+    "bot_seats",
+    "combat_event_types",
+    "mother_nature_every",
+    "phase_ticks",
+    "player_id",
+    "seats",
+    "tick_rate",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "phase": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "phase"
+    },
+    "phase": {
+     "enum": [
+      "MotherNature",
+      "Planning",
+      "Combat",
+      "Resolution",
+      "MatchOver"
+     ]
+    },
+    "round": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "stage": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "round_in_stage": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "pve": {
+     "type": "boolean"
+    },
+    "mother_nature": {
+     "type": "boolean"
+    },
+    "shop_closed": {
+     "type": "boolean"
+    },
+    "duration_ticks": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "ticks_remaining": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "server_tick": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "duration_ticks",
+    "mother_nature",
+    "phase",
+    "pve",
+    "round",
+    "round_in_stage",
+    "server_tick",
+    "shop_closed",
+    "stage",
+    "ticks_remaining",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "state": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "state"
+    },
+    "player_id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "alive": {
+     "type": "boolean"
+    },
+    "health": {
+     "type": "integer"
+    },
+    "gold": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "level": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10
+    },
+    "xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "xp_to_next": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "streak": {
+     "type": "integer"
+    },
+    "shop": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "bench": {
+     "type": "array",
+     "items": {
+      "oneOf": [
+       {
+        "type": "null"
+       },
+       {
+        "$ref": "#/$defs/unit"
+       }
+      ]
+     },
+     "minItems": 9,
+     "maxItems": 9
+    },
+    "board": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/unit"
+     }
+    },
+    "item_bag": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "gifts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/gift"
+     }
+    },
+    "gift_settled": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "alive",
+    "bench",
+    "board",
+    "gift_settled",
+    "gifts",
+    "gold",
+    "health",
+    "item_bag",
+    "level",
+    "player_id",
+    "shop",
+    "streak",
+    "type",
+    "xp",
+    "xp_to_next"
+   ],
+   "additionalProperties": false
+  },
+  "public_state": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "public_state"
+    },
+    "round": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "players": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "player_id": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 7
+       },
+       "alive": {
+        "type": "boolean"
+       },
+       "health": {
+        "type": "integer"
+       },
+       "level": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "streak": {
+        "type": "integer"
+       },
+       "placement": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "board": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/unit"
+        }
+       }
+      },
+      "required": [
+       "alive",
+       "board",
+       "health",
+       "level",
+       "placement",
+       "player_id",
+       "streak"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "players",
+    "round",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "income": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "income"
+    },
+    "player_id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "round": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "base_gold": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "interest_gold": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "streak_gold": {
+     "type": "integer"
+    },
+    "passive_xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "total_gold": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "base_gold",
+    "interest_gold",
+    "passive_xp",
+    "player_id",
+    "round",
+    "streak_gold",
+    "total_gold",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "result": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "result"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "action": {
+     "type": "string"
+    },
+    "result": {
+     "enum": [
+      "Ok",
+      "WrongPhase",
+      "InvalidPlayer",
+      "PlayerEliminated",
+      "NotEnoughGold",
+      "InvalidSlot",
+      "EmptySlot",
+      "RosterFull",
+      "BoardFull",
+      "MaxLevel",
+      "InvalidUnit",
+      "ItemsFull",
+      "InvalidItem",
+      "ShopClosed",
+      "AlreadyPicked",
+      "NoItemsToRemove",
+      "UnitInCombat"
+     ]
+    },
+    "ok": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "action",
+    "ok",
+    "result",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "error": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "error"
+    },
+    "code": {
+     "type": "string"
+    },
+    "detail": {
+     "type": "string"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "code",
+    "detail",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "pong": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "pong"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "pve_drop": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "pve_drop"
+    },
+    "drop": {
+     "enum": [
+      "gold",
+      "champion",
+      "item",
+      "none"
+     ]
+    },
+    "gold": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "champion": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "item": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "drop",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "gift_event": {
+   "oneOf": [
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "gift_event"
+      },
+      "event": {
+       "const": "offered"
+      },
+      "gifts": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/gift"
+       }
+      }
+     },
+     "required": [
+      "event",
+      "gifts",
+      "type"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "gift_event"
+      },
+      "event": {
+       "const": "picked"
+      },
+      "gift": {
+       "$ref": "#/$defs/gift"
+      },
+      "automatic": {
+       "type": "boolean"
+      },
+      "gold_converted": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "automatic",
+      "event",
+      "gift",
+      "gold_converted",
+      "type"
+     ],
+     "additionalProperties": false
+    }
+   ]
+  },
+  "unit_event": {
+   "oneOf": [
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "bought"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "gold_spent": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "event",
+      "gold_spent",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "sold"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "gold_gained": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "event",
+      "gold_gained",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "moved"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "from": {
+       "type": "object",
+       "properties": {
+        "location": {
+         "enum": [
+          "bench",
+          "board",
+          "none"
+         ]
+        },
+        "x": {
+         "type": "integer"
+        },
+        "y": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "location",
+        "x",
+        "y"
+       ],
+       "additionalProperties": false
+      }
+     },
+     "required": [
+      "event",
+      "from",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "merged"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "consumed": {
+       "type": "array",
+       "items": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "minItems": 2,
+       "maxItems": 2
+      },
+      "previous_star": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "overflow_items": {
+       "type": "array",
+       "items": {
+        "type": "integer",
+        "minimum": 0
+       }
+      }
+     },
+     "required": [
+      "consumed",
+      "event",
+      "overflow_items",
+      "previous_star",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "item_equipped"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "item": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "event",
+      "item",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "item_unequipped"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "item": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "event",
+      "item",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "items_combined"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "first": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "second": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "result": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "event",
+      "first",
+      "result",
+      "second",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "unit_event"
+      },
+      "event": {
+       "const": "consumable_used"
+      },
+      "unit": {
+       "$ref": "#/$defs/unit"
+      },
+      "item": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "returned": {
+       "type": "array",
+       "items": {
+        "type": "integer",
+        "minimum": 0
+       }
+      }
+     },
+     "required": [
+      "event",
+      "item",
+      "returned",
+      "type",
+      "unit"
+     ],
+     "additionalProperties": false
+    }
+   ]
+  },
+  "combat_summary": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "combat_summary"
+    },
+    "round": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "fights": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "index": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "home": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 0,
+        "maximum": 7
+       },
+       "away": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 0,
+        "maximum": 7
+       },
+       "away_is_ghost": {
+        "type": "boolean"
+       },
+       "away_is_monsters": {
+        "type": "boolean"
+       },
+       "encounter": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "events": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "away",
+       "away_is_ghost",
+       "away_is_monsters",
+       "encounter",
+       "events",
+       "home",
+       "index"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "fights",
+    "round",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "combat": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "combat"
+    },
+    "round": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "fight_index": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "home": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0,
+     "maximum": 7
+    },
+    "away": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0,
+     "maximum": 7
+    },
+    "away_is_ghost": {
+     "type": "boolean"
+    },
+    "away_is_monsters": {
+     "type": "boolean"
+    },
+    "encounter": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "winner": {
+     "enum": [
+      "home",
+      "away",
+      "draw"
+     ]
+    },
+    "winner_survivors": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "end_tick": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "survivors": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "minItems": 2,
+     "maxItems": 2
+    },
+    "checksum": {
+     "type": "string",
+     "minLength": 16,
+     "maxLength": 16
+    },
+    "columns": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "minItems": 27,
+     "maxItems": 27
+    },
+    "events": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/combatRow"
+     }
+    }
+   },
+   "required": [
+    "away",
+    "away_is_ghost",
+    "away_is_monsters",
+    "checksum",
+    "columns",
+    "encounter",
+    "end_tick",
+    "events",
+    "fight_index",
+    "home",
+    "round",
+    "survivors",
+    "type",
+    "winner",
+    "winner_survivors"
+   ],
+   "additionalProperties": false
+  },
+  "combatRow": {
+   "type": "array",
+   "items": {
+    "type": "integer"
+   },
+   "minItems": 27,
+   "maxItems": 27,
+   "description": "One event, in the order of `columns`: tick, type, team, unit, other, from_x, from_y, to_x, to_y, amount, hp_after, champion, star, absorbed, subtype, flags, ability, duration, mana_max, mana_regen, reduced, trait_id, windup, flight, kind, shape, size"
+  },
+  "player_damaged": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "player_damaged"
+    },
+    "player_id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "damage": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "health": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "damage",
+    "health",
+    "player_id",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "player_eliminated": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "player_eliminated"
+    },
+    "player_id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    },
+    "placement": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "placement",
+    "player_id",
+    "type"
+   ],
+   "additionalProperties": false
+  },
+  "match_over": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "const": "match_over"
+    },
+    "winner": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0,
+     "maximum": 7
+    },
+    "placements": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     }
+    }
+   },
+   "required": [
+    "placements",
+    "type",
+    "winner"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

@@ -1,6 +1,6 @@
 CXX      ?= clang++
 CXXFLAGS ?= -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Wshadow -Wconversion -fsanitize=address,undefined
-DEFINES  := -DW2F_DATA_DIR='"$(CURDIR)/data"' -DW2F_TEST_DATA_DIR='"$(CURDIR)/tests/data"'
+DEFINES  := -DW2F_DATA_DIR='"$(CURDIR)/data"' -DW2F_TEST_DATA_DIR='"$(CURDIR)/tests/data"' -DW2F_SCHEMA_DIR='"$(CURDIR)/docs/schemas"' -DW2F_GOLDEN_DIR='"$(CURDIR)/tests/golden"'
 
 # Two libraries, kept apart on purpose:
 #   engine  = src/ + include/w2f/          the game rules. Knows nothing about networking; compiled WITHOUT net's include path.
@@ -19,8 +19,10 @@ TEST     := build/w2f_tests
 NET_TEST := build/w2f_net_tests
 DEMO     := build/w2f_demo
 SERVER   := build/w2f_server
+BALANCE  := build/w2f_balance
+RECORD   := build/w2f_record_fights
 
-.PHONY: all test test-engine test-net check-isolation demo server clean
+.PHONY: all test test-engine test-net check-isolation demo server balance golden sample-fights clean
 all: $(TEST) $(NET_TEST) $(DEMO) $(SERVER)
 
 build/engine/%.o: src/%.cpp $(HDR)
@@ -53,12 +55,32 @@ check-isolation:
 test-engine: check-isolation $(TEST)
 	./$(TEST)
 
+# Re-record the golden fights (tests/golden/fights.golden) after an INTENDED change to the combat rules or the champion / trait / item data.
+golden: $(TEST)
+	./$(TEST) --update-golden
+
 test-net: $(NET_TEST)
 	./$(NET_TEST)
 
 test: test-engine test-net
 
 server: $(SERVER)
+
+# Re-record the sample combat logs for the UE5 developers (docs/sample_fights/): real `combat` messages + the catalog.
+$(RECORD): $(ENGINE_OBJ) $(NET_OBJ) tools/record_fights.cpp $(HDR)
+	$(CXX) $(CXXFLAGS) $(NET_INC) $(DEFINES) tools/record_fights.cpp $(NET_OBJ) $(ENGINE_OBJ) -o $@
+sample-fights: $(RECORD)
+	@mkdir -p docs/sample_fights
+	./$(RECORD) docs/sample_fights
+
+# The bulk match simulator behind the balance passes (docs/balance.md). Built optimised and WITHOUT sanitizers: it plays hundreds of matches.
+#   make balance ARGS="--matches 200 --seed 1000 --json report.json"
+BALANCE_FLAGS ?= -std=c++17 -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+$(BALANCE): $(ENGINE_SRC) tools/balance_sim.cpp $(HDR)
+	@mkdir -p build
+	$(CXX) $(BALANCE_FLAGS) $(ENGINE_INC) $(DEFINES) tools/balance_sim.cpp $(ENGINE_SRC) -o $@
+balance: $(BALANCE)
+	./$(BALANCE) $(ARGS)
 
 # Headless 8-player match (7 bots + 1 scripted seat): `make demo`, `make demo SEED=7`, or with another data file:
 # `make demo SEED=7 DATA=path/to/champions.json`

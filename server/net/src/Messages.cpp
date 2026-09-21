@@ -9,7 +9,7 @@ namespace w2f::net::msg {
 namespace {
 
 const char* kEventTypeNames[] = {"Spawn", "Move", "Attack", "Damage", "Death", "SpellCast", "ShieldApplied", "ShieldEnded", "StatusApplied",
-                                 "StatusEnded", "ManaChanged", "Heal", "TraitActivated", "Teleport", "SpellInterrupted"};
+                                 "StatusEnded", "ManaChanged", "Heal", "TraitActivated", "Teleport", "SpellInterrupted", "Overtime"};
 
 const char* LocationName(LocationType l) {
     switch (l) {
@@ -68,23 +68,12 @@ void Seat(JsonWriter& w, const char* key, PlayerId p) {
     else w.Key(key).Int(p);
 }
 
-int PhaseTicks(const GameConfig& c, MatchPhase phase) {
-    switch (phase) {
-        case MatchPhase::MotherNature: return c.match.motherNatureTicks;
-        case MatchPhase::Planning: return c.match.planningTicks;
-        case MatchPhase::Combat: return c.match.combatTicks;
-        case MatchPhase::Resolution: return c.match.resolutionTicks;
-        case MatchPhase::NotStarted:
-        case MatchPhase::MatchOver: break;
-    }
-    return 0;
-}
-
 }  // namespace
 
 std::string Welcome(PlayerId seat, std::string_view token, bool reconnected, int connected, int seats, int bots, bool matchRunning) {
     JsonWriter w = Start("welcome");
     w.Field("protocol", kProtocolVersion);
+    w.Field("protocol_revision", kProtocolRevision);
     w.Field("player_id", static_cast<int>(seat));
     w.Field("token", token);
     w.Field("reconnected", reconnected);
@@ -127,10 +116,41 @@ void WriteStats(JsonWriter& w, const ItemStats& s) {
 }
 }  // namespace
 
-std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters) {
+namespace {
+const char* kStatusNames[] = {"Stun", "Burn", "AttackDamage", "AttackSpeed", "Armor", "MagicResist", "MaxHp", "Wound", "InflictsWound", "DamageAmp", "Root", "Knockup",
+                              "CcImmunity", "DamageTakenRegen", "BonusAttackDamage", "Tether", "Untargetable", "AggroDrop", "BonusArmor", "BonusMagicResist", "BonusMaxHp",
+                              "BonusAbilityDamage", "BonusCritChance", "AbilityCrit", "CritDamage", "CritDamageTakenReduction", "BonusManaRegen", "AbilityPower", "SpellShield",
+                              "Blind", "DamageTaken", "BonusMaxMana", "ExecuteBelow", "HpPerSecond", "EmpoweredAttack", "Poison", "Bleed", "Drain"};
+const char* kAreaNames[] = {"None", "Single", "Circle", "CircleSelf", "Line", "Cone", "Row", "All"};
+
+void WriteNameList(JsonWriter& w, const char* key, const char* const* names, std::size_t count) {
+    w.Key(key).BeginArray();
+    for (std::size_t i = 0; i < count; ++i) w.String(names[i]);
+    w.EndArray();
+}
+}  // namespace
+
+std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters, const CombatConfig& combat) {
     JsonWriter w = Start("catalog");
+    // The vocabularies of the combat log: an index into each list is the number a log row carries.
+    w.Key("enums").BeginObject();
+    WriteNameList(w, "status_types", kStatusNames, sizeof(kStatusNames) / sizeof(kStatusNames[0]));   // Status* events' `subtype`; a DoT Damage's `kind`
+    {
+        const char* damageTypes[] = {"Physical", "Magic", "True"};
+        WriteNameList(w, "damage_types", damageTypes, 3);                                               // Damage's `subtype`
+        const char* attackStyles[] = {"melee", "projectile"};
+        WriteNameList(w, "attack_styles", attackStyles, 2);                                             // Attack's `kind`
+        const char* dotVisuals[] = {"Burn", "Poison", "Bleed", "Drain"};
+        WriteNameList(w, "dot_visuals", dotVisuals, 4);                                                 // the StatusType names a typed DoT can have
+    }
+    WriteNameList(w, "area_shapes", kAreaNames, sizeof(kAreaNames) / sizeof(kAreaNames[0]));            // SpellCast's `shape`
+    w.Key("damage_flags").BeginObject();                                                                // Damage's `flags` bits
+    w.Field("crit", static_cast<int>(kFlagCrit)).Field("dot", static_cast<int>(kFlagDot)).Field("ability", static_cast<int>(kFlagAbility)).Field("basic", static_cast<int>(kFlagBasic));
+    w.Field("on_death", static_cast<int>(kFlagOnDeath)).Field("redirected", static_cast<int>(kFlagRedirected)).Field("triggered", static_cast<int>(kFlagTriggered)).Field("summon", static_cast<int>(kFlagSummon));
+    w.EndObject();
+    w.EndObject();
     w.Key("champions").BeginArray();
-    const auto writeChampions = [&w](const ChampionDatabase& db, bool monster) {
+    const auto writeChampions = [&w, &combat](const ChampionDatabase& db, bool monster) {
         for (const ChampionDefinition& c : db.All()) {
             w.BeginObject();
             w.Field("monster", monster);
@@ -149,6 +169,36 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
             w.Field("max_mana", c.stats.maxMana);
             w.Field("ability", c.ability.name);
             w.Field("passive", c.passive.name);
+            // The presentation contract: EFFECTIVE timings (the champion's own numbers, else the CombatConfig defaults), in ticks. See docs/UE5-Integration.md.
+            w.Key("presentation").BeginObject();
+            const int speed = c.stats.projectileSpeedMilli >= 0 ? c.stats.projectileSpeedMilli : (c.stats.attackRange >= 2 ? combat.defaultRangedProjectileSpeedMilli : 0);
+            w.Key("attack").BeginObject();
+            w.Field("style", speed > 0 ? "projectile" : "melee");
+            w.Field("windup_ticks", c.stats.attackWindupTicks >= 0 ? c.stats.attackWindupTicks : combat.defaultAttackWindupTicks);
+            w.Field("projectile_speed_milli", speed);
+            w.EndObject();
+            w.Key("ability");
+            if (c.ability.HasAbility()) {
+                const AreaDescription area = DescribeArea(c.ability);
+                w.BeginObject();
+                w.Field("id", c.ability.id);
+                w.Field("windup_ticks", c.ability.windupTicks >= 0 ? c.ability.windupTicks : combat.defaultCastWindupTicks);
+                w.Field("cast_lock_ticks", c.ability.castLockTicks);
+                w.Field("channel_ticks", c.ability.channelTicks);
+                w.Key("area").BeginObject();
+                w.Field("shape", kAreaNames[static_cast<std::size_t>(area.shape)]);
+                w.Field("size", area.size);
+                w.EndObject();
+                w.Key("dot_visuals").BeginArray();   // the typed damage-over-time this spell applies (none for most)
+                for (const AbilityEffect& effect : c.ability.effects) {
+                    if (const auto* dot = std::get_if<DotEffect>(&effect.payload)) w.String(kStatusNames[static_cast<std::size_t>(dot->visual)]);
+                }
+                w.EndArray();
+                w.EndObject();
+            } else {
+                w.Null();
+            }
+            w.EndObject();
             w.EndObject();
         }
     };
@@ -169,6 +219,7 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
             for (const std::string& t : item.grantsTraits) w.String(t);
             w.EndArray();
             w.Field("has_effect", !item.abilities.empty() || !item.auras.empty());
+            w.Field("consumable", item.IsConsumable());   // used up when "equipped" (the Item Remover): it takes every item off the unit
             w.EndObject();
         }
     }
@@ -240,7 +291,7 @@ std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int 
     return Finish(w);
 }
 
-std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed) {
+std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, int durationTicks, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed) {
     JsonWriter w = Start("phase");
     w.Field("phase", ToString(phase));
     w.Field("round", round);
@@ -250,7 +301,7 @@ std::string Phase(const GameConfig& config, MatchPhase phase, int round, int tic
     w.Field("pve", config.match.IsPveRound(round));
     w.Field("mother_nature", motherNatureRound);   // a gift phase this round, and no shop until it is over
     w.Field("shop_closed", shopClosed);            // no shop this round: Mother Nature's, or the opening round
-    const int duration = PhaseTicks(config, phase);
+    const int duration = durationTicks;   // (Combat lasts as long as the round's fights: the engine knows, the config only gives the maximum)
     w.Field("duration_ticks", duration);
     w.Field("ticks_remaining", duration > ticksElapsed ? duration - ticksElapsed : 0);
     w.Field("server_tick", serverTick);
@@ -368,7 +419,7 @@ std::string Combat(int round, int index, const CombatOutcome& o) {
     w.Field("checksum", HexEncode(bytes, 8));   // 64 bits do not fit a JSON number safely: sent as 16 hex digits
     w.Key("columns").BeginArray();
     for (const char* c : {"tick", "type", "team", "unit", "other", "from_x", "from_y", "to_x", "to_y", "amount", "hp_after", "champion", "star",
-                          "absorbed", "subtype", "flags", "ability", "duration", "mana_max", "mana_regen", "reduced", "trait_id"}) {
+                          "absorbed", "subtype", "flags", "ability", "duration", "mana_max", "mana_regen", "reduced", "trait_id", "windup", "flight", "kind", "shape", "size"}) {
         w.String(c);
     }
     w.EndArray();
@@ -379,6 +430,7 @@ std::string Combat(int round, int index, const CombatOutcome& o) {
         w.Int(e.from.x).Int(e.from.y).Int(e.to.x).Int(e.to.y);
         w.Int(e.amount).Int(e.hpAfter).UInt(e.champion).Int(e.star).Int(e.absorbed).Int(e.subtype).Int(e.flags);
         w.UInt(e.ability).Int(e.duration).Int(e.manaMax).Int(e.manaRegen).Int(e.reduced).UInt(e.traitId);
+        w.Int(e.windup).Int(e.flight).Int(e.kind).Int(e.shape).Int(e.size);
         w.EndArray();
     }
     w.EndArray();
@@ -520,6 +572,17 @@ std::string ItemsCombined(const UnitInstance& unit, const ItemCombination& combi
     w.Field("first", combination.first);
     w.Field("second", combination.second);
     w.Field("result", combination.result);
+    return Finish(w);
+}
+
+std::string ItemConsumed(const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned) {
+    JsonWriter w = UnitEvent("consumable_used");
+    w.Key("unit");
+    WriteUnit(w, unit);
+    w.Field("item", consumable);
+    w.Key("returned").BeginArray();
+    for (ItemId item : returned) w.UInt(item);
+    w.EndArray();
     return Finish(w);
 }
 

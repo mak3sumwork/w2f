@@ -109,6 +109,9 @@ public:
     MatchPhase Phase() const { return phase_; }
     int Round() const { return round_; }
     int TicksInPhase() const { return ticksInPhase_; }
+    // How long the current phase lasts in total. Fixed by the config, except Combat: with `combatEndsWithFights` it is as long as the round's longest
+    // fight plus a short linger (never more than `combatTicks`), and is known from the moment the phase begins.
+    int PhaseTicks() const { return PhaseDuration(phase_); }
     int TicksRemainingInPhase() const;
     bool IsFinished() const { return phase_ == MatchPhase::MatchOver; }
     PlayerId Winner() const { return winner_; }  // kInvalidPlayerId until finished
@@ -144,7 +147,10 @@ public:
     // Bypasses phase rules. For server-internal systems, admin tools and tests only.
     PlayerManager& PlayersMutable() { return players_; }
 
-    // ---- Player actions (Planning phase only) ----
+    // ---- Player actions ----
+    // Planning: everything. Combat and Resolution: the shop (TryBuyShopUnit -- the champion goes to the BENCH and may only merge bench units --,
+    // TryRerollShop, TryBuyXp) and anything that touches only bench units (sell, move between bench slots, equip / unequip). The board is locked
+    // while its units fight: those actions answer UnitInCombat for a unit on the board. The shop is closed in round 1 and in Mother Nature's rounds.
     ActionResult TryRerollShop(PlayerId player);
     ActionResult TryBuyShopUnit(PlayerId player, std::size_t shopSlot);
     ActionResult TryBuyXp(PlayerId player);
@@ -189,6 +195,7 @@ private:
     void EnterPhase(MatchPhase next);
     void BuildMatchups();
     void RunCombat();
+    int ComputeCombatTicks() const;   // the Combat phase's length for the fights in outcomes_
     void ApplyCombatOutcomes();
     PveDrop GrantPveDrop(PlayerState& player, std::uint32_t encounterId, Rng& rng);
     void TakeAutoSnapshot();
@@ -202,7 +209,9 @@ private:
     void ReleaseOffers(PlayerId player);
     void DealOpeningUnits();
     void EndMatch();
-    ActionResult ResolveActor(PlayerId id, PlayerState*& outPlayer);
+    enum class ActorRule { PlanningOnly, Shop, Bench };   // when an action may run: see ResolveActor
+    ActionResult ResolveActor(PlayerId id, PlayerState*& outPlayer, ActorRule rule);
+    bool BoardUnitLocked(const PlayerState& player, UnitId unit) const;
 
     // IPlayerListener: forward each player event to every registered IMatchListener.
     void OnUnitBought(PlayerId player, const UnitInstance& unit, int goldSpent) override;
@@ -212,6 +221,7 @@ private:
     void OnItemEquipped(PlayerId player, const UnitInstance& unit, ItemId item) override;
     void OnItemUnequipped(PlayerId player, const UnitInstance& unit, ItemId item) override;
     void OnItemsCombined(PlayerId player, const UnitInstance& unit, const ItemCombination& combination) override;
+    void OnItemConsumed(PlayerId player, const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned) override;
     void OnIncomeGranted(PlayerId player, int round, const IncomeBreakdown& income) override;
 
     // Declaration order matters: pool_ before players_ (players hold a reference to it);
@@ -234,6 +244,7 @@ private:
     PlayerId winner_ = kInvalidPlayerId;
     std::vector<Matchup> matchups_;
     std::vector<CombatOutcome> outcomes_;
+    int combatPhaseTicks_ = 0;   // derived from outcomes_ (see PhaseTicks); never part of a snapshot or of StateHash()
 
     // Mother Nature: per player, the gifts on offer this round and whether the choice is settled. Empty / false outside the phase.
     struct PlayerGifts {

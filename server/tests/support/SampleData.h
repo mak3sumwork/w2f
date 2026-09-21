@@ -53,6 +53,9 @@ inline std::string ProductionPvePath() { return std::string(W2F_DATA_DIR) + "/pv
 inline std::string ProductionItemsPath() { return std::string(W2F_DATA_DIR) + "/items.json"; }
 inline std::string ProductionMotherNaturePath() { return std::string(W2F_DATA_DIR) + "/mother_nature.json"; }
 inline std::string ProductionTraitsPath() { return std::string(W2F_DATA_DIR) + "/traits.json"; }
+// The designer's numbers, frozen before the balance pass (see the header of tests/data/designer_spec_champions.json): what the mechanics tests use.
+inline std::string SpecChampionsPath() { return std::string(W2F_TEST_DATA_DIR) + "/designer_spec_champions.json"; }
+inline std::string SpecTraitsPath() { return std::string(W2F_TEST_DATA_DIR) + "/designer_spec_traits.json"; }
 inline std::string LegacyRosterPath() { return std::string(W2F_TEST_DATA_DIR) + "/phase4_roster.json"; }
 
 inline ChampionDefinition Def(w2f::ChampionId id, const char* name, int cost) {
@@ -87,6 +90,13 @@ inline std::unique_ptr<w2f::TraitDatabase> LoadProductionTraits() {
     return traits;
 }
 
+inline std::unique_ptr<w2f::TraitDatabase> LoadSpecTraits() {
+    std::string error;
+    auto traits = w2f::LoadTraitDatabaseFromFile(SpecTraitsPath(), &error);
+    if (!traits) std::printf("LoadSpecTraits failed: %s\n", error.c_str());
+    return traits;
+}
+
 // The frozen Phase 4 champions (tests/data/phase4_roster.json): what the mechanics tests are written against.
 inline ChampionDefinition Legacy(w2f::ChampionId id) {
     static const std::vector<ChampionDefinition> roster = LoadRosterFile(LegacyRosterPath());
@@ -99,7 +109,7 @@ inline ChampionDefinition Legacy(w2f::ChampionId id) {
 
 // 25 generic ability-less champions (5 per cost tier, ids cost*100+n) + the CURRENT production roster from
 // data/champions.json. Per generic tier: two tanks, two melee damage dealers, one ranged.
-inline std::unique_ptr<w2f::ChampionDatabase> MakeCombatDatabase(const std::string& rosterPath = ProductionDataPath()) {
+inline std::unique_ptr<w2f::ChampionDatabase> MakeCombatDatabase(const std::string& rosterPath = SpecChampionsPath()) {
     std::vector<ChampionDefinition> defs;
     for (int cost = 1; cost <= w2f::kMaxCostTier; ++cost) {
         for (int n = 0; n < 5; ++n) {

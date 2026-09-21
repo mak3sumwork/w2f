@@ -1,0 +1,178 @@
+// THE DESIGNER SPEC for synergies (frozen 2026-09-21, before the Phase A balance pass): see designer_spec_champions.json. Edit data/traits.json for balance, not this file.
+// W2F traits and synergies. Loaded next to champions.json; every trait tag a champion lists must be declared here.
+// Format: docs/champions-json.md (section "traits.json").
+//
+// At the start of a fight the server counts, for each team, how many DIFFERENT champions (two copies of one champion
+// count once) on the board have each trait, and applies the highest breakpoint reached -- before passives fire.
+//   "scope": "AllAllies"    -> every unit on the team gets the effect
+//   "scope": "TraitHolders" -> only units that themselves have this trait get it
+// Statuses of one type add up, so a unit that gets both a "AllAllies +10%" and a "TraitHolders +10%" has +20%.
+//   "scope": "Team"         -> applied ONCE for the whole team (cast by its lowest-id holder), aimed by the effect's own "target"
+//                              ("Self" by default; "AllEnemies" / "AllAllies" to change a whole side, e.g. the Coregons zone)
+// A breakpoint may also hand hooks ("triggers") to its units. See docs/champions-json.md and docs/content-notes.md.
+{
+  "version": 1,
+  "traits": [
+
+    // Synergies from W2F_GameDesignDocument.md section 2. A breakpoint REPLACES the lower ones (only the highest reached applies), so each one lists
+    // everything it does. "Count" = different champions with the trait on the board. Values the doc leaves open are marked ASSUMED.
+
+    // HELIOS (3/6) "The Sun's Wrath": Helios units' basic attacks burn their target for 2% / 5% of its MAX HP as true damage over 3 s.
+    // Every attack RE-LIGHTS the burn: it refreshes its duration instead of stacking, so a target has at most one Helios burn at a time
+    // (whoever lit it last gets the credit). A tick every second: ASSUMED.
+    {
+      "id": 1, "name": "Helios",
+      "breakpoints": [
+        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 201, "name": "The Sun's Wrath", "trigger": "OnBasicAttack",
+            "effects": [ { "type": "DoT", "target": "CurrentTarget", "damageType": "True",
+                           "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 2 } ] }, "amountIsTotal": true,
+                           "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ] },
+        { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 202, "name": "The Sun's Wrath", "trigger": "OnBasicAttack",
+            "effects": [ { "type": "DoT", "target": "CurrentTarget", "damageType": "True",
+                           "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 5 } ] }, "amountIsTotal": true,
+                           "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ] }
+      ]
+    },
+
+    // PHAISA (3/6) "The Void's Hunger": whenever ANY unit dies on the board, every Phaisa unit gains 4% / 10% bonus Attack Damage and
+    // Ability Power (of its base; it stacks with every death, for the rest of the fight).
+    {
+      "id": 2, "name": "Phaisa",
+      "breakpoints": [
+        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 211, "name": "The Void's Hunger", "trigger": "OnAnyUnitDeath",
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 4, "permanent": true },
+                         { "type": "Status", "target": "Self", "status": "AbilityPower",  "percent": 4, "permanent": true } ] } } ] },
+        { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 212, "name": "The Void's Hunger", "trigger": "OnAnyUnitDeath",
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 10, "permanent": true },
+                         { "type": "Status", "target": "Self", "status": "AbilityPower",  "percent": 10, "permanent": true } ] } } ] }
+      ]
+    },
+
+    // HEXAGON (2/4) "The Perfect Equation": Hexagon units start the fight with a 300 / 600 shield. At 4, the first time one of their shields is
+    // broken it explodes for 200 magic damage to the enemies adjacent to it. ("The shield" is read as once per unit: the first shield to break.)
+    {
+      "id": 3, "name": "Hexagon",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 300, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 600, "permanent": true } ],
+          "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 221, "name": "Shield Detonation", "trigger": "OnShieldBreak", "maxTriggers": 1,
+            "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false },
+                           "damageType": "Magic", "amount": 200 } ] } } ] }
+      ]
+    },
+
+    // ASSASSIN (2/4) "The Unseen Strike": Assassins' abilities can critically strike, their crits hit for +20% / +50% more (CritDamage adds
+    // percentage points to the crit bonus), and they gain +15% / +30% critical strike CHANCE (so the synergy works without crit items). The
+    // Assassins are Vex, Lunis and Raa; the 4 breakpoint needs an Assassin Emblem.
+    {
+      "id": 9, "name": "Assassin",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 20, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 15, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 50, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 30, "permanent": true } ] }
+      ]
+    },
+
+    // OMNILIUM: the origin of Les and Lum; the doc gives it no synergy of its own (Protector is theirs).
+    { "id": 4, "name": "Omnilium" },
+
+    // SELINI (3) "The Moon's Shadow": once per fight, the first time a Selini unit falls below 50% HP it drops aggro for 2 s (enemies stop
+    // auto-targeting it: "invisible") and heals 20% of its max HP.
+    {
+      "id": 6, "name": "Selini",
+      "breakpoints": [
+        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 231, "name": "The Moon's Shadow", "trigger": "OnHpDropBelowPercent", "thresholdPercent": 50, "maxTriggers": 1,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AggroDrop", "durationSeconds": 2 },
+                         { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 20 } ] } } ] } } ] }
+      ]
+    },
+
+    // NAJMI (3) "The Cosmic Link": whenever a Najmi unit casts, every ally adjacent to it gains 15 mana.
+    {
+      "id": 7, "name": "Najmi",
+      "breakpoints": [
+        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
+            "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 15 } ] } } ] }
+      ]
+    },
+
+    // COREGONS (3/6/8) "The Lost Life". Every breakpoint: Coregons units heal for 10 / 15 / 25% of the damage they deal, and the team gets
+    // 3 untargetable Lost Souls (champion 9102). Their max HP is 25 / 40 / 60% of your TANKIEST ally's max HP (read when the fight starts);
+    // each Soul echoes 5 / 8 / 12% of every hit its team deals (that number lives in the Soul's own definition, per star: the synergy summons it at
+    // star 1 / 2 / 3). From 6 the "Lost Soul Zone" is on (the client turns the floor blue when it sees this trait's TraitActivated tier 2 / 3):
+    //   * enemy casters need 15 more mana to cast (a unit with no mana bar is not affected),
+    //   * allies gain +2 mana per second,
+    //   * once a second enemies lose 2% (4% at 8) of their max HP as true damage and allies heal 2% (4%),
+    //   * enemies below 5% (10% at 8) of their max HP are executed (past any shield).
+    // The zone effects are cast once for the team by its lowest-id Coregons unit, who is credited as their source. They are listed BEFORE the
+    // summons so the Souls themselves are not in "all allies".
+    {
+      "id": 8, "name": "Coregons",
+      "breakpoints": [
+        { "count": 3,
+          "effects": [
+            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 1, "count": 3,
+              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 25 } ] } }
+          ],
+          "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 251, "name": "The Lost Life", "trigger": "OnDealDamage",
+            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 10 } ] } } ] } } ] },
+
+        { "count": 6,
+          "effects": [
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "BonusMaxMana",  "value": 15,  "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "BonusManaRegen", "value": 2000, "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "HpPerSecond",   "percent": -2, "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "HpPerSecond",   "percent": 2,  "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow",  "percent": 5,  "permanent": true },
+            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 2, "count": 3,
+              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 40 } ] } }
+          ],
+          "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 252, "name": "The Lost Life", "trigger": "OnDealDamage",
+            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 15 } ] } } ] } } ] },
+
+        { "count": 8,
+          "effects": [
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "BonusMaxMana",  "value": 15,  "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "BonusManaRegen", "value": 2000, "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "HpPerSecond",   "percent": -4, "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "HpPerSecond",   "percent": 4,  "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow",  "percent": 10, "permanent": true },
+            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 3, "count": 3,
+              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 60 } ] } }
+          ],
+          "triggers": [ { "scope": "TraitHolders", "ability": {
+            "id": 253, "name": "The Lost Life", "trigger": "OnDealDamage",
+            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 25 } ] } } ] } } ] }
+      ]
+    },
+
+    // PROTECTOR (Les, Lum): with 2 Protectors on the board, ALL allies get +10% damage amplification and +10% Armor/Magic
+    // Resist, and the Protectors themselves get another +10% of each on top.
+    {
+      "id": 5, "name": "Protector",
+      "breakpoints": [
+        { "count": 2, "effects": [
+          { "scope": "AllAllies",    "type": "Status", "status": "DamageAmp",   "percent": 10, "permanent": true },
+          { "scope": "AllAllies",    "type": "Status", "status": "Armor",       "percent": 10, "permanent": true },
+          { "scope": "AllAllies",    "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp",   "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "Armor",       "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true }
+        ] }
+      ]
+    }
+
+  ]
+}

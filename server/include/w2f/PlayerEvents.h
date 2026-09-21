@@ -13,6 +13,8 @@
 //  - Player-level events fire in the order things happened, e.g. a purchase that completes a
 //    merge produces OnUnitBought and then OnUnitMerged (once per merge step in a cascade).
 
+#include <vector>
+
 #include "w2f/Types.h"
 #include "w2f/Unit.h"
 
@@ -52,6 +54,9 @@ public:
     // Two items on a unit turned into one (right after OnItemEquipped for the second, or after OnUnitMerged for items carried over
     // by a merge). `unit` is its state afterwards: the result already sits in the slot the first item had.
     virtual void OnItemsCombined(PlayerId /*player*/, const UnitInstance& /*unit*/, const ItemCombination& /*combination*/) {}
+    // A consumable (the Item Remover) was used on `unit` and is gone from the bag. `returned` are the items that came off the unit, in slot order (each was
+    // also announced by OnItemUnequipped just before). `unit` is its state afterwards.
+    virtual void OnItemConsumed(PlayerId /*player*/, const UnitInstance& /*unit*/, ItemId /*consumable*/, const std::vector<ItemId>& /*returned*/) {}
 };
 
 }  // namespace w2f

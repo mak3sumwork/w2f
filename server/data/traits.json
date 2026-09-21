@@ -42,8 +42,8 @@
       "breakpoints": [
         { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 211, "name": "The Void's Hunger", "trigger": "OnAnyUnitDeath",
-            "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 4, "permanent": true },
-                         { "type": "Status", "target": "Self", "status": "AbilityPower",  "percent": 4, "permanent": true } ] } } ] },
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 6, "permanent": true },
+                         { "type": "Status", "target": "Self", "status": "AbilityPower",  "percent": 6, "permanent": true } ] } } ] },
         { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 212, "name": "The Void's Hunger", "trigger": "OnAnyUnitDeath",
             "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 10, "permanent": true },
@@ -57,11 +57,11 @@
       "id": 3, "name": "Hexagon",
       "breakpoints": [
         { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 300, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 600, "permanent": true } ],
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 300, "permanent": true } ],
           "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 221, "name": "Shield Detonation", "trigger": "OnShieldBreak", "maxTriggers": 1,
             "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false },
-                           "damageType": "Magic", "amount": 200 } ] } } ] }
+                           "damageType": "Magic", "amount": 120 } ] } } ] }
       ]
     },
 
@@ -75,8 +75,8 @@
                                    { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 20, "permanent": true },
                                    { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 15, "permanent": true } ] },
         { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 50, "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 30, "permanent": true } ] }
+                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 30, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 25, "permanent": true } ] }
       ]
     },
 
@@ -91,7 +91,7 @@
         { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 231, "name": "The Moon's Shadow", "trigger": "OnHpDropBelowPercent", "thresholdPercent": 50, "maxTriggers": 1,
             "effects": [ { "type": "Status", "target": "Self", "status": "AggroDrop", "durationSeconds": 2 },
-                         { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 20 } ] } } ] } } ] }
+                         { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 6 } ] } } ] } } ] }
       ]
     },
 
@@ -105,9 +105,9 @@
       ]
     },
 
-    // COREGONS (3/6/8) "The Lost Life". Every breakpoint: Coregons units heal for 10 / 15 / 25% of the damage they deal, and the team gets
-    // 3 untargetable Lost Souls (champion 9102). Their max HP is 25 / 40 / 60% of your TANKIEST ally's max HP (read when the fight starts);
-    // each Soul echoes 5 / 8 / 12% of every hit its team deals (that number lives in the Soul's own definition, per star: the synergy summons it at
+    // COREGONS (3/6/8) "The Lost Life". Every breakpoint: Coregons units heal for 7 / 15 / 25% of the damage they deal, and the team gets
+    // 3 untargetable Lost Souls (champion 9102). Their max HP is 14 / 40 / 60% of your TANKIEST ally's max HP (read when the fight starts);
+    // each Soul echoes 3 / 5 / 8% of every hit its team deals (that number lives in the Soul's own definition, per star: the synergy summons it at
     // star 1 / 2 / 3). From 6 the "Lost Soul Zone" is on (the client turns the floor blue when it sees this trait's TraitActivated tier 2 / 3):
     //   * enemy casters need 15 more mana to cast (a unit with no mana bar is not affected),
     //   * allies gain +2 mana per second,
@@ -120,12 +120,12 @@
       "breakpoints": [
         { "count": 3,
           "effects": [
-            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 1, "count": 3,
-              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 25 } ] } }
+            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 1, "count": 2,
+              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 14 } ] } }
           ],
           "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 251, "name": "The Lost Life", "trigger": "OnDealDamage",
-            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 10 } ] } } ] } } ] },
+            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 7 } ] } } ] } } ] },
 
         { "count": 6,
           "effects": [

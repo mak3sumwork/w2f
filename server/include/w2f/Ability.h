@@ -84,6 +84,10 @@ enum class StatusType : std::uint8_t {
     HpPerSecond,         // every second the holder heals `percent`% of its max HP (negative: takes that much TRUE damage, credited to the
                          // status's source without counting as damage dealt for formulas)
     EmpoweredAttack,     // charges (`percent` = how many) that riders marked `requiresCharge` spend, one per basic attack
+    // Typed damage over time: only ever the `visual` of a DoT effect (a viewer picks the VFX / icon from it). They behave exactly like Burn.
+    Poison,              // a toxin: green cloud / drip
+    Bleed,               // a wound: red drip
+    Drain,               // life drain: the source heals from each tick
 };
 constexpr bool IsFlatBonusStatus(StatusType t) {
     return t == StatusType::BonusAttackDamage || t == StatusType::BonusArmor || t == StatusType::BonusMagicResist ||
@@ -259,7 +263,7 @@ struct DotEffect {
     // Applying the effect again while a stack from the SAME ability is still running makes the
     // new stack deal this much % more (Baira: +25/35/45%). Stacks run independently.
     StarValue stackBonusPercent{};
-    StatusType visual = StatusType::Burn;  // how the client shows it
+    StatusType visual = StatusType::Burn;  // how the client shows it: Burn, Poison, Bleed or Drain ("visual" in the data). Also tags each of its Damage events (`kind`).
     int healPercent = 0;            // the caster heals this % of the damage each hit actually deals (a drain)
     // Applying this again while a burn from the SAME ability is already running on the victim (from anybody) REPLACES it: the duration restarts and
     // there is only ever one. (Helios: every attack re-lights the burn; it never stacks.) Exclusive with stackBonusPercent.
@@ -419,6 +423,9 @@ struct AbilityDefinition {
     bool resetCountOnTargetChange = false;
     // After casting, the caster is locked (cannot attack or move) for this many ticks and its
     // attack timer is pushed back by the same amount. 0 = it keeps attacking (Cyla's rocket).
+    // Presentation (never changes the fight): how long BEFORE the cast lands (the SpellCast event's tick) its animation should start, in ticks.
+    // -1 = not set in the data: CombatConfig::defaultCastWindupTicks applies.
+    int windupTicks = -1;
     int castLockTicks = 0;
     // A CHANNEL: the caster is locked this long, and the ability's delayed effects only happen if the channel is not
     // interrupted (the caster is stunned / knocked up / dies). Effects placed at the channel's end are its "if it
@@ -442,5 +449,23 @@ void HashAbility(Fnv1a& hash, const AbilityDefinition& ability);
 
 // Checks the definition is internally consistent. `maxMana` is the owning champion's max mana.
 bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string* error = nullptr);
+
+// The area a spell covers, for the viewer's VFX (derived from the ability's effects; presentation only).
+enum class AreaShape : std::uint8_t {
+    None,        // only the caster (a buff, a shield on self)
+    Single,      // one unit: the cast target (or the unit a targeting rule picks)
+    Circle,      // `size` hexes around the cast target's hex (the event's `to`)
+    CircleSelf,  // `size` hexes around the caster
+    Line,        // a straight line of `size` hexes behind the cast target, seen from the caster
+    Cone,        // a 120-degree cone `size` hexes long from the caster toward the cast target
+    Row,         // the caster's team's busiest row (allies)
+    All,         // every enemy / every ally on the field
+};
+struct AreaDescription {
+    AreaShape shape = AreaShape::None;
+    int size = 0;   // radius / length in hexes (0 where it does not apply)
+};
+// The widest area any effect of `ability` reaches (order: All > Cone > Line > Circle > CircleSelf > Row > Single > None; the bigger radius wins a tie).
+AreaDescription DescribeArea(const AbilityDefinition& ability);
 
 }  // namespace w2f

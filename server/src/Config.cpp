@@ -70,6 +70,10 @@ bool GameConfig::Validate(std::string* error) const {
     }
 
     // Combat
+    if (match.combatLingerTicks < 0 || match.combatMinTicks < 1) return Fail(error, "combatLingerTicks must be >= 0 and combatMinTicks >= 1");
+    if (combat.regulationTicks < 1 || combat.hardLimitTicks < combat.regulationTicks) return Fail(error, "regulationTicks must be >= 1 and hardLimitTicks >= regulationTicks");
+    if (combat.defaultAttackWindupTicks < 0 || combat.defaultCastWindupTicks < 0 || combat.defaultRangedProjectileSpeedMilli < 0) return Fail(error, "the presentation defaults must be >= 0");
+    if (combat.overtimeSpeed < 1 || combat.overtimeSpeed > 16) return Fail(error, "overtimeSpeed must be between 1 and 16");
     if (combat.ticksPerHexMove < 1) return Fail(error, "ticksPerHexMove must be >= 1");
     if (combat.repathBackoffTicks < 1) return Fail(error, "repathBackoffTicks must be >= 1");
     if (combat.minDamage < 0) return Fail(error, "minDamage must be >= 0");
@@ -128,6 +132,9 @@ std::uint64_t GameConfig::ContentHash() const {
     h.AddInt(match.motherNatureTicks);
     h.AddInt(match.planningTicks);
     h.AddInt(match.combatTicks);
+    h.Add(match.combatEndsWithFights ? 1 : 0);
+    h.AddInt(match.combatLingerTicks);
+    h.AddInt(match.combatMinTicks);
     h.AddInt(match.resolutionTicks);
     h.AddInt(match.motherNatureEveryRounds);
     h.AddInt(match.firstStageRounds);
@@ -140,7 +147,8 @@ std::uint64_t GameConfig::ContentHash() const {
 
     for (int v : {combat.ticksPerHexMove, combat.repathBackoffTicks, combat.minDamage, combat.manaPerAttackMilli,
                   combat.rawDamagePerMana, combat.manaFromDamagePerTickCapMilli, combat.critBonusPercent,
-                  combat.dotSpreadIntervalTicks}) {
+                  combat.dotSpreadIntervalTicks, combat.regulationTicks, combat.hardLimitTicks, combat.overtimeSpeed, combat.defaultAttackWindupTicks,
+                  combat.defaultRangedProjectileSpeedMilli, combat.defaultCastWindupTicks}) {
         h.AddInt(v);
     }
 

@@ -8,7 +8,7 @@ namespace w2f {
 
 bool ItemIsOfClass(const ItemDatabase& items, const ItemDefinition& item, ItemClass cls) {
     switch (cls) {
-        case ItemClass::Any: return true;
+        case ItemClass::Any: return !item.IsConsumable();
         case ItemClass::Component: return !item.IsCombined() && item.HasEffect() && items.IsComponent(item.id);
         case ItemClass::Legendary: return item.IsCombined() && item.grantsTraits.empty();
         case ItemClass::Emblem: return item.IsCombined() && !item.grantsTraits.empty();
@@ -59,20 +59,30 @@ std::unique_ptr<MotherNatureDatabase> MotherNatureDatabase::Create(int options, 
                 case GiftType::Xp:
                 case GiftType::Heal:
                     if (gift.amount < 1) return fail(what + ": amount must be >= 1");
-                    if (!gift.items.empty() || !gift.costs.empty()) return fail(what + ": only Item gifts list items and only Unit gifts list costs");
+                    if (!gift.items.empty() || !gift.costs.empty() || !gift.costsByStage.empty()) return fail(what + ": only Item gifts list items and only Unit gifts list costs");
                     break;
                 case GiftType::Item:
-                    if (gift.amount != 0 || !gift.costs.empty()) return fail(what + ": an Item gift has neither an amount nor costs");
+                    if (gift.amount != 0 || !gift.costs.empty() || !gift.costsByStage.empty()) return fail(what + ": an Item gift has neither an amount nor costs");
                     for (ItemId id : gift.items) {
                         if (items != nullptr && items->Find(id) == nullptr) return fail(what + ": item " + std::to_string(id) + " is not in the item data");
                     }
                     if (items != nullptr && GiftItemChoices(gift, *items).empty()) return fail(what + ": no item of that class exists in the item data");
                     break;
                 case GiftType::Unit:
-                    if (gift.costs.empty()) return fail(what + ": a Unit gift needs at least one cost tier");
+                    if (gift.costs.empty() == gift.costsByStage.empty()) return fail(what + ": a Unit gift needs either \"costs\" or \"costsByStage\" (exactly one)");
                     if (gift.amount != 0 || !gift.items.empty()) return fail(what + ": a Unit gift has neither an amount nor items");
                     for (int cost : gift.costs) {
                         if (cost < 1 || cost > kMaxCostTier) return fail(what + ": unit costs must be 1.." + std::to_string(kMaxCostTier));
+                    }
+                    for (std::size_t k = 0; k < gift.costsByStage.size(); ++k) {
+                        const StageCosts& entry = gift.costsByStage[k];
+                        if (k == 0 ? entry.fromStage != 1 : entry.fromStage <= gift.costsByStage[k - 1].fromStage) {
+                            return fail(what + ": costsByStage must start at fromStage 1 and ascend");
+                        }
+                        if (entry.costs.empty()) return fail(what + ": a costsByStage entry needs at least one cost");
+                        for (int cost : entry.costs) {
+                            if (cost < 1 || cost > kMaxCostTier) return fail(what + ": unit costs must be 1.." + std::to_string(kMaxCostTier));
+                        }
                     }
                     break;
             }
@@ -121,6 +131,12 @@ std::uint64_t MotherNatureDatabase::ContentHash() const {
             for (ItemId item : gift.items) h.Add(item);
             h.AddInt(static_cast<std::int64_t>(gift.costs.size()));
             for (int cost : gift.costs) h.AddInt(cost);
+            h.AddInt(static_cast<std::int64_t>(gift.costsByStage.size()));
+            for (const StageCosts& entry : gift.costsByStage) {
+                h.AddInt(entry.fromStage);
+                h.AddInt(static_cast<std::int64_t>(entry.costs.size()));
+                for (int cost : entry.costs) h.AddInt(cost);
+            }
         }
     }
     return h.value;

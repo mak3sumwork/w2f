@@ -2,10 +2,10 @@
 // Instead of a shop, each living player is shown `options` distinct gifts drawn from the tier in force this stage (weighted, no repeats)
 // and takes exactly one for free. Format: docs/champions-json.md, section "mother_nature.json".
 //
-// * "tiers": a tier is used from its "fromStage" until a tier with a larger fromStage takes over. The first must start at stage 1. The ids
-//   are the designer's numbers: there is no Tier 2 yet (the doc names Tier 1 early game and Tier 3 late game), add one by giving it a
-//   fromStage between the two. The Tier 3 start (stage 4 = round 18) is ASSUMED.
-// * gift "type": Gold / Xp / Heal (+"amount"), Item (+"itemClass" or an explicit "items" list), Unit (+"costs").
+// * "tiers": a tier is used from its "fromStage" until a tier with a larger fromStage takes over. The first must start at stage 1. The designer's
+//   phases: Tier 1 = early game (stages 1-2), Tier 2 = mid game (stages 3-4), Tier 3 = late game (stage 5 and later).
+// * gift "type": Gold / Xp / Heal (+"amount"), Item (+"itemClass" or an explicit "items" list), Unit (+"costs", or "costsByStage" for a
+//   cost that scales with the stage).
 //   itemClass: Component = a base item that is an ingredient of a recipe (not the Omnilium Seed), Legendary = a finished item that grants no
 //   trait, Emblem = a finished trait item, Any = every item in items.json.
 // * "weight": relative chance among the tier's gifts (all weights below are ASSUMED; the design doc gives only the reward kinds).
@@ -17,7 +17,9 @@
   "options": 2,
   "tiers": [
 
-    // ---------------------------------------------------------------- TIER 1: early game
+    // ---------------------------------------------------------------- TIER 1: early game (stages 1-2)
+    // The Wanderer's cost SCALES with the stage ("costsByStage": from the stage named on, until a later entry takes over): stage 1 = a 1-cost champion,
+    // stage 2 = a 1- or 2-cost one.
     {
       "id": 1, "name": "Early Game", "fromStage": 1,
       "gifts": [
@@ -25,13 +27,27 @@
         { "id": 102, "name": "Pocket Change",      "type": "Gold", "amount": 5,              "weight": 25 },
         { "id": 103, "name": "Growth",             "type": "Xp",   "amount": 4,              "weight": 20 },
         { "id": 104, "name": "Mother's Blessing",  "type": "Heal", "amount": 3,              "weight": 15 },   // +3 player HP
-        { "id": 105, "name": "Wanderer",           "type": "Unit", "costs": [2, 3],          "weight": 15 }    // a random 2- or 3-cost champion
+        { "id": 105, "name": "Wanderer",           "type": "Unit", "weight": 15,
+          "costsByStage": [ { "fromStage": 1, "costs": [1] }, { "fromStage": 2, "costs": [1, 2] } ] }
       ]
     },
 
-    // ---------------------------------------------------------------- TIER 3: late game
+    // ---------------------------------------------------------------- TIER 2: mid game (stages 3-4)
     {
-      "id": 3, "name": "Late Game", "fromStage": 4,
+      "id": 2, "name": "Mid Game", "fromStage": 3,
+      "gifts": [
+        { "id": 201, "name": "Component",          "type": "Item", "itemClass": "Component", "weight": 20 },
+        { "id": 202, "name": "Legendary Item",     "type": "Item", "itemClass": "Legendary", "weight": 12 },   // a finished, non-emblem item
+        { "id": 203, "name": "Treasure",           "type": "Gold", "amount": 10,             "weight": 22 },
+        { "id": 204, "name": "Growth",             "type": "Xp",   "amount": 8,              "weight": 14 },
+        { "id": 205, "name": "Mother's Embrace",   "type": "Heal", "amount": 5,              "weight": 12 },   // +5 player HP
+        { "id": 206, "name": "Veteran",            "type": "Unit", "costs": [3, 4],          "weight": 20 }    // a 3- or 4-cost champion
+      ]
+    },
+
+    // ---------------------------------------------------------------- TIER 3: late game (stage 5 and later)
+    {
+      "id": 3, "name": "Late Game", "fromStage": 5,
       "gifts": [
         { "id": 301, "name": "Legendary Item",     "type": "Item", "itemClass": "Legendary", "weight": 28 },   // a finished, non-emblem item
         { "id": 302, "name": "Emblem",             "type": "Item", "itemClass": "Emblem",    "weight": 6 },    // low chance

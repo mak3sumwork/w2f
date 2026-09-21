@@ -27,7 +27,8 @@ std::string Welcome(PlayerId seat, std::string_view token, bool reconnected, int
 std::string Lobby(const std::vector<PlayerId>& seatsTaken, int seats, int bots);
 // What the ids in every other message mean: champions (the PvE monsters too, flagged `monster`), items and traits, straight from the loaded
 // data. Public: the same for everyone, answered to `get_catalog`. Any of the optional databases may be null.
-std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters);
+// `combat` supplies the presentation defaults (windup / projectile speed), so every champion is given its EFFECTIVE timings.
+std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters, const CombatConfig& combat);
 std::string Error(std::string_view code, std::string_view detail, bool hasId = false, long long id = 0);
 std::string Result(const Command& command, ActionResult result);
 std::string Pong(bool hasId, long long id);
@@ -36,7 +37,7 @@ std::string Pong(bool hasId, long long id);
 std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {});
 // `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
 // `shopClosed`: no shop this round (Mother Nature's, or the opening round: the free unit was dealt at the start).
-std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed);
+std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, int durationTicks, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed);
 
 // One player's full private state (gold, xp, shop, bench, board, bag ...).
 std::string PrivateState(const MatchManager& match, PlayerId player);
@@ -72,5 +73,6 @@ std::string UnitMerged(const UnitMerge& merge);
 std::string ItemEquipped(const UnitInstance& unit, ItemId item);
 std::string ItemUnequipped(const UnitInstance& unit, ItemId item);
 std::string ItemsCombined(const UnitInstance& unit, const ItemCombination& combination);
+std::string ItemConsumed(const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned);
 
 }  // namespace w2f::net::msg

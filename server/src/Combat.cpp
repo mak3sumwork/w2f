@@ -30,6 +30,11 @@ std::uint64_t CombatLog::ComputeChecksum() const {
         h.AddInt(e.manaRegen);
         h.AddInt(e.reduced);
         h.Add(e.traitId);
+        h.AddInt(e.windup);
+        h.AddInt(e.flight);
+        h.Add(e.kind);
+        h.Add(e.shape);
+        h.Add(e.size);
     }
     h.AddInt(endTick);
     h.AddInt(survivors[0]);

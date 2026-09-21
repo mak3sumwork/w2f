@@ -33,9 +33,16 @@ struct ItemStats {
     }
 };
 
+// What a CONSUMABLE item does when it is "equipped" onto a unit. It never takes an item slot and it is used up.
+enum class ItemUse : std::uint8_t {
+    None,            // an ordinary item
+    RemoveAllItems,  // Item Remover: every item on the unit goes back to the owner's item bag
+};
+
 struct ItemDefinition {
     ItemId id = 0;  // non-zero, unique
     std::string name;
+    ItemUse use = ItemUse::None;   // != None: a consumable (no stats, traits, abilities, auras or recipe; cannot be crafted)
     ItemStats stats;
     std::vector<std::string> grantsTraits;  // trait tags the holder gains (must exist in the trait data)
 
@@ -49,6 +56,7 @@ struct ItemDefinition {
     std::vector<AuraDefinition> auras;
 
     bool IsCombined() const { return components[0] != 0 && components[1] != 0; }
+    bool IsConsumable() const { return use != ItemUse::None; }
     bool HasEffect() const { return !stats.IsEmpty() || !grantsTraits.empty() || !abilities.empty() || !auras.empty(); }
 };
 

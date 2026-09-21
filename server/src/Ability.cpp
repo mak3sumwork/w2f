@@ -278,4 +278,47 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
     }
 }
 
+AreaDescription DescribeArea(const AbilityDefinition& ability) {
+    const auto rank = [](AreaShape s) {
+        switch (s) {
+            case AreaShape::All: return 7;
+            case AreaShape::Cone: return 6;
+            case AreaShape::Line: return 5;
+            case AreaShape::Circle: return 4;
+            case AreaShape::CircleSelf: return 3;
+            case AreaShape::Row: return 2;
+            case AreaShape::Single: return 1;
+            case AreaShape::None: return 0;
+        }
+        return 0;
+    };
+    AreaDescription best;
+    for (const AbilityEffect& effect : ability.effects) {
+        AreaDescription here;
+        const TargetSpec& t = effect.target;
+        switch (t.mode) {
+            case TargetMode::Self: break;
+            case TargetMode::AreaAroundTarget:
+            case TargetMode::HighestHpEnemyNearTarget: here = {AreaShape::Circle, t.radius}; break;
+            case TargetMode::AreaAroundSelf: here = {AreaShape::CircleSelf, t.radius}; break;
+            case TargetMode::LineBehindTarget: here = {AreaShape::Line, t.radius}; break;
+            case TargetMode::ConeTowardTarget: here = {AreaShape::Cone, t.radius}; break;
+            case TargetMode::AlliesInStartLine: here = {AreaShape::Row, 0}; break;
+            case TargetMode::AllEnemies:
+            case TargetMode::AllAllies: here = {AreaShape::All, 0}; break;
+            case TargetMode::ClosestEnemies: here = {t.count > 1 ? AreaShape::Circle : AreaShape::Single, 0}; break;
+            case TargetMode::CurrentTarget:
+            case TargetMode::HighestDamageAlly:
+            case TargetMode::LowestHpAlly:
+            case TargetMode::RandomEnemy:
+            case TargetMode::TriggerAttacker:
+            case TargetMode::TriggerVictim:
+            case TargetMode::LowestHpEnemy:
+            case TargetMode::HighestHpEnemy: here = {AreaShape::Single, 0}; break;
+        }
+        if (rank(here.shape) > rank(best.shape) || (here.shape == best.shape && here.size > best.size)) best = here;
+    }
+    return best;
+}
+
 }  // namespace w2f

@@ -34,7 +34,8 @@
   "defaultDrops": [
     { "type": "Gold",     "weight": 40, "minGold": 2, "maxGold": 4 },
     { "type": "Champion", "weight": 30, "tiers": [1, 2] },
-    { "type": "Item",     "weight": 30 }
+    { "type": "Item",     "weight": 30 },
+    { "type": "Item",     "weight": 12, "items": [50] }      // an Item Remover (id 50): about 1 win in 9. It cannot be crafted.
   ],
 
   "encounters": [
@@ -48,6 +49,6 @@
     { "id": 4, "name": "The Elder Wraith", "round": 7,
       "units": [ { "monster": 10004, "x": 3, "y": 3 }, { "monster": 10003, "x": 1, "y": 3 }, { "monster": 10003, "x": 5, "y": 3 },
                  { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ],
-      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ] }
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ] }
   ]
 }

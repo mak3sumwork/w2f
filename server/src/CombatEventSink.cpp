@@ -24,6 +24,7 @@ void ReplayCombatLog(const CombatLog& log, ICombatEventSink& sink) {
             case CombatEventType::Teleport: sink.OnTeleport(e.tick, e.unit, e.from, e.to); break;
             case CombatEventType::SpellInterrupted: sink.OnSpellInterrupted(e.tick, e.unit, e.ability); break;
             case CombatEventType::ManaChanged: sink.OnManaChanged(e.tick, e.unit, e.amount); break;
+            case CombatEventType::Overtime: sink.OnOvertime(e.tick, e.amount, e.duration); break;
         }
     }
 }

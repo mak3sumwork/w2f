@@ -148,6 +148,12 @@
     { "id": 44, "name": "Phaisa Emblem",   "components": [9, 5], "grantsTraits": ["Phaisa"] },
     { "id": 45, "name": "Hexagon Emblem",  "components": [9, 6], "grantsTraits": ["Hexagon"] },
     { "id": 46, "name": "Assassin Emblem", "components": [9, 7], "grantsTraits": ["Assassin"] },
-    { "id": 47, "name": "Protector Emblem", "components": [9, 8], "grantsTraits": ["Protector"] }
+    { "id": 47, "name": "Protector Emblem", "components": [9, 8], "grantsTraits": ["Protector"] },
+
+    // ---------------------------------------------------------------- CONSUMABLES
+    // Item Remover: equipping it on a unit does not use an item slot. It takes EVERY item off that unit (they go back to the item bag) and is
+    // used up. It cannot be crafted and never drops as a random "any item": it comes from monster drop tables that name it (pve.json). A player
+    // can hold several. (Used on a unit with no items it is refused and kept.)
+    { "id": 50, "name": "Item Remover", "consumable": "RemoveAllItems" }
   ]
 }

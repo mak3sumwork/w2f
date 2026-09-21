@@ -20,7 +20,8 @@
 
 namespace w2f::net {
 
-constexpr int kProtocolVersion = 1;
+constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
+constexpr int kProtocolRevision = 1;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {

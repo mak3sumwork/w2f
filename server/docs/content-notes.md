@@ -9,7 +9,7 @@ picks the most literal reading and marks it `ASSUMED` in a comment. These are th
 * **Solis / Mortis** — the empowered attack's damage is a **bonus hit on top of** the normal attack (the doc says "deals X damage" for Solis, "bonus" for Mortis; both are treated as bonus). Unused charges lapse after 8 s / 10 s (ASSUMED).
   Mortis's "ignore 50% Armor" applies to that bonus hit, not to the ordinary attack itself.
 * **Items with a guessed number** — Mage Shield's shield lasts 5 s, Fishscale's shield 5 s, Blue Whale's "regens 30% over 2 s" is 3 pulses of 10% (all marked `ASSUMED` in `items.json`). Twin Snipers' 3% a second needs the target in attack range; Tear of Mother's "no damage" counts hits the shield absorbs.
-* **Poison / drain (Rot, Lich)** — a damage-over-time with one tick every 0.5 s (ASSUMED); the client shows every DoT as the generic burn status (`Burn`) for now.
+* **Poison / drain (Rot, Lich)** — a damage-over-time with one tick every 0.5 s (ASSUMED). They are now typed (`"visual": "Poison"` / `"Drain"`) so a client can draw them differently from a burn.
 * **Xul** — the bolt bounces to the nearest *other* enemy adjacent to the first target; it hits as hard as the bolt.
 * **Grave's Skeleton** — armor / magic resist 0 and attack speed 0.70 are ASSUMED (the doc gives only HP and AD).
 * **Lum** — the passive follows the doc (+15 / 30 / 100 % Armor, MR and AD). The active keeps the designer's earlier, more detailed spec (punch, knock-up of the units behind the target, splash): the doc only says "heavy Physical Damage" and gives no numbers.
@@ -29,5 +29,13 @@ picks the most literal reading and marks it `ASSUMED` in a comment. These are th
 * **Omnilium** — the doc gives it no synergy of its own; it stays a plain tag (Protector is Les / Lum's).
 * **Assassin (2/4)** — the Assassins are Vex, Lunis and Raa (the three champions the doc calls "Assassin"); the 4 breakpoint needs the Assassin Emblem. The synergy makes abilities able to crit, adds +20% / +50% crit damage **and +15% / +30% crit chance** (no champion has a base crit chance, so the chance comes from the synergy).
 * **The opening (round 1)** — everyone is dealt one random **1-cost** unit and the shop is closed for round 1 (`openingUnitCosts`, `shopClosedOpeningRounds` in `GameConfig`; the designer said "a random unit", the cost is ASSUMED). The board holds `level` units (level 1 = 1 ... level 10 = 10).
-* **Mother Nature** — the doc names Tier 1 (early game) and Tier 3 (late game); Tier 3 starts at stage 4 (round 18) and there is no Tier 2 (ASSUMED; add one with a `fromStage` in between). All gift weights are ASSUMED. The shop is closed for the whole of a Mother Nature round, buying XP is still allowed, and a timeout auto-picks the first offer.
+* **Mother Nature** — three tiers by stage, as the designer decided: early game (stages 1-2), mid game (stages 3-4), late game (stage 5+). The unit gift scales with the stage: stage 1 a 1-cost unit, stage 2 a 1- or 2-cost, stages 3-4 a 3- or 4-cost, stage 5+ a 5-cost (`costsByStage` in `mother_nature.json`). All gift weights are ASSUMED. The shop is closed for the whole of a Mother Nature round, buying XP is still allowed, and a timeout auto-picks the first offer.
   The carousel (the old placeholder Draft phase) and augments are gone: the phase that used to be Draft is now MotherNature.
+
+## Presentation numbers (Phase B): all ASSUMED, all only for animation
+Attack windup 0.2 s, ranged projectile speed 12 hexes/s (champions with range >= 2), cast windup 0.3 s are the defaults (`CombatConfig`); a champion or ability overrides them in the data (`stats.attackWindup`, `stats.projectileSpeed`, ability `windup`;
+Baira, Rot and Lich have examples). They never change the outcome of a fight, only the timings a viewer animates with, and they are not part of the data hash (retuning them does not invalidate a saved match).
+
+## Balance pass (Phase A)
+`data/champions.json` and `data/traits.json` were retuned with the bulk simulator: see `balance.md` for what changed and why. The designer's original numbers are frozen in `tests/data/designer_spec_champions.json` / `designer_spec_traits.json`
+(the mechanics tests use them). Where the pass departs from the design document on purpose: **Baira** (HP, attack and AP raised: the sheet's 100/150/200 HP made her die in two hits), **tanks** (HP and armor cut to speed the fights), **Coregons 3** (2 souls instead of 3, weaker echo).

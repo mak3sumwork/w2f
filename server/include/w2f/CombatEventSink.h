@@ -44,6 +44,8 @@ public:
     // Mana bar sync. `manaMilli` is thousandths of a mana; max and regen rate came with OnSpawn.
     // Not sent for passive regen: interpolate between events (see CombatEventType::ManaChanged).
     virtual void OnManaChanged(int /*tick*/, UnitId /*unit*/, int /*manaMilli*/) {}
+    // The fight went into overtime: units act `speed` times faster from `tick`, until one team is wiped out (`durationTicks` is 0).
+    virtual void OnOvertime(int /*tick*/, int /*speed*/, int /*durationTicks*/) {}
 };
 
 // Dispatches every event of `log`, in stream order, to `sink`.

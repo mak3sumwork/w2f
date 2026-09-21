@@ -59,6 +59,7 @@ struct DotInst {
     std::uint8_t flags;
     bool visible;           // shown to the client as a status (burn); spread basic attacks are not
     int healPercent = 0;    // a drain: the source heals this % of each hit's damage
+    StatusType visual = StatusType::Burn;   // which typed DoT it is (Burn / Poison / Bleed / Drain): tags its Damage events
 };
 
 struct DealtEntry {
@@ -76,6 +77,7 @@ struct Hit {
     const DamageEffect* effect = nullptr;  // the ability effect that made this hit (for its on-kill statuses); null for basic attacks / DoTs
     bool fromHook = false;                 // made by a hook trigger's effect: it fires no hooks of its own (no chain reactions)
     int healPercent = 0;                   // a drain (DoT): the source heals this % of the damage the hit deals
+    std::uint8_t kind = 0;                 // a typed DoT tick: its visual (StatusType), for the Damage event's `kind`; 0 otherwise
 };
 
 struct CastRecord {
@@ -279,10 +281,13 @@ public:
 
         int tick = 0;
         bool timedOut = true;
+        // The fight's safety limit (see CombatConfig::hardLimitTicks) -- never more than the phase gives it. Normal fights end long before.
+        const int limit = std::min(maxTicks_, config_.hardLimitTicks);
         if (alive_[0] == 0 || alive_[1] == 0) {
             timedOut = false;  // nothing to fight
         } else {
-            for (; tick < maxTicks_; ++tick) {
+            for (; tick < limit; ++tick) {
+                if (tick == config_.regulationTicks && config_.overtimeSpeed > 1) EnterOvertime(tick);
                 ExpireEffects(tick);
                 UpdateAuras(tick);
                 for (std::size_t i = 0; i < units_.size(); ++i) {
@@ -296,12 +301,12 @@ public:
             }
         }
 
-        log_.endTick = timedOut ? maxTicks_ : tick;
+        log_.endTick = timedOut ? limit : tick;
         DespawnSummons(log_.endTick);   // "vanish completely when combat ends"
         log_.survivors[0] = alive_[0];
         log_.survivors[1] = alive_[1];
         log_.pathSearches = pathSearches_;
-        result.winner = Decide();
+        result.winner = timedOut ? DecideAtLimit() : Decide();   // (a fight only reaches its safety limit if it can never end)
         log_.checksum = log_.ComputeChecksum();
         result.log = std::move(log_);
         return result;
@@ -403,23 +408,43 @@ private:
         return std::find(u.champion->traits.begin(), u.champion->traits.end(), trait) != u.champion->traits.end() ||
                std::find(u.extraTraits.begin(), u.extraTraits.end(), trait) != u.extraTraits.end();
     }
-    static int EffectiveAttackInterval(const FightUnit& u) {
+    // (Overtime multiplies attack speed: overtimeFactor_ is 1 until the fight goes into overtime.)
+    int EffectiveAttackInterval(const FightUnit& u) const {
         const int speed = std::max(10, 100 + StatusPercent(u, StatusType::AttackSpeed));
-        return std::max(1, u.attackInterval * 100 / speed);
+        return std::max(1, u.attackInterval * 100 / (speed * overtimeFactor_));
     }
+    int MoveTicks() const { return std::max(1, config_.ticksPerHexMove / overtimeFactor_); }
 
-    CombatWinner Decide() const {
-        if (alive_[0] == 0 && alive_[1] == 0) return CombatWinner::Draw;
-        if (alive_[1] == 0) return CombatWinner::Home;
-        if (alive_[0] == 0) return CombatWinner::Away;
-        // Time limit: more survivors, then more total HP.
+    // The safety net for a fight that cannot end: more surviving units, then more total HP, then a coin from the fight's own seed. Never a draw.
+    CombatWinner DecideAtLimit() {
         if (alive_[0] != alive_[1]) return alive_[0] > alive_[1] ? CombatWinner::Home : CombatWinner::Away;
         long long hp[2] = {0, 0};
         for (const FightUnit& u : units_) {
             if (u.alive && !u.isSummon) hp[u.team] += u.hp;
         }
-        if (hp[0] == hp[1]) return CombatWinner::Draw;
-        return hp[0] > hp[1] ? CombatWinner::Home : CombatWinner::Away;
+        if (hp[0] != hp[1]) return hp[0] > hp[1] ? CombatWinner::Home : CombatWinner::Away;
+        return (rng_.Next64() & 1) == 0 ? CombatWinner::Home : CombatWinner::Away;
+    }
+
+    // Whoever still has units when the other side has none. (Both sides gone on the same tick is the only draw.)
+    CombatWinner Decide() const {
+        if (alive_[0] == 0 && alive_[1] == 0) return CombatWinner::Draw;
+        if (alive_[1] == 0) return CombatWinner::Home;
+        if (alive_[0] == 0) return CombatWinner::Away;
+        return CombatWinner::Draw;
+    }
+
+    // Regulation is over and nobody has won: everything that acts on a timer runs overtimeSpeed times faster from now on. Timers that were
+    // already running are shortened to match, so the change is felt at once rather than up to a whole attack interval later.
+    void EnterOvertime(int tick) {
+        overtimeFactor_ = config_.overtimeSpeed;
+        for (FightUnit& u : units_) {
+            u.nextAttackTick = tick + std::max(0, u.nextAttackTick - tick) / overtimeFactor_;
+            u.nextMoveTick = tick + std::max(0, u.nextMoveTick - tick) / overtimeFactor_;
+        }
+        CombatEvent e = MakeEvent(tick, CombatEventType::Overtime, kInvalidUnitId);
+        e.amount = overtimeFactor_;   // (duration stays 0: overtime lasts until a team is wiped out)
+        log_.events.push_back(e);
     }
 
     // Closest living enemy; ties go to the lowest UnitId (units_ is sorted, and only a strictly
@@ -544,11 +569,11 @@ private:
         CombatEvent e = MakeEvent(tick, CombatEventType::Move, u.id);
         e.from = u.pos;
         e.to = next;
-        e.amount = config_.ticksPerHexMove;
+        e.amount = MoveTicks();
         log_.events.push_back(e);
         u.pos = next;
         ++u.pathIndex;
-        u.nextMoveTick = tick + config_.ticksPerHexMove;
+        u.nextMoveTick = tick + MoveTicks();
     }
 
     // True if `u.path[u.pathIndex]` is a valid, free next step. Only searches when the cached
@@ -585,6 +610,17 @@ private:
 
         CombatEvent e = MakeEvent(tick, CombatEventType::Attack, u.id);
         e.other = victim.id;
+        // Presentation: this tick is the moment of impact; the swing starts `windup` (+ `flight`) ticks earlier (see Combat.h). Faster in overtime.
+        e.from = u.pos;
+        e.to = victim.pos;
+        const CombatStats& stats = u.champion->stats;
+        const int speed = stats.projectileSpeedMilli >= 0 ? stats.projectileSpeedMilli : (stats.attackRange >= 2 ? config_.defaultRangedProjectileSpeedMilli : 0);
+        e.windup = (stats.attackWindupTicks >= 0 ? stats.attackWindupTicks : config_.defaultAttackWindupTicks) / overtimeFactor_;
+        if (speed > 0) {
+            const long long distance = std::max(1, hex::Distance(u.pos, victim.pos));
+            e.kind = 1;
+            e.flight = std::max<int>(1, static_cast<int>((distance * kTicksPerSecond * 1000 + speed - 1) / speed) / overtimeFactor_);   // (a projectile is always in the air for a tick)
+        }
         log_.events.push_back(e);
 
         if (u.maxMana > 0) {
@@ -678,6 +714,14 @@ private:
         e.ability = ability.id;
         e.duration = lock;
         e.flags = onDeath ? kFlagOnDeath : 0;
+        // Presentation: the animation's lead time, and the area the spell covers (see Combat.h).
+        e.windup = (ability.windupTicks >= 0 ? ability.windupTicks : config_.defaultCastWindupTicks) / overtimeFactor_;
+        const AreaDescription area = DescribeArea(ability);
+        e.shape = static_cast<std::uint8_t>(area.shape);
+        e.size = static_cast<std::uint8_t>(std::clamp(area.size, 0, 255));
+        e.from = u.pos;
+        const bool aroundTarget = area.shape == AreaShape::Circle || area.shape == AreaShape::Line || area.shape == AreaShape::Cone || area.shape == AreaShape::Single;
+        e.to = aroundTarget && targetIndex >= 0 ? units_[static_cast<std::size_t>(targetIndex)].pos : u.pos;
         log_.events.push_back(e);
     }
 
@@ -802,7 +846,7 @@ private:
             // Exact and Bresenham-like: with a constant regen the total after L+1 ticks is floor(regen * (L+1) / 30); the remainder is
             // carried, so regen bonuses that appear mid-fight (items, hooks) stay exact too.
             const int regen = std::max(0, u.regenMilli + StatusPercent(u, StatusType::BonusManaRegen));
-            u.manaFraction += regen;
+            u.manaFraction += regen * overtimeFactor_;
             const int gain = u.manaFraction / kTicksPerSecond;
             u.manaFraction -= gain * kTicksPerSecond;
             ++u.livedTicks;
@@ -1225,6 +1269,7 @@ private:
                 inst.remainingRaw = Clamp32(dot->amountIsTotal ? amount : amount * hits);
                 inst.flags = static_cast<std::uint8_t>(kFlagDot | kFlagAbility);
                 inst.visible = true;
+                inst.visual = dot->visual;
                 inst.healPercent = dot->healPercent;
                 holder.dots.push_back(inst);
 
@@ -1255,8 +1300,8 @@ private:
         for (std::size_t i = 0; i < units_.size(); ++i) {
             FightUnit& u = units_[i];
             if (!u.alive || u.dots.empty()) continue;
-            bool hadVisible = false;
-            for (const DotInst& d : u.dots) hadVisible = hadVisible || d.visible;
+            std::uint64_t visualsBefore = 0;   // one bit per visible DoT visual (StatusType values are < 64)
+            for (const DotInst& d : u.dots) visualsBefore |= d.visible ? 1ull << static_cast<unsigned>(d.visual) : 0;
 
             for (DotInst& d : u.dots) {
                 if (tick < d.nextTick || d.hitsLeft <= 0) continue;
@@ -1269,17 +1314,20 @@ private:
                 if (raw > 0) {
                     Hit hit{d.source, static_cast<int>(i), d.type, raw, d.flags};
                     hit.healPercent = d.healPercent;
+                    hit.kind = d.visible ? static_cast<std::uint8_t>(d.visual) : 0;
                     hits_.push_back(hit);
                 }
             }
             u.dots.erase(std::remove_if(u.dots.begin(), u.dots.end(), [](const DotInst& d) { return d.hitsLeft <= 0; }),
                          u.dots.end());
 
-            bool hasVisible = false;
-            for (const DotInst& d : u.dots) hasVisible = hasVisible || d.visible;
-            if (hadVisible && !hasVisible) {
+            std::uint64_t visualsAfter = 0;
+            for (const DotInst& d : u.dots) visualsAfter |= d.visible ? 1ull << static_cast<unsigned>(d.visual) : 0;
+            for (unsigned bit = 0; bit < 64; ++bit) {   // each typed DoT that has just run out ends on its own (Burn and Poison can overlap)
+                const std::uint64_t mask = 1ull << bit;
+                if ((visualsBefore & mask) == 0 || (visualsAfter & mask) != 0) continue;
                 CombatEvent e = MakeEvent(tick, CombatEventType::StatusEnded, u.id);
-                e.subtype = static_cast<std::uint8_t>(StatusType::Burn);
+                e.subtype = static_cast<std::uint8_t>(bit);
                 e.hpAfter = u.hp;
                 log_.events.push_back(e);
             }
@@ -1320,7 +1368,7 @@ private:
             }
             damage -= redirected;
 
-            DealResolved(h.target, h.source, damage, raw, h.type, h.flags, tick, h.effect, h.fromHook);
+            DealResolved(h.target, h.source, damage, raw, h.type, h.flags, tick, h.effect, h.fromHook, true, h.kind);
             if (h.healPercent > 0 && attacker.alive) HealUnit(h.source, h.source, Clamp32(static_cast<long long>(damage) * h.healPercent / 100), tick);
             if (redirected > 0) {
                 const auto flags = static_cast<std::uint8_t>((h.flags & ~kFlagBasic) | kFlagRedirected);
@@ -1333,7 +1381,7 @@ private:
     // The tail of a hit, once its final damage is known: shield reduction and absorption, HP, the event, and the
     // bookkeeping that formulas / mana / kill effects read. `raw` is the pre-mitigation damage (0 for a redirected share).
     void DealResolved(int victimIndex, int attackerIndex, int damage, int raw, DamageType type, std::uint8_t flags, int tick,
-                      const DamageEffect* effect, bool fromHook, bool credit = true) {
+                      const DamageEffect* effect, bool fromHook, bool credit = true, std::uint8_t kind = 0) {
         FightUnit& victim = units_[static_cast<std::size_t>(victimIndex)];
         FightUnit& attacker = units_[static_cast<std::size_t>(attackerIndex)];
 
@@ -1361,6 +1409,7 @@ private:
         e.hpAfter = victim.hp;
         e.subtype = static_cast<std::uint8_t>(type);
         e.flags = static_cast<std::uint8_t>(flags | (fromHook ? kFlagTriggered : 0));
+        e.kind = kind;
         log_.events.push_back(e);
 
         // Shields that were fully used up end now (and count as "broken").
@@ -2011,6 +2060,7 @@ private:
     const ChampionDatabase* summons_;
     const ChampionDatabase* summons2_;
     int maxTicks_;
+    int overtimeFactor_ = 1;   // 1 in regulation, CombatConfig::overtimeSpeed in overtime
     Rng rng_;
     HexGrid grid_;
     HexPathfinder pathfinder_;

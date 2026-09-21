@@ -360,7 +360,7 @@ void AIBotController::EquipItems(MatchManager& match) {
     const std::vector<ItemId> bag = self->ItemBag();   // a copy: equipping (and combining) changes the bag as we go
     for (ItemId id : bag) {
         const ItemDefinition* item = items->Find(id);
-        if (item == nullptr) continue;
+        if (item == nullptr || item->IsConsumable()) continue;   // (it keeps its Item Removers: it never takes its own items off)
         const UnitInstance* best = nullptr;
         int bestScore = kNotWanted;
         for (const UnitInstance& unit : self->Roster().Units()) {

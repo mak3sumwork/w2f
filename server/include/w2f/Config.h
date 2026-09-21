@@ -77,8 +77,14 @@ struct MatchConfig {
     int playerCount = kMaxPlayers;
     int motherNatureTicks = Seconds(20);   // how long players have to pick a gift (the phase ends sooner once everybody has)
     int planningTicks = Seconds(30);
-    int combatTicks = Seconds(40);
-    int resolutionTicks = Seconds(5);
+    // The LONGEST a Combat phase can last: it must cover CombatConfig::hardLimitTicks plus the linger (normal fights end far earlier). With combatEndsWithFights (the default) the phase
+    // ends `combatLingerTicks` after the last fight of the round has ended (never shorter than combatMinTicks), like a normal auto-battler; without
+    // it every Combat phase lasts combatTicks.
+    int combatTicks = Seconds(125);
+    bool combatEndsWithFights = true;
+    int combatLingerTicks = Seconds(2);
+    int combatMinTicks = Seconds(3);
+    int resolutionTicks = Seconds(3);      // the beat after a fight: damage, gold and streaks are shown, then the next round starts
     // Mother Nature (replaces the carousel and augments): rounds 3, 6, 9 ... open with a gift phase instead of a shop. Needs
     // data/mother_nature.json loaded: without it these rounds are ordinary rounds.
     int motherNatureEveryRounds = 3;
@@ -138,6 +144,21 @@ struct CombatConfig {
     int rawDamagePerMana = 10;              // +1 mana per this much PRE-mitigation damage taken
     int manaFromDamagePerTickCapMilli = 20000;  // a unit gains at most this much mana from damage in one tick
     // Mana is not gained while a unit is locked in a cast animation.
+
+    // OVERTIME (all in ticks). A fight runs `regulationTicks` at normal speed; if it is still undecided it goes into overtime, which lasts UNTIL ONE TEAM IS
+    // WIPED OUT: every unit's attack speed, movement and mana regeneration run `overtimeSpeed` times faster (cast animations, damage-over-time and status
+    // durations keep their normal length). There are no timeouts and no draws by time. `hardLimitTicks` is only a safety net against a fight that can
+    // never end (two teams that cannot hurt each other): when it is reached the fight is decided deterministically -- more surviving units, then more
+    // total HP, then a coin from the fight's seed -- so a fight ALWAYS has a winner. (Only a mutual wipe-out on the same tick is a draw.)
+    int regulationTicks = Seconds(30);
+    int overtimeSpeed = 4;
+    int hardLimitTicks = Seconds(120);
+
+    // Presentation defaults (see CombatEvent: windup / flight). Per champion `stats.attackWindup` / `stats.projectileSpeed` and per ability `windup` override them.
+    // They never change what happens in a fight, only the timings a viewer is told to animate with.
+    int defaultAttackWindupTicks = 6;              // 0.2 s
+    int defaultRangedProjectileSpeedMilli = 12000; // 12 hexes per second, for champions with range >= 2
+    int defaultCastWindupTicks = 9;                // 0.3 s
 
     int critBonusPercent = 21;    // a crit deals base damage + 21%
     int dotSpreadIntervalTicks = 10;  // spread basic attacks (attackSpreadTicks) hit once per this many ticks

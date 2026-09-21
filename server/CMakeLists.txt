@@ -73,6 +73,8 @@ endif()
 
 set(W2F_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data")
 set(W2F_TEST_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+set(W2F_SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/docs/schemas")
+set(W2F_GOLDEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
 
 # ---- the engine: headless, integer-only, deterministic; no networking ---------------------------------------------------------------------
 file(GLOB W2F_ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
@@ -95,7 +97,9 @@ find_package(Threads REQUIRED)
 function(w2f_data_defs target)
   target_compile_definitions(${target} PRIVATE
     W2F_DATA_DIR="${W2F_DATA_DIR}"
-    W2F_TEST_DATA_DIR="${W2F_TEST_DATA_DIR}")
+    W2F_TEST_DATA_DIR="${W2F_TEST_DATA_DIR}"
+    W2F_SCHEMA_DIR="${W2F_SCHEMA_DIR}"
+    W2F_GOLDEN_DIR="${W2F_GOLDEN_DIR}")
 endfunction()
 
 # The engine's own tests link ONLY the engine: if the engine ever needed the network layer, this would stop linking.
@@ -118,8 +122,14 @@ add_executable(w2f_server tools/w2f_server.cpp)
 target_link_libraries(w2f_server PRIVATE w2f_net)
 w2f_data_defs(w2f_server)
 
+# The bulk match simulator behind the balance passes (docs/balance.md).
+add_executable(w2f_balance tools/balance_sim.cpp)
+target_link_libraries(w2f_balance PRIVATE w2f_engine)
+w2f_data_defs(w2f_balance)
+
 enable_testing()
 add_test(NAME isolation
          COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_isolation.cmake)
 add_test(NAME engine COMMAND w2f_tests)
 add_test(NAME net COMMAND w2f_net_tests)
+add_test(NAME balance_smoke COMMAND w2f_balance --matches 2)   # the tool runs and reads the production data

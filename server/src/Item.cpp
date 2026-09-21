@@ -41,6 +41,9 @@ std::unique_ptr<ItemDatabase> ItemDatabase::Create(std::vector<ItemDefinition> d
             }
         }
         if ((item.components[0] == 0) != (item.components[1] == 0)) return fail("item '" + item.name + "' needs two components (or none)");
+        if (item.IsConsumable() && (item.IsCombined() || !item.stats.IsEmpty() || !item.grantsTraits.empty() || !item.abilities.empty() || !item.auras.empty())) {
+            return fail("item '" + item.name + "' is a consumable: it cannot be crafted and has no stats, traits, abilities or auras");
+        }
         if (item.IsCombined()) {
             for (ItemId c : item.components) {
                 if (c == item.id) return fail("item '" + item.name + "' is made from itself");
@@ -68,7 +71,7 @@ std::unique_ptr<ItemDatabase> ItemDatabase::Create(std::vector<ItemDefinition> d
     }
     for (const ItemDefinition& item : definitions) {
         // A plain component (an Omnilium Seed) may have no effect of its own -- but only if some recipe uses it.
-        if (!item.HasEffect() && !item.IsCombined() && ingredients.count(item.id) == 0) {
+        if (!item.HasEffect() && !item.IsCombined() && !item.IsConsumable() && ingredients.count(item.id) == 0) {
             return fail("item '" + item.name + "' does nothing (no stats, traits, abilities or auras) and is not used in any recipe");
         }
     }
@@ -106,6 +109,7 @@ std::uint64_t ItemDatabase::ContentHash() const {
         for (int v : {s.maxHp, s.armor, s.magicResist, s.attackDamage, s.abilityDamage, s.attackSpeedPercent, s.critChance, s.startMana, s.manaRegenMilli}) h.AddInt(v);
         h.Add(d.components[0]);
         h.Add(d.components[1]);
+        h.Add(static_cast<std::uint64_t>(d.use));
         h.AddInt(static_cast<std::int64_t>(d.abilities.size()));
         for (const AbilityDefinition& a : d.abilities) HashAbility(h, a);
         h.AddInt(static_cast<std::int64_t>(d.auras.size()));

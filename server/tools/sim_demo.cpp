@@ -65,6 +65,9 @@ struct PrintSink : ICombatEventSink {
             case StatusType::ExecuteBelow: return "EXECUTE-BELOW%";
             case StatusType::HpPerSecond: return "HP-PER-SECOND%";
             case StatusType::EmpoweredAttack: return "EMPOWERED-ATTACKS";
+            case StatusType::Poison: return "POISON";
+            case StatusType::Bleed: return "BLEED";
+            case StatusType::Drain: return "DRAIN";
         }
         return "?";
     }

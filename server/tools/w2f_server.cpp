@@ -12,11 +12,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 
 #include "w2f/ChampionLoader.h"
 #include "w2f/net/GameServer.h"
+#include "w2f/net/ResumeFile.h"
 #include "w2f/net/TcpServer.h"
 
 #ifndef W2F_DATA_DIR
@@ -39,6 +41,8 @@ struct Options {
     std::string dataDir = W2F_DATA_DIR;
     std::uint64_t seed = 0;
     std::string autosave;
+    std::string resume;  // restart from an autosave (see --autosave): FILE and FILE.seats
+    std::string joinCode;   // a private server: connections must bring ?code=...
     bool fast = false;   // development: much shorter phases, so a client can be tried against a whole match in minutes
 };
 
@@ -57,9 +61,11 @@ bool ParseArgs(int argc, char** argv, Options& o) {
         else if (a == "--data") { if (!(v = value("--data"))) return false; o.dataDir = v; }
         else if (a == "--seed") { if (!(v = value("--seed"))) return false; o.seed = std::strtoull(v, nullptr, 10); }
         else if (a == "--fast") { o.fast = true; }
+        else if (a == "--resume") { if (!(v = value("--resume"))) return false; o.resume = v; }
+        else if (a == "--join-code") { if (!(v = value("--join-code"))) return false; o.joinCode = v; }
         else if (a == "--autosave") { if (!(v = value("--autosave"))) return false; o.autosave = v; }
         else {
-            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--fast]\n", a.c_str());
+            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast]\n", a.c_str());
             return false;
         }
     }
@@ -148,15 +154,33 @@ int main(int argc, char** argv) {
     if (opt.fast) gsc.postMatchTicks = Seconds(3);
 
     TcpServerConfig tcfg;
+    tcfg.joinCode = opt.joinCode;
     tcfg.bindAddress = opt.bind;
     tcfg.port = opt.port;
     TcpServer tcp(tcfg);
     GameServer game(gsc, data, tcp);
+    if (!opt.resume.empty() && opt.autosave.empty()) opt.autosave = opt.resume;   // (a resumed server keeps saving where it was resumed from)
     if (!opt.autosave.empty()) {
-        game.SetSnapshotSink([&](int round, const std::vector<std::uint8_t>& bytes) {
-            WriteFileAtomically(opt.autosave, bytes);
-            std::printf("[autosave] round %d: %zu bytes -> %s\n", round, bytes.size(), opt.autosave.c_str());
+        game.SetSnapshotSink([&](int round, const std::vector<std::uint8_t>& bytes, const std::string& seatsJson) {
+            const std::vector<std::uint8_t> file = PackResumeFile(bytes, seatsJson);   // snapshot + seats in ONE file, renamed into place: never half-written
+            WriteFileAtomically(opt.autosave, file);
+            std::printf("[autosave] round %d: %zu bytes -> %s\n", round, file.size(), opt.autosave.c_str());
         });
+    }
+    game.SetMatchFinishedHandler([&] {   // a finished match must never be resumed: forget the restart point
+        if (!opt.autosave.empty() && std::remove(opt.autosave.c_str()) == 0) std::printf("[autosave] the match is over: removed %s\n", opt.autosave.c_str());
+    });
+    if (!opt.resume.empty()) {
+        std::ifstream in(opt.resume, std::ios::binary);
+        const std::vector<std::uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::vector<std::uint8_t> snapshot;
+        std::string seatsJson;
+        if (!in || !UnpackResumeFile(file, snapshot, seatsJson, &error) || !game.Resume(snapshot, seatsJson, &error)) {
+            std::fprintf(stderr, "Cannot resume from %s: %s\n", opt.resume.c_str(), error.c_str());
+            return 2;
+        }
+        std::printf("Resumed the match from %s (round %d): the players reconnect with their tokens\n", opt.resume.c_str(), game.match() != nullptr ? game.match()->Round() : 0);
+        if (opt.autosave.empty()) opt.autosave = opt.resume;   // keep saving to the same file
     }
     LoggingHandler logging(game);
     tcp.SetHandler(&logging);

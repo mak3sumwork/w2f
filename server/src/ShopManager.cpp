@@ -33,7 +33,7 @@ ActionResult ShopManager::TryBuy(std::size_t slot) {
     if (champion == nullptr) return ActionResult::EmptySlot;
     // Room is checked before gold so a rejected purchase changes nothing. A full roster still
     // accepts a copy that completes a merge.
-    if (!owner_.CanAcquire(champion)) return ActionResult::RosterFull;
+    if (!owner_.CanAcquire(champion)) return owner_.AcquireBlockedReason(champion);
     if (owner_.Gold() < champion->cost) return ActionResult::NotEnoughGold;
 
     const bool paid = owner_.TrySpendGold(champion->cost);

@@ -11,6 +11,22 @@ so 1-1, 1-2, 1-3, 2-7, 3-7 ... (`pveRoundInLaterStages = 0` means none after sta
 
 Each round runs [MotherNature] -> Planning -> Combat -> Resolution, where MotherNature only exists on Mother Nature's rounds (below). Income is paid at the start of the round (see Streaks).
 
+## Timing, combat length and overtime
+| phase | length (`MatchConfig`) |
+|---|---|
+| Mother Nature (her rounds only) | 20 s (ends sooner once everybody has picked) |
+| Planning | 30 s |
+| Combat | as long as the round's longest fight + `combatLingerTicks` (2 s), at least `combatMinTicks` (3 s), at most `combatTicks` (**125 s**: the safety limit + the linger; normal fights are ~20 s); known from the first tick (`MatchManager::PhaseTicks()`). `combatEndsWithFights = false` makes every Combat phase exactly `combatTicks` |
+| Resolution | 3 s: damage, gold and streaks are shown, then the next round starts |
+
+* **Fight length**: regulation is `CombatConfig::regulationTicks` (30 s). A fight still undecided then goes into **overtime**: from that tick every unit's **attack speed, movement and mana regeneration run `overtimeSpeed` (4) times faster**
+  (attack intervals and step times are divided by 4; cast animations, damage-over-time and status durations keep their normal length). The stream carries one `Overtime` event at tick 900 (`amount` = the factor; `duration` 0: it has no end) so a viewer can announce it, and every later Move / Attack
+  simply comes 4x as often. **Overtime lasts until one team is wiped out: there are no timeouts and no draws by time.** Only both teams dying on the same tick is a draw. `CombatConfig::hardLimitTicks` (120 s) is a safety net against a fight that can never end (two teams that cannot
+  hurt each other): when it is reached the fight is decided deterministically (more surviving units, then more total HP, then a coin from the fight's seed), so a fight ALWAYS has a winner. The fight is a pure function of its inputs, overtime included, so determinism is unchanged.
+* **The shop** is open in every round except round 1 (the opening, below) and Mother Nature's rounds; in those two it is locked completely (`ShopClosed`, the offers are empty) in every phase. **It stays open while units fight**: in Combat and Resolution a player can buy XP, reroll and buy champions.
+  A champion bought then goes to the **bench** (never the board) and may only merge with bench units; a copy that would have to merge into a unit on the board is refused (`UnitInCombat`). **The board is locked** during Combat and Resolution: selling, moving and equipping (or unequipping) are allowed for bench units only.
+  (Mother Nature's own phase accepts only `pick_gift`.)
+
 ## The opening and the board size (TFT rules)
 * **Round 1 is the opening**: `MatchConfig::shopClosedOpeningRounds` (1) rounds have **no shop** (`TryBuyShopUnit` / `TryRerollShop` answer `ShopClosed`, exactly as in a Mother Nature round), and in `MatchManager::Start()` every player is
   dealt one random unit of each cost in `openingUnitCosts` ({1}, **ASSUMED**: the designer said "a random unit") from the shared pool, free (`OnUnitBought` with 0 gold). It lands on the bench; the player puts it on the board. The shop opens in round 2.

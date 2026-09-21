@@ -109,9 +109,21 @@ public:
     // against a bare engine and prove the network changed nothing). The bots' actions are not reported: with bots the replay would need them too.
     using CommandObserver = std::function<void(std::uint64_t tick, PlayerId player, const Command& command, ActionResult result)>;
     void SetCommandObserver(CommandObserver observer);
-    // Receives the engine's automatic snapshot at the start of every Planning phase (where the server persists it).
-    using SnapshotSink = std::function<void(int round, const std::vector<std::uint8_t>& snapshot)>;
+    // Receives the engine's automatic snapshot at the start of every Planning phase (where the server persists it), together with the SEATS sidecar: a
+    // small JSON text with what the snapshot cannot hold -- every seat's reconnect token, which seats are bots and the bots' own state. Persist both
+    // (w2f_server --autosave FILE writes FILE and FILE.seats); Resume needs the pair.
+    using SnapshotSink = std::function<void(int round, const std::vector<std::uint8_t>& snapshot, const std::string& seatsJson)>;
     void SetSnapshotSink(SnapshotSink sink);
+
+    // Called once when a match ends (the moment `match_over` goes out). The server tool deletes its autosave then: a finished match must never be resumed.
+    using MatchFinishedHandler = std::function<void()>;
+    void SetMatchFinishedHandler(MatchFinishedHandler handler);
+
+    // Crash recovery: turns a freshly started server (no match, nobody connected) into the server that wrote this snapshot, at the start of that round's
+    // Planning phase. The humans' seats come back with their old tokens (nobody is connected yet: each reconnects with `?token=...` and is resynced), the
+    // bots come back with their state, and the match carries on tick for tick as it would have. The server must be configured like the one that wrote it
+    // (seats, bots, data files, rules); anything else is refused, with the reason in *error. False and unchanged on any failure.
+    bool Resume(const std::vector<std::uint8_t>& snapshot, const std::string& seatsJson, std::string* error = nullptr);
 
 private:
     class Impl;

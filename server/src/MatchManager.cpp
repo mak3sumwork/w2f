@@ -84,7 +84,7 @@ int MatchManager::PhaseDuration(MatchPhase phase) const {
     switch (phase) {
         case MatchPhase::MotherNature: return config_.match.motherNatureTicks;
         case MatchPhase::Planning: return config_.match.planningTicks;
-        case MatchPhase::Combat: return config_.match.combatTicks;
+        case MatchPhase::Combat: return combatPhaseTicks_ > 0 ? combatPhaseTicks_ : config_.match.combatTicks;
         case MatchPhase::Resolution: return config_.match.resolutionTicks;
         case MatchPhase::NotStarted:
         case MatchPhase::MatchOver: break;
@@ -189,6 +189,14 @@ void MatchManager::BuildMatchups() {
     }
 }
 
+int MatchManager::ComputeCombatTicks() const {
+    const MatchConfig& m = config_.match;
+    if (!m.combatEndsWithFights) return m.combatTicks;
+    int lastEnd = 0;
+    for (const CombatOutcome& outcome : outcomes_) lastEnd = std::max(lastEnd, outcome.log.endTick);
+    return std::min(m.combatTicks, std::max(m.combatMinTicks, lastEnd + m.combatLingerTicks));
+}
+
 void MatchManager::RunCombat() {
     outcomes_.clear();
     if (simulator_) {
@@ -202,6 +210,7 @@ void MatchManager::RunCombat() {
             outcomes_.push_back(std::move(draw));
         }
     }
+    combatPhaseTicks_ = ComputeCombatTicks();
     for (const CombatOutcome& outcome : outcomes_) {
         for (IMatchListener* listener : listeners_) listener->OnCombatSimulated(round_, outcome);
     }
@@ -296,7 +305,9 @@ PveDrop MatchManager::GrantPveDrop(PlayerState& player, std::uint32_t encounterI
     const auto itemChoices = [&](const PveDropEntry& entry) {
         std::vector<ItemId> choices = entry.items;
         if (choices.empty() && items_ != nullptr) {
-            for (const ItemDefinition& def : items_->All()) choices.push_back(def.id);
+            for (const ItemDefinition& def : items_->All()) {
+                if (!def.IsConsumable()) choices.push_back(def.id);   // "any item" never means a consumable: those drop only where a table names them
+            }
         }
         return choices;
     };
@@ -371,7 +382,7 @@ bool MatchManager::GiftUsable(const GiftDefinition& gift) const {
         case GiftType::Heal: return true;
         case GiftType::Item: return items_ != nullptr && !GiftItemChoices(gift, *items_).empty();
         case GiftType::Unit:
-            for (int cost : gift.costs) {
+            for (int cost : gift.CostsAt(config_.match.StageOf(round_).stage)) {
                 if (pool_.RemainingInTier(cost) > 0) return true;
             }
             return false;
@@ -399,7 +410,7 @@ bool MatchManager::RealizeGift(const GiftDefinition& gift, Rng& rng, GiftOffer& 
         }
         case GiftType::Unit: {
             std::vector<int> costs;
-            for (int cost : gift.costs) {
+            for (int cost : gift.CostsAt(config_.match.StageOf(round_).stage)) {   // (a unit's cost scales with the stage)
                 if (pool_.RemainingInTier(cost) > 0 && std::find(costs.begin(), costs.end(), cost) == costs.end()) costs.push_back(cost);
             }
             if (costs.empty()) return false;
@@ -529,9 +540,13 @@ void MatchManager::EndMatch() {
 
 // ---- Player actions ----------------------------------------------------------------------
 
-ActionResult MatchManager::ResolveActor(PlayerId id, PlayerState*& outPlayer) {
+// Which phases an action may run in. Planning: everything. Combat / Resolution: the shop (buy a champion -- onto the BENCH --, reroll, buy XP) and
+// whatever touches only bench units; the board is locked, because its units are fighting (or have just fought).
+ActionResult MatchManager::ResolveActor(PlayerId id, PlayerState*& outPlayer, ActorRule rule) {
     outPlayer = nullptr;
-    if (phase_ != MatchPhase::Planning) return ActionResult::WrongPhase;
+    const bool planning = phase_ == MatchPhase::Planning;
+    const bool fighting = phase_ == MatchPhase::Combat || phase_ == MatchPhase::Resolution;
+    if (!planning && !(fighting && rule != ActorRule::PlanningOnly)) return ActionResult::WrongPhase;
     PlayerState* player = players_.Get(id);
     if (player == nullptr) return ActionResult::InvalidPlayer;
     if (!player->IsAlive()) return ActionResult::PlayerEliminated;
@@ -539,48 +554,68 @@ ActionResult MatchManager::ResolveActor(PlayerId id, PlayerState*& outPlayer) {
     return ActionResult::Ok;
 }
 
+// True while the board is locked and `unit` is standing on it.
+bool MatchManager::BoardUnitLocked(const PlayerState& player, UnitId unit) const {
+    if (phase_ == MatchPhase::Planning) return false;
+    const UnitInstance* u = player.Roster().Find(unit);
+    return u != nullptr && u->location == LocationType::Board;
+}
+
 ActionResult MatchManager::TryRerollShop(PlayerId player) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
+    const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
     if (check != ActionResult::Ok) return check;
     return IsShopClosed() ? ActionResult::ShopClosed : p->Shop().TryReroll();
 }
 
 ActionResult MatchManager::TryBuyShopUnit(PlayerId player, std::size_t shopSlot) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
+    const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
     if (check != ActionResult::Ok) return check;
-    return IsShopClosed() ? ActionResult::ShopClosed : p->Shop().TryBuy(shopSlot);
+    if (IsShopClosed()) return ActionResult::ShopClosed;
+    p->SetBenchOnlyPurchases(phase_ != MatchPhase::Planning);   // a champion bought while the board is locked goes to the bench
+    const ActionResult result = p->Shop().TryBuy(shopSlot);
+    p->SetBenchOnlyPurchases(false);
+    return result;
 }
 
 ActionResult MatchManager::TryBuyXp(PlayerId player) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
+    const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
     return check == ActionResult::Ok ? p->TryBuyXp() : check;
 }
 
 ActionResult MatchManager::TrySellUnit(PlayerId player, UnitId unit) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
-    return check == ActionResult::Ok ? p->SellUnit(unit) : check;
+    const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
+    if (check != ActionResult::Ok) return check;
+    if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
+    return p->SellUnit(unit);
 }
 
 ActionResult MatchManager::TryMoveUnit(PlayerId player, UnitId unit, LocationType location, int x, int y) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
-    return check == ActionResult::Ok ? p->TryMoveUnit(unit, location, x, y) : check;
+    const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
+    if (check != ActionResult::Ok) return check;
+    // While the board is locked only bench <-> bench moves are allowed (a swap with a board unit would move a fighter).
+    if (phase_ != MatchPhase::Planning && (location == LocationType::Board || BoardUnitLocked(*p, unit))) return ActionResult::UnitInCombat;
+    return p->TryMoveUnit(unit, location, x, y);
 }
 
 ActionResult MatchManager::TryEquipItem(PlayerId player, UnitId unit, ItemId item) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
-    return check == ActionResult::Ok ? p->TryEquipItem(unit, item) : check;
+    const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
+    if (check != ActionResult::Ok) return check;
+    if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
+    return p->TryEquipItem(unit, item);
 }
 
 ActionResult MatchManager::TryUnequipItem(PlayerId player, UnitId unit, int slot) {
     PlayerState* p = nullptr;
-    const ActionResult check = ResolveActor(player, p);
-    return check == ActionResult::Ok ? p->TryUnequipItem(unit, slot) : check;
+    const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
+    if (check != ActionResult::Ok) return check;
+    if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
+    return p->TryUnequipItem(unit, slot);
 }
 
 // ---- Player event fan-out ----------------------------------------------------------------
@@ -602,6 +637,9 @@ void MatchManager::OnItemEquipped(PlayerId player, const UnitInstance& unit, Ite
 }
 void MatchManager::OnItemUnequipped(PlayerId player, const UnitInstance& unit, ItemId item) {
     for (IMatchListener* l : listeners_) l->OnItemUnequipped(player, unit, item);
+}
+void MatchManager::OnItemConsumed(PlayerId player, const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned) {
+    for (IMatchListener* l : listeners_) l->OnItemConsumed(player, unit, consumable, returned);
 }
 void MatchManager::OnItemsCombined(PlayerId player, const UnitInstance& unit, const ItemCombination& combination) {
     for (IMatchListener* l : listeners_) l->OnItemsCombined(player, unit, combination);

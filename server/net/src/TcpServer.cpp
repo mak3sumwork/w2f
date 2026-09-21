@@ -263,6 +263,14 @@ private:
                 c.handshake.clear();
                 return;
             }
+            if (!cfg_.joinCode.empty() && QueryParam(hs.query, "code") != cfg_.joinCode) {   // a private server: wrong or missing join code
+                c.out += BuildHttpError(403, "join code required");
+                c.state = State::Closing;
+                c.closeAfterFlush = true;
+                c.closeDeadline = now_ + cfg_.closeGraceMs;
+                c.handshake.clear();
+                return;
+            }
             c.out += BuildHandshakeResponse(hs.key);
             c.state = State::Open;
             const std::string rest = c.handshake.substr(hs.consumed);

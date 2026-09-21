@@ -23,7 +23,10 @@ struct EnumName {
 constexpr EnumName<ChampionRole> kRoles[] = {{"Tank", ChampionRole::Tank}, {"Damage", ChampionRole::Damage}};
 constexpr EnumName<DamageType> kDamageTypes[] = {
     {"Physical", DamageType::Physical}, {"Magic", DamageType::Magic}, {"True", DamageType::True}};
-// Burn is deliberately absent: it can only come from a DoT effect.
+// The visuals a damage-over-time may have (its `"visual"`). Burn, Poison, Bleed and Drain can only come from a DoT effect: they are not in kStatusTypes.
+constexpr EnumName<StatusType> kDotVisuals[] = {
+    {"Burn", StatusType::Burn}, {"Poison", StatusType::Poison}, {"Bleed", StatusType::Bleed}, {"Drain", StatusType::Drain}};
+// Burn (and the other DoT visuals) are deliberately absent: they can only come from a DoT effect.
 constexpr EnumName<StatusType> kStatusTypes[] = {
     {"Stun", StatusType::Stun},         {"AttackDamage", StatusType::AttackDamage},
     {"AttackSpeed", StatusType::AttackSpeed}, {"Armor", StatusType::Armor},
@@ -211,6 +214,7 @@ public:
         const Value* itemClass = Take(o, "itemClass");
         const Value* items = Take(o, "items");
         const Value* costs = Take(o, "costs");
+        const Value* costsByStage = Take(o, "costsByStage");
         if (!RejectUnknown(o)) return false;
         int idValue = 0;
         if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
@@ -246,7 +250,29 @@ public:
                 if (!ReadInt(costs->Items()[i], path + ".costs[" + std::to_string(i) + "]", 1, kMaxCostTier, cost)) return false;
                 out.costs.push_back(cost);
             }
-        } else if (out.type == GiftType::Unit) {
+        }
+        if (costsByStage) {   // "costsByStage": [ { "fromStage": 1, "costs": [1, 2] }, { "fromStage": 3, "costs": [3, 4] } ]
+            if (out.type != GiftType::Unit) return Fail(path + ".costsByStage", *costsByStage, "\"costsByStage\" only applies to Unit gifts");
+            if (costs) return Fail(path + ".costsByStage", *costsByStage, "give either \"costs\" or \"costsByStage\", not both");
+            if (!costsByStage->IsArray()) return Fail(path + ".costsByStage", *costsByStage, std::string("expected an array, found ") + Value::TypeName(costsByStage->type()));
+            for (std::size_t i = 0; i < costsByStage->Items().size(); ++i) {
+                const std::string entryPath = path + ".costsByStage[" + std::to_string(i) + "]";
+                Obj e;
+                if (!Open(costsByStage->Items()[i], entryPath, e)) return false;
+                const Value* from = nullptr;
+                const Value* list = nullptr;
+                if (!Require(e, "fromStage", from) || !Require(e, "costs", list) || !RejectUnknown(e)) return false;
+                StageCosts entry;
+                if (!ReadInt(*from, entryPath + ".fromStage", 1, 1000, entry.fromStage)) return false;
+                if (!list->IsArray()) return Fail(entryPath + ".costs", *list, std::string("expected an array of cost tiers, found ") + Value::TypeName(list->type()));
+                for (std::size_t k = 0; k < list->Items().size(); ++k) {
+                    int cost = 0;
+                    if (!ReadInt(list->Items()[k], entryPath + ".costs[" + std::to_string(k) + "]", 1, kMaxCostTier, cost)) return false;
+                    entry.costs.push_back(cost);
+                }
+                out.costsByStage.push_back(std::move(entry));
+            }
+        } else if (out.type == GiftType::Unit && !costs) {
             return Missing(o, "costs");
         }
         return true;
@@ -801,6 +827,7 @@ private:
             const Value* stack = Take(o, "stackBonusPercent");
             const Value* drain = Take(o, "healPercent");
             const Value* refreshes = Take(o, "refreshes");
+            const Value* visual = Take(o, "visual");   // "Burn" (default), "Poison", "Bleed" or "Drain": what the viewer shows
             int interval = 0;
             bool haveInterval = false;
             if (!ReadScalarTime(o, "interval", interval, haveInterval)) return false;
@@ -811,6 +838,7 @@ private:
             if (stack && !ReadStarInts(*stack, path + ".stackBonusPercent", 0, kMaxPercent, d.stackBonusPercent)) return false;
             if (drain && !ReadInt(*drain, path + ".healPercent", 0, 1000, d.healPercent)) return false;
             if (refreshes && !ReadBool(*refreshes, path + ".refreshes", d.refreshes)) return false;
+            if (visual && !ReadEnum(*visual, path + ".visual", kDotVisuals, d.visual)) return false;
             if (!haveInterval) return Missing(o, "intervalTicks (or intervalSeconds)");
             if (interval < 1) return Fail(path + ".interval", v, "the interval must be at least 1 tick");
             d.intervalTicks = interval;
@@ -845,7 +873,10 @@ private:
         bool haveLock = false;
         int channel = 0;
         bool haveChannel = false;
+        int windup = 0;
+        bool haveWindup = false;
         if (!ReadScalarTime(o, "castLock", lock, haveLock) || !ReadScalarTime(o, "channel", channel, haveChannel) ||
+            !ReadScalarTime(o, "windup", windup, haveWindup) ||
             !ReadScalarTime(o, "interval", interval, haveInterval) || !RejectUnknown(o)) return false;
 
         int idValue = 0;
@@ -875,6 +906,7 @@ private:
         }
         out.intervalTicks = haveInterval ? interval : 0;
         out.castLockTicks = lock;
+        if (haveWindup) out.windupTicks = windup;   // (presentation: the animation's lead time; see CombatEvent::windup)
         out.channelTicks = channel;
 
         if (!effects->IsArray()) return Fail(path + ".effects", *effects, std::string("expected an array, found ") + Value::TypeName(effects->type()));
@@ -987,10 +1019,17 @@ private:
         const Value* components = Take(o, "components");
         const Value* abilities = Take(o, "abilities");
         const Value* auras = Take(o, "auras");
+        const Value* consumable = Take(o, "consumable");
         if (!RejectUnknown(o)) return false;
         int idValue = 0;
         if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
         out.id = static_cast<ItemId>(idValue);
+        if (consumable) {   // "consumable": "RemoveAllItems"  (the Item Remover)
+            std::string use;
+            if (!ReadString(*consumable, path + ".consumable", use)) return false;
+            if (use == "RemoveAllItems") out.use = ItemUse::RemoveAllItems;
+            else return Fail(path + ".consumable", *consumable, "unknown consumable \"" + use + "\" (expected \"RemoveAllItems\")");
+        }
         if (components) {   // "components": [ 4, 7 ]  the two BASE items this one is made from
             if (!components->IsArray() || components->Items().size() != 2) return Fail(path + ".components", *components, "expected an array of exactly two item ids");
             for (std::size_t i = 0; i < 2; ++i) {
@@ -1144,9 +1183,12 @@ private:
         const Value* startMana = Take(o, "startMana");
         const Value* manaRegen = Take(o, "manaRegen");
         const Value* attackType = Take(o, "attackType");
+        const Value* projectileSpeed = Take(o, "projectileSpeed");   // hexes per second (0 = a melee blow); default: ranged champions shoot at CombatConfig's speed
         int spread = 0;
         bool haveSpread = false;
-        if (!ReadScalarTime(o, "attackSpread", spread, haveSpread) || !RejectUnknown(o)) return false;
+        int windup = 0;
+        bool haveWindup = false;
+        if (!ReadScalarTime(o, "attackSpread", spread, haveSpread) || !ReadScalarTime(o, "attackWindup", windup, haveWindup) || !RejectUnknown(o)) return false;
 
         if (!ReadStarInts(*hp, path + ".hp", 1, kMaxStat, out.maxHp)) return false;
         if (!ReadStarInts(*armor, path + ".armor", 0, kMaxStat, out.armor)) return false;
@@ -1162,6 +1204,8 @@ private:
         if (manaRegen && !ReadMilli(*manaRegen, path + ".manaRegen", 0, 1'000'000, out.manaRegenMilli)) return false;
         if (attackType && !ReadEnum(*attackType, path + ".attackType", kDamageTypes, out.attackType)) return false;
         out.attackSpreadTicks = spread;
+        if (haveWindup) out.attackWindupTicks = windup;   // (presentation only)
+        if (projectileSpeed && !ReadMilli(*projectileSpeed, path + ".projectileSpeed", 0, 1'000'000, out.projectileSpeedMilli)) return false;
         return true;
     }
 

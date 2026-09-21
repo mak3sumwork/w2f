@@ -47,6 +47,8 @@ enum class ActionResult : std::uint8_t {
     InvalidItem,   // unknown item id, or the player does not have it in their item bag
     ShopClosed,    // the opening round or a Mother Nature round: there is no shop (buy / reroll)
     AlreadyPicked, // the player already took their Mother Nature gift this round
+    NoItemsToRemove, // an Item Remover was used on a unit that carries no items (the remover is kept)
+    UnitInCombat,    // Combat / Resolution: the board is locked (a unit on it cannot be sold, moved or equipped, and a purchase may not merge into it)
 };
 
 constexpr const char* ToString(ActionResult r) {
@@ -66,6 +68,8 @@ constexpr const char* ToString(ActionResult r) {
         case ActionResult::InvalidItem: return "InvalidItem";
         case ActionResult::ShopClosed: return "ShopClosed";
         case ActionResult::AlreadyPicked: return "AlreadyPicked";
+        case ActionResult::NoItemsToRemove: return "NoItemsToRemove";
+        case ActionResult::UnitInCombat: return "UnitInCombat";
     }
     return "Unknown";
 }

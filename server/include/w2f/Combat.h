@@ -46,15 +46,25 @@ enum class CombatWinner : std::uint8_t { Home, Away, Draw };
 //                  of the fight every summon still alive gets a Death event (flags kFlagSummon) and vanishes. Summons do not count as
 //                  "survivors" and cannot keep a fight going.
 //   Move           unit, from, to (adjacent hexes), amount = ticks the step takes (for tweening)
-//   Attack         unit (attacker), other (target)                 -- start the attack animation
+//   Attack         unit (attacker), other (target), from = attacker's hex, to = target's hex,
+//                  kind = 0 melee / instant, 1 projectile,
+//                  windup = ticks BEFORE this event's tick at which the swing animation should start,
+//                  flight = ticks the projectile is in the air (0 for melee). THE EVENT'S TICK IS THE MOMENT OF IMPACT (the Damage event is on the same
+//                  tick): the swing starts at tick - flight - windup, the projectile leaves at tick - flight and lands at tick. (The whole log is known in
+//                  advance, so a viewer just schedules the animation early; where that would start before tick 0 or overlap the unit's previous
+//                  action, shorten it.)
 //                  A Tether splits one hit into two Damage events: the holder's (already reduced) and the
 //                  source's, flagged kFlagRedirected, both crediting the original attacker.
-//   Damage         unit (victim), other (attacker), amount = damage after armor/resist/shield
+//   Damage         (kind = the StatusType of a typed damage-over-time tick -- Burn, Poison, Bleed or Drain --, 0 for everything else)
+//                  unit (victim), other (attacker), amount = damage after armor/resist/shield
 //                  reduction (before shield absorption), absorbed = part soaked up by shields,
 //                  hpAfter, subtype = DamageType, flags = kFlag*    -- hp lost = amount - absorbed
 //   Death          unit
 //   SpellCast      unit (caster), other (main target, 0 if none), ability = AbilityId,
-//                  duration = ticks the caster is locked in the cast animation, flags (kFlagOnDeath)
+//                  duration = ticks the caster is locked in the cast animation AFTER the tick, flags (kFlagOnDeath),
+//                  windup = ticks BEFORE this event's tick at which the cast animation should start (the effects land ON the tick),
+//                  shape = AreaShape, size = its radius / length in hexes, from = caster's hex, to = the centre of the area (the target's hex for
+//                  Circle / Line / Cone, the caster's own hex otherwise)
 //   ShieldApplied  unit (holder), other (caster), amount = absorb capacity, duration = ticks
 //   ShieldEnded    unit, amount = capacity that was left unused (0 = fully broken)
 //   StatusApplied  unit (holder), other (caster), subtype = StatusType, duration = ticks (0 = permanent,
@@ -71,6 +81,9 @@ enum class CombatWinner : std::uint8_t { Home, Away, Draw };
 //   TraitActivated team, traitId, amount = how many different champions on that team have the trait,
 //                  subtype = which breakpoint (1 = the lowest) is active. Sent on tick 0, before the
 //                  synergy's own StatusApplied events and before any passive.
+//   Overtime       (no unit) sent once, at tick = the end of regulation, when the fight is still undecided: from this tick on every unit's attack
+//                  speed, movement and mana regeneration run `amount` times faster (so Move.amount and the gaps between Attack events shrink by
+//                  that factor). Overtime has no end: it lasts until one team is wiped out (`duration` is 0).
 //   ManaChanged    unit, amount = its mana now, in thousandths. Sent when mana changes for a discrete
 //                  reason (an attack, damage taken, a cast draining it to 0) -- NOT for passive regen,
 //                  which would be one event per unit per tick. Between events a client shows the bar
@@ -83,7 +96,7 @@ enum class CombatWinner : std::uint8_t { Home, Away, Draw };
 // Coordinates are arena hexes (see BoardToArena); the same log is shown to both players.
 enum class CombatEventType : std::uint8_t {
     Spawn, Move, Attack, Damage, Death, SpellCast, ShieldApplied, ShieldEnded, StatusApplied, StatusEnded, ManaChanged,
-    Heal, TraitActivated, Teleport, SpellInterrupted
+    Heal, TraitActivated, Teleport, SpellInterrupted, Overtime
 };
 
 // CombatEvent::flags
@@ -120,6 +133,12 @@ struct CombatEvent {
     int manaRegen = 0;                         // Spawn only (thousandths of a mana per second)
     int reduced = 0;                           // Heal only: healing removed by Wound
     std::uint32_t traitId = 0;                 // TraitActivated only
+    // Presentation contract (Phase B) -- nothing here changes the fight; see the per-type notes above.
+    int windup = 0;                            // Attack / SpellCast: ticks BEFORE the event's tick that the animation should start
+    int flight = 0;                            // Attack: ticks the projectile travels (0 = melee / instant)
+    std::uint8_t kind = 0;                     // Attack: 0 melee, 1 projectile. Damage: the DoT's StatusType (0 = not a typed DoT)
+    std::uint8_t shape = 0;                    // SpellCast: AreaShape
+    std::uint8_t size = 0;                     // SpellCast: the area's radius / length in hexes
 };
 
 struct CombatLog {

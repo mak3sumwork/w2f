@@ -32,6 +32,10 @@ struct TcpServerConfig {
     std::uint64_t pingIntervalMs = 15000;
     std::uint64_t closeGraceMs = 2000;      // after a close frame, how long to wait for the peer before dropping the socket
     std::size_t maxOutboundBytes = 16u * 1024 * 1024;   // per connection; a client further behind than this is disconnected
+    // Non-empty: a connection must present it as `?code=...` in its URL (`ws://host:7777/?code=SECRET`, next to `token=` when reconnecting), or the handshake
+    // is answered with HTTP 403 and closed. A shared secret for a private server: it keeps strangers out of a lobby, it is NOT an account system
+    // (send it over wss, see docs/deploy.md). Use letters, digits, '-' and '_' (the query is not percent-decoded).
+    std::string joinCode;
 };
 
 class TcpServer : public IServerTransport {

@@ -1,0 +1,42 @@
+# Two independent matches behind one TLS endpoint (one server process = one match; add a service and a `handle` in deploy/Caddyfile for more).
+#   W2F_DOMAIN=play.example.com W2F_JOIN_CODE=secret docker compose up -d --build
+# Players connect to  wss://play.example.com/match/1?code=secret  and  wss://play.example.com/match/2?code=secret.
+services:
+  w2f-1:
+    build: .
+    restart: unless-stopped
+    environment:
+      W2F_JOIN_CODE: ${W2F_JOIN_CODE:-}
+    command: ["--bots", "0"]
+    volumes:
+      - w2f-1-data:/var/lib/w2f
+    expose:
+      - "7777"
+  w2f-2:
+    build: .
+    restart: unless-stopped
+    environment:
+      W2F_JOIN_CODE: ${W2F_JOIN_CODE:-}
+    command: ["--bots", "0"]
+    volumes:
+      - w2f-2-data:/var/lib/w2f
+    expose:
+      - "7777"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      W2F_DOMAIN: ${W2F_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - w2f-1
+      - w2f-2
+volumes:
+  w2f-1-data:
+  w2f-2-data:
+  caddy-data:
