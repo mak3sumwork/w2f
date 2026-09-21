@@ -6,6 +6,7 @@ every message the server produces (including a whole eight-client match over rea
 results on every platform.
 
 * Sample data for an offline viewer: [`sample_fights/`](sample_fights/README.md) (real combat logs + the catalog).
+* Placeholder 3D models for every champion, summon and monster, plus a board tile, and the Unreal import steps: [`blockouts/`](blockouts/README.md).
 * Machine-readable contract: [`schemas/server-message.schema.json`](schemas/server-message.schema.json) (every server -> client message) and
   [`schemas/client-command.schema.json`](schemas/client-command.schema.json) (every client -> server command). JSON Schema 2020-12.
 * The reference for the same protocol in prose, with the rules of each command: [`network-protocol.md`](network-protocol.md).

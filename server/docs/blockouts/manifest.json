@@ -1,0 +1,1359 @@
+{
+ "units": "metres, +Y up, facing +Z, feet at the origin (glTF); Unreal converts to cm, +Z up, facing +X",
+ "models": [
+  {
+   "kind": "champion",
+   "id": 9001,
+   "name": "Alesk",
+   "file": "SM_Champion_9001_Alesk.glb",
+   "triangles": 450,
+   "height_m": 2.399,
+   "width_m": 1.438,
+   "depth_m": 0.653,
+   "primary_colour": "#F28C28",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.165,
+     "up": 1.294
+    },
+    "cast_origin": {
+     "forward": 0.529,
+     "up": 1.352
+    },
+    "muzzle": {
+     "forward": 0.823,
+     "up": 1.411
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.058
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.47
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9002,
+   "name": "Baira",
+   "file": "SM_Champion_9002_Baira.glb",
+   "triangles": 376,
+   "height_m": 1.926,
+   "width_m": 0.708,
+   "depth_m": 2.115,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.15,
+     "up": 1.177
+    },
+    "cast_origin": {
+     "forward": 0.482,
+     "up": 1.23
+    },
+    "muzzle": {
+     "forward": 0.749,
+     "up": 1.284
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.873
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.247
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9003,
+   "name": "Cyla",
+   "file": "SM_Champion_9003_Cyla.glb",
+   "triangles": 396,
+   "height_m": 1.609,
+   "width_m": 0.679,
+   "depth_m": 2.293,
+   "primary_colour": "#2EC4C6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.066
+    },
+    "cast_origin": {
+     "forward": 0.436,
+     "up": 1.114
+    },
+    "muzzle": {
+     "forward": 0.678,
+     "up": 1.163
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.696
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.035
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9005,
+   "name": "Faire",
+   "file": "SM_Champion_9005_Faire.glb",
+   "triangles": 392,
+   "height_m": 1.733,
+   "width_m": 1.131,
+   "depth_m": 1.099,
+   "primary_colour": "#2EC4C6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.15,
+     "up": 1.177
+    },
+    "cast_origin": {
+     "forward": 0.482,
+     "up": 1.23
+    },
+    "muzzle": {
+     "forward": 0.749,
+     "up": 1.284
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.873
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.247
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9006,
+   "name": "Les",
+   "file": "SM_Champion_9006_Les.glb",
+   "triangles": 360,
+   "height_m": 2.039,
+   "width_m": 1.437,
+   "depth_m": 0.878,
+   "primary_colour": "#D9B44A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.172,
+     "up": 1.351
+    },
+    "cast_origin": {
+     "forward": 0.553,
+     "up": 1.413
+    },
+    "muzzle": {
+     "forward": 0.86,
+     "up": 1.474
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.15
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.58
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9007,
+   "name": "Lum",
+   "file": "SM_Champion_9007_Lum.glb",
+   "triangles": 444,
+   "height_m": 2.218,
+   "width_m": 1.54,
+   "depth_m": 0.592,
+   "primary_colour": "#D9B44A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.172,
+     "up": 1.351
+    },
+    "cast_origin": {
+     "forward": 0.553,
+     "up": 1.413
+    },
+    "muzzle": {
+     "forward": 0.86,
+     "up": 1.474
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.15
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.58
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9008,
+   "name": "Astra",
+   "file": "SM_Champion_9008_Astra.glb",
+   "triangles": 488,
+   "height_m": 1.633,
+   "width_m": 0.576,
+   "depth_m": 0.852,
+   "primary_colour": "#E86AA8",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.122,
+     "up": 0.96
+    },
+    "cast_origin": {
+     "forward": 0.393,
+     "up": 1.004
+    },
+    "muzzle": {
+     "forward": 0.611,
+     "up": 1.048
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.528
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.833
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9009,
+   "name": "Lunis",
+   "file": "SM_Champion_9009_Lunis.glb",
+   "triangles": 324,
+   "height_m": 1.744,
+   "width_m": 0.612,
+   "depth_m": 0.757,
+   "primary_colour": "#5B7FD6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.066
+    },
+    "cast_origin": {
+     "forward": 0.436,
+     "up": 1.114
+    },
+    "muzzle": {
+     "forward": 0.678,
+     "up": 1.163
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.696
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.035
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9010,
+   "name": "Soul",
+   "file": "SM_Champion_9010_Soul.glb",
+   "triangles": 516,
+   "height_m": 1.647,
+   "width_m": 1.151,
+   "depth_m": 0.559,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.142,
+     "up": 1.118
+    },
+    "cast_origin": {
+     "forward": 0.457,
+     "up": 1.169
+    },
+    "muzzle": {
+     "forward": 0.712,
+     "up": 1.22
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.779
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.135
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9011,
+   "name": "Myna",
+   "file": "SM_Champion_9011_Myna.glb",
+   "triangles": 544,
+   "height_m": 2.701,
+   "width_m": 1.31,
+   "depth_m": 1.357,
+   "primary_colour": "#5B7FD6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.157,
+     "up": 1.232
+    },
+    "cast_origin": {
+     "forward": 0.504,
+     "up": 1.288
+    },
+    "muzzle": {
+     "forward": 0.784,
+     "up": 1.344
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.96
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.352
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9012,
+   "name": "Vega",
+   "file": "SM_Champion_9012_Vega.glb",
+   "triangles": 568,
+   "height_m": 2.838,
+   "width_m": 1.522,
+   "depth_m": 1.79,
+   "primary_colour": "#E86AA8",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.172,
+     "up": 1.351
+    },
+    "cast_origin": {
+     "forward": 0.553,
+     "up": 1.413
+    },
+    "muzzle": {
+     "forward": 0.86,
+     "up": 1.474
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.15
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.58
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9013,
+   "name": "Ignis",
+   "file": "SM_Champion_9013_Ignis.glb",
+   "triangles": 450,
+   "height_m": 1.88,
+   "width_m": 1.071,
+   "depth_m": 0.509,
+   "primary_colour": "#F28C28",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.129,
+     "up": 1.014
+    },
+    "cast_origin": {
+     "forward": 0.415,
+     "up": 1.06
+    },
+    "muzzle": {
+     "forward": 0.645,
+     "up": 1.106
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.613
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.935
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9014,
+   "name": "Pyra",
+   "file": "SM_Champion_9014_Pyra.glb",
+   "triangles": 288,
+   "height_m": 1.493,
+   "width_m": 0.61,
+   "depth_m": 0.81,
+   "primary_colour": "#F28C28",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.129,
+     "up": 1.014
+    },
+    "cast_origin": {
+     "forward": 0.415,
+     "up": 1.06
+    },
+    "muzzle": {
+     "forward": 0.645,
+     "up": 1.106
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.613
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.935
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9015,
+   "name": "Vex",
+   "file": "SM_Champion_9015_Vex.glb",
+   "triangles": 312,
+   "height_m": 1.606,
+   "width_m": 0.564,
+   "depth_m": 0.697,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.125,
+     "up": 0.982
+    },
+    "cast_origin": {
+     "forward": 0.402,
+     "up": 1.026
+    },
+    "muzzle": {
+     "forward": 0.625,
+     "up": 1.071
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.562
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.874
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9016,
+   "name": "Null",
+   "file": "SM_Champion_9016_Null.glb",
+   "triangles": 528,
+   "height_m": 1.571,
+   "width_m": 1.34,
+   "depth_m": 0.555,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.067
+    },
+    "cast_origin": {
+     "forward": 0.437,
+     "up": 1.115
+    },
+    "muzzle": {
+     "forward": 0.679,
+     "up": 1.164
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.698
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.037
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9017,
+   "name": "Bone",
+   "file": "SM_Champion_9017_Bone.glb",
+   "triangles": 388,
+   "height_m": 1.752,
+   "width_m": 0.943,
+   "depth_m": 0.382,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.067
+    },
+    "cast_origin": {
+     "forward": 0.437,
+     "up": 1.115
+    },
+    "muzzle": {
+     "forward": 0.679,
+     "up": 1.164
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.698
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.037
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9018,
+   "name": "Rot",
+   "file": "SM_Champion_9018_Rot.glb",
+   "triangles": 472,
+   "height_m": 2.223,
+   "width_m": 0.696,
+   "depth_m": 0.863,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.129,
+     "up": 1.014
+    },
+    "cast_origin": {
+     "forward": 0.415,
+     "up": 1.06
+    },
+    "muzzle": {
+     "forward": 0.645,
+     "up": 1.106
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.613
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.935
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9019,
+   "name": "Bit",
+   "file": "SM_Champion_9019_Bit.glb",
+   "triangles": 324,
+   "height_m": 1.61,
+   "width_m": 0.873,
+   "depth_m": 0.446,
+   "primary_colour": "#2EC4C6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.067
+    },
+    "cast_origin": {
+     "forward": 0.437,
+     "up": 1.115
+    },
+    "muzzle": {
+     "forward": 0.679,
+     "up": 1.164
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.698
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.037
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9020,
+   "name": "Solis",
+   "file": "SM_Champion_9020_Solis.glb",
+   "triangles": 390,
+   "height_m": 2.081,
+   "width_m": 1.186,
+   "depth_m": 0.606,
+   "primary_colour": "#F28C28",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.143,
+     "up": 1.122
+    },
+    "cast_origin": {
+     "forward": 0.459,
+     "up": 1.173
+    },
+    "muzzle": {
+     "forward": 0.714,
+     "up": 1.224
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.785
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.142
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9021,
+   "name": "Xul",
+   "file": "SM_Champion_9021_Xul.glb",
+   "triangles": 512,
+   "height_m": 1.986,
+   "width_m": 1.105,
+   "depth_m": 1.024,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.066
+    },
+    "cast_origin": {
+     "forward": 0.436,
+     "up": 1.114
+    },
+    "muzzle": {
+     "forward": 0.678,
+     "up": 1.163
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.696
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.035
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9022,
+   "name": "Grave",
+   "file": "SM_Champion_9022_Grave.glb",
+   "triangles": 454,
+   "height_m": 2.337,
+   "width_m": 0.754,
+   "depth_m": 1.078,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.066
+    },
+    "cast_origin": {
+     "forward": 0.436,
+     "up": 1.114
+    },
+    "muzzle": {
+     "forward": 0.678,
+     "up": 1.163
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.696
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.035
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9023,
+   "name": "Byte",
+   "file": "SM_Champion_9023_Byte.glb",
+   "triangles": 440,
+   "height_m": 1.609,
+   "width_m": 0.716,
+   "depth_m": 0.995,
+   "primary_colour": "#2EC4C6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.136,
+     "up": 1.066
+    },
+    "cast_origin": {
+     "forward": 0.436,
+     "up": 1.114
+    },
+    "muzzle": {
+     "forward": 0.678,
+     "up": 1.163
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.696
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.035
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9024,
+   "name": "Orion",
+   "file": "SM_Champion_9024_Orion.glb",
+   "triangles": 312,
+   "height_m": 1.652,
+   "width_m": 1.39,
+   "depth_m": 1.054,
+   "primary_colour": "#E86AA8",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.143,
+     "up": 1.122
+    },
+    "cast_origin": {
+     "forward": 0.459,
+     "up": 1.173
+    },
+    "muzzle": {
+     "forward": 0.714,
+     "up": 1.224
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.785
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.142
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9025,
+   "name": "Nyx",
+   "file": "SM_Champion_9025_Nyx.glb",
+   "triangles": 380,
+   "height_m": 1.932,
+   "width_m": 1.244,
+   "depth_m": 0.751,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.15,
+     "up": 1.177
+    },
+    "cast_origin": {
+     "forward": 0.482,
+     "up": 1.23
+    },
+    "muzzle": {
+     "forward": 0.749,
+     "up": 1.284
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.873
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.247
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9026,
+   "name": "Flare",
+   "file": "SM_Champion_9026_Flare.glb",
+   "triangles": 358,
+   "height_m": 2.581,
+   "width_m": 0.794,
+   "depth_m": 1.013,
+   "primary_colour": "#F28C28",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.15,
+     "up": 1.177
+    },
+    "cast_origin": {
+     "forward": 0.482,
+     "up": 1.23
+    },
+    "muzzle": {
+     "forward": 0.749,
+     "up": 1.284
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.873
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.247
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9027,
+   "name": "Lich",
+   "file": "SM_Champion_9027_Lich.glb",
+   "triangles": 464,
+   "height_m": 2.71,
+   "width_m": 0.862,
+   "depth_m": 1.064,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.157,
+     "up": 1.236
+    },
+    "cast_origin": {
+     "forward": 0.506,
+     "up": 1.292
+    },
+    "muzzle": {
+     "forward": 0.786,
+     "up": 1.348
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.966
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.359
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9028,
+   "name": "Raa",
+   "file": "SM_Champion_9028_Raa.glb",
+   "triangles": 336,
+   "height_m": 2.016,
+   "width_m": 1.527,
+   "depth_m": 0.965,
+   "primary_colour": "#F28C28",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.157,
+     "up": 1.232
+    },
+    "cast_origin": {
+     "forward": 0.504,
+     "up": 1.288
+    },
+    "muzzle": {
+     "forward": 0.784,
+     "up": 1.344
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.96
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.352
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9029,
+   "name": "Kryx",
+   "file": "SM_Champion_9029_Kryx.glb",
+   "triangles": 334,
+   "height_m": 2.124,
+   "width_m": 1.16,
+   "depth_m": 0.813,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.165,
+     "up": 1.294
+    },
+    "cast_origin": {
+     "forward": 0.529,
+     "up": 1.352
+    },
+    "muzzle": {
+     "forward": 0.823,
+     "up": 1.411
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.058
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.47
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9030,
+   "name": "Mortis",
+   "file": "SM_Champion_9030_Mortis.glb",
+   "triangles": 472,
+   "height_m": 2.016,
+   "width_m": 0.829,
+   "depth_m": 2.214,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.157,
+     "up": 1.232
+    },
+    "cast_origin": {
+     "forward": 0.504,
+     "up": 1.288
+    },
+    "muzzle": {
+     "forward": 0.784,
+     "up": 1.344
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.96
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.352
+    }
+   }
+  },
+  {
+   "kind": "champion",
+   "id": 9031,
+   "name": "Umbra",
+   "file": "SM_Champion_9031_Umbra.glb",
+   "triangles": 552,
+   "height_m": 2.374,
+   "width_m": 1.503,
+   "depth_m": 1.022,
+   "primary_colour": "#5B7FD6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.172,
+     "up": 1.351
+    },
+    "cast_origin": {
+     "forward": 0.553,
+     "up": 1.413
+    },
+    "muzzle": {
+     "forward": 0.86,
+     "up": 1.474
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.15
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.58
+    }
+   }
+  },
+  {
+   "kind": "summon",
+   "id": 9101,
+   "name": "Skeleton",
+   "file": "SM_Summon_9101_Skeleton.glb",
+   "triangles": 264,
+   "height_m": 1.377,
+   "width_m": 0.497,
+   "depth_m": 0.281,
+   "primary_colour": "#8A8F99",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.119,
+     "up": 0.935
+    },
+    "cast_origin": {
+     "forward": 0.383,
+     "up": 0.977
+    },
+    "muzzle": {
+     "forward": 0.595,
+     "up": 1.02
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.488
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.785
+    }
+   }
+  },
+  {
+   "kind": "summon",
+   "id": 9102,
+   "name": "Lost Soul",
+   "file": "SM_Summon_9102_LostSoul.glb",
+   "triangles": 88,
+   "height_m": 1.24,
+   "width_m": 0.64,
+   "depth_m": 0.64,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.1,
+     "up": 0.7
+    },
+    "cast_origin": {
+     "forward": 0.3,
+     "up": 0.8
+    },
+    "muzzle": {
+     "forward": 0.4,
+     "up": 0.9
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.45
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.8
+    }
+   }
+  },
+  {
+   "kind": "monster",
+   "id": 10001,
+   "name": "Gloop",
+   "file": "SM_Monster_10001_Gloop.glb",
+   "triangles": 272,
+   "height_m": 0.9,
+   "width_m": 1.046,
+   "depth_m": 1.037,
+   "primary_colour": "#9DB59A",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.3,
+     "up": 0.45
+    },
+    "cast_origin": {
+     "forward": 0.55,
+     "up": 0.5
+    },
+    "muzzle": {
+     "forward": 0.6,
+     "up": 0.5
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 0.9
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.3
+    }
+   }
+  },
+  {
+   "kind": "monster",
+   "id": 10002,
+   "name": "Spitter",
+   "file": "SM_Monster_10002_Spitter.glb",
+   "triangles": 176,
+   "height_m": 0.79,
+   "width_m": 0.72,
+   "depth_m": 0.77,
+   "primary_colour": "#5B7FD6",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.2,
+     "up": 0.4
+    },
+    "cast_origin": {
+     "forward": 0.35,
+     "up": 0.7
+    },
+    "muzzle": {
+     "forward": 0.45,
+     "up": 0.8
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 0.85
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 1.2
+    }
+   }
+  },
+  {
+   "kind": "monster",
+   "id": 10003,
+   "name": "Boulder",
+   "file": "SM_Monster_10003_Boulder.glb",
+   "triangles": 72,
+   "height_m": 1.86,
+   "width_m": 1.848,
+   "depth_m": 0.96,
+   "primary_colour": "#8A8F99",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.48,
+     "up": 0.96
+    },
+    "cast_origin": {
+     "forward": 0.72,
+     "up": 1.08
+    },
+    "muzzle": {
+     "forward": 0.84,
+     "up": 1.08
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 1.92
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 2.4
+    }
+   }
+  },
+  {
+   "kind": "monster",
+   "id": 10004,
+   "name": "Elder Wraith",
+   "file": "SM_Monster_10004_ElderWraith.glb",
+   "triangles": 580,
+   "height_m": 2.709,
+   "width_m": 2.1,
+   "depth_m": 1.26,
+   "primary_colour": "#7B3FBF",
+   "sockets_m": {
+    "feet": {
+     "forward": 0.0,
+     "up": 0.0
+    },
+    "chest": {
+     "forward": 0.21,
+     "up": 1.65
+    },
+    "cast_origin": {
+     "forward": 0.675,
+     "up": 1.725
+    },
+    "muzzle": {
+     "forward": 1.05,
+     "up": 1.8
+    },
+    "head_top": {
+     "forward": 0.0,
+     "up": 2.625
+    },
+    "overhead": {
+     "forward": 0.0,
+     "up": 3.15
+    }
+   }
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_HexTile",
+   "file": "SM_HexTile.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_ProjectileOrb",
+   "file": "SM_ProjectileOrb.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_AreaDisc",
+   "file": "SM_AreaDisc.glb"
+  }
+ ],
+ "board": {
+  "hex_orientation": "pointy-top, odd rows shifted half a hex to the right (odd-r); 1 m across the flats",
+  "cell_centre_m": "x_m = (column + 0.5 * (row & 1)) * 1.0 ; z_m = row * 1.5 * (1 / sqrt(3))  (arena: 7 columns x 8 rows; rows 0-3 one side, 4-7 the other)"
+ }
+}

@@ -21,6 +21,7 @@ Run from `server/`.
 | Play 1 human vs 7 AI locally | `./build/w2f_server --bots 7` (add `--fast` for 4 s planning rounds), then open `client/index.html` in a browser and press Connect (see `client/README.md`) |
 | Headless 8-player demo match | `make demo SEED=7` (`W2F_ROSTER_ONLY=1` sells only the real 30 champions; `W2F_NO_DRILL=1` skips the crash-recovery drill) |
 | Bulk balance simulator (300 matches in ~20 s: win rates by champion / synergy, fight lengths) | `make balance ARGS="--matches 300 --seed 1000"` (docs/balance.md) |
+| Regenerate the placeholder 3D models for UE (docs/blockouts/, glTF, from data/) | `make blockouts` |
 | Re-record the sample combat logs for the UE5 developers (docs/sample_fights/) | `make sample-fights` |
 | Re-record the golden fights after an INTENDED combat / data change | `make golden` (tests/golden/fights.golden) |
 | Run several matches / deploy | `scripts/run_matches.sh`, `Dockerfile`, `docker-compose.yml` (docs/deploy.md) |

@@ -22,7 +22,7 @@ SERVER   := build/w2f_server
 BALANCE  := build/w2f_balance
 RECORD   := build/w2f_record_fights
 
-.PHONY: all test test-engine test-net check-isolation demo server balance golden sample-fights clean
+.PHONY: all test test-engine test-net check-isolation demo server balance golden sample-fights blockouts clean
 all: $(TEST) $(NET_TEST) $(DEMO) $(SERVER)
 
 build/engine/%.o: src/%.cpp $(HDR)
@@ -69,6 +69,10 @@ server: $(SERVER)
 # Re-record the sample combat logs for the UE5 developers (docs/sample_fights/): real `combat` messages + the catalog.
 $(RECORD): $(ENGINE_OBJ) $(NET_OBJ) tools/record_fights.cpp $(HDR)
 	$(CXX) $(CXXFLAGS) $(NET_INC) $(DEFINES) tools/record_fights.cpp $(NET_OBJ) $(ENGINE_OBJ) -o $@
+# Placeholder 3D models (glTF) for every champion / monster, from data/ (standard-library Python; verifies its own output). docs/blockouts/README.md
+blockouts:
+	python3 tools/make_blockouts.py
+
 sample-fights: $(RECORD)
 	@mkdir -p docs/sample_fights
 	./$(RECORD) docs/sample_fights
