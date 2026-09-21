@@ -75,7 +75,7 @@ blockouts:
 
 # The crafted (Blender) models: needs a Python 3.11 venv with the bpy module at ~/w2f_bpy/venv (docs/models/README.md)
 crafted:
-	$(HOME)/w2f_bpy/venv/bin/python tools/blender/alesk.py
+	for h in alesk baira pyra rot soul vex; do $(HOME)/w2f_bpy/venv/bin/python tools/blender/$$h.py || exit 1; done
 
 sample-fights: $(RECORD)
 	@mkdir -p docs/sample_fights

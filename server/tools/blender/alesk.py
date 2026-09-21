@@ -285,7 +285,7 @@ def outline_slab(name, scale, thickness, y_front, mat, bevel=0.02):
 
 def shield():
     """The tower shield planted at the left (x > 0): a curved slab (outline, raised rim, inner plate) with a glowing rune diamond, bolts and cracks."""
-    cx, cy, ang = 1.36, -0.16, -24
+    cx, cy, ang = 1.2, -0.18, -16
     layers = [("shieldRim", 1.0, 0.15, 0.0, TRIM), ("shieldBody", 0.9, 0.13, -0.05, IRON), ("shieldPlate", 0.72, 0.1, -0.09, IRON2)]
     for name, sc, th, yf, mat in layers:
         o = outline_slab(name, sc, th, yf, mat)
