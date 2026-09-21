@@ -13,3 +13,6 @@ cmake-build-*/
 
 # saved matches written by `w2f_server --autosave`
 *.w2fsave
+
+__pycache__/
+*.pyc
