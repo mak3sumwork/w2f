@@ -8332,6 +8332,229 @@ static void TestBotEconomyAndPlacement() {
     }
 }
 
+// Counts what a bot sold and bought, and the gold that moved.
+class SaleTally : public IMatchListener {
+public:
+    int sold = 0, bought = 0, goldIn = 0, goldOut = 0;
+    void OnUnitSold(PlayerId, const UnitInstance&, int gold) override { ++sold; goldIn += gold; }
+    void OnUnitBought(PlayerId, const UnitInstance&, int gold) override { ++bought; goldOut += gold; }
+};
+
+static void TestBotEquipsItems() {
+    std::string err;
+    auto db = ChampionDatabase::Create(sample::LoadRosterFile(sample::ProductionDataPath()), &err);
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+    CHECK(db != nullptr && items != nullptr);
+    if (!db || !items) return;
+    const ChampionDefinition* alesk = db->Find(sample::kChampionAlesk);   // a tank (Helios)
+    const ChampionDefinition* baira = db->Find(sample::kChampionBaira);   // a marksman (Phaisa)
+    CHECK(alesk->role == ChampionRole::Tank && baira->role == ChampionRole::Damage);
+
+    const auto planning = [&](bool limitBoard) {
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.player.limitBoardToLevel = limitBoard;
+        std::string e;
+        auto match = MatchManager::Create(cfg, *db, 1, nullptr, &e, items.get());
+        match->Start();
+        while (match->Phase() != MatchPhase::Planning) match->Tick();
+        match->PlayersMutable().Get(0)->TrySpendGold(match->Players().Get(0)->Gold());   // broke: only equipping is on the menu
+        return match;
+    };
+    const auto holds = [](const UnitInstance* u, ItemId item) {
+        for (ItemId held : u->items) {
+            if (held == item) return true;
+        }
+        return false;
+    };
+
+    {   // Damage items go to the damage dealer, durability to the tank.
+        auto match = planning(false);
+        PlayerState* me = match->PlayersMutable().Get(0);
+        CHECK(me->AcquireUnit(alesk) == ActionResult::Ok && me->AcquireUnit(baira) == ActionResult::Ok);
+        CHECK(me->AddItemToBag(7) && me->AddItemToBag(4));   // Selinis Gloves (+15 crit), Omnilium Vest (+25 armor): no recipe joins them
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        const UnitInstance* tank = nullptr;
+        const UnitInstance* shooter = nullptr;
+        for (const UnitInstance& u : me->Roster().Units()) (u.champion == alesk ? tank : shooter) = &u;
+        CHECK(tank && shooter && holds(shooter, 7) && holds(tank, 4) && me->ItemBag().empty());
+    }
+    {   // Two components that make a finished item end up on one unit as that item (Soul's Sword = 3 + 3).
+        auto match = planning(false);
+        PlayerState* me = match->PlayersMutable().Get(0);
+        CHECK(me->AcquireUnit(alesk) == ActionResult::Ok && me->AcquireUnit(baira) == ActionResult::Ok);
+        CHECK(me->AddItemToBag(3) && me->AddItemToBag(3));
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        const UnitInstance* shooter = nullptr;
+        for (const UnitInstance& u : me->Roster().Units()) shooter = u.champion == baira ? &u : shooter;
+        CHECK(shooter && holds(shooter, 24) && shooter->ItemCount() == 1 && me->ItemBag().empty());
+    }
+    {   // Only fielded units are equipped: with room for one unit on the board, the benched one gets nothing.
+        auto match = planning(true);
+        PlayerState* me = match->PlayersMutable().Get(0);
+        CHECK(me->AcquireUnit(baira) == ActionResult::Ok && me->AcquireUnit(alesk) == ActionResult::Ok);
+        CHECK(me->AddItemToBag(4) && me->AddItemToBag(8));   // armor + health: the tank's kind of items, but it is on the bench
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Roster().BoardCount() == 1 && me->Roster().BenchCount() == 1);
+        for (const UnitInstance& u : me->Roster().Units()) CHECK(u.location == LocationType::Board ? u.ItemCount() == 2 : u.ItemCount() == 0);
+    }
+    {   // A unit stops at three items; the rest wait in the bag.
+        auto match = planning(false);
+        PlayerState* me = match->PlayersMutable().Get(0);
+        CHECK(me->AcquireUnit(baira) == ActionResult::Ok);
+        for (ItemId item : {4u, 4u, 8u, 7u}) CHECK(me->AddItemToBag(item));   // no recipe joins any two of these
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Roster().Units().size() == 1 && me->Roster().Units()[0].ItemCount() == kMaxItemsPerUnit && me->ItemBag().size() == 1);
+    }
+    {   // An emblem goes on a unit that does not already have that trait (Baira is a Phaisa, Alesk a Helios); the bare Seed waits for a recipe.
+        auto match = planning(false);
+        PlayerState* me = match->PlayersMutable().Get(0);
+        CHECK(me->AcquireUnit(alesk) == ActionResult::Ok && me->AcquireUnit(baira) == ActionResult::Ok);
+        CHECK(me->AddItemToBag(41) && me->AddItemToBag(9));   // Helios Emblem, Omnilium Seed
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        const UnitInstance* tank = nullptr;
+        const UnitInstance* shooter = nullptr;
+        for (const UnitInstance& u : me->Roster().Units()) (u.champion == alesk ? tank : shooter) = &u;
+        CHECK(tank && shooter && holds(shooter, 41) && tank->ItemCount() == 0);
+        CHECK((me->ItemBag() == std::vector<ItemId>{9}));
+    }
+    {   // No item database in the match: nothing to look items up in, nothing happens (and nothing breaks).
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        auto match = MatchManager::Create(cfg, *db, 1, nullptr);
+        match->Start();
+        while (match->Phase() != MatchPhase::Planning) match->Tick();
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(match->Items() == nullptr);
+    }
+}
+
+static void TestBotSellsUnits() {
+    std::vector<ChampionDefinition> defs;
+    for (int cost = 1; cost <= 3; ++cost) {
+        for (ChampionId n = 1; n <= 12; ++n) defs.push_back(Def(static_cast<ChampionId>(cost * 100) + n, "Filler", cost));
+    }
+    auto db = ChampionDatabase::Create(defs);
+    CHECK(db != nullptr);
+    if (!db) return;
+
+    // Units are bought for real (from the shop, so the pool stays balanced when the bot sells them again). Level 1 fields one unit, so ten
+    // units fill the roster: nine on the bench, one on the board. The shop is then rerolled until `shopOk` holds, and the player is left with 20 gold.
+    const auto fullRoster = [&](const std::vector<ChampionId>& ids, const std::function<bool(const PlayerState&)>& shopOk, SaleTally* tally,
+                                const ItemDatabase* items = nullptr) {
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.player.limitBoardToLevel = true;
+        cfg.shop.dropRatesByLevel[0] = {{40, 30, 30, 0, 0}};
+        auto match = MatchManager::Create(cfg, *db, 5, nullptr, nullptr, items);
+        match->Start();
+        while (match->Phase() != MatchPhase::Planning) match->Tick();
+        PlayerState* me = match->PlayersMutable().Get(0);
+        me->AddGold(5000);
+        for (ChampionId wanted : ids) {
+            bool bought = false;
+            for (int tries = 0; tries < 400 && !bought; ++tries) {
+                for (std::size_t slot = 0; slot < me->Shop().Slots().size() && !bought; ++slot) {
+                    const ChampionDefinition* offered = me->Shop().Slots()[slot];
+                    bought = offered != nullptr && offered->id == wanted && match->TryBuyShopUnit(0, slot) == ActionResult::Ok;
+                }
+                if (!bought) CHECK(match->TryRerollShop(0) == ActionResult::Ok);
+            }
+            CHECK(bought);
+        }
+        for (int tries = 0; tries < 400 && !shopOk(*me); ++tries) CHECK(match->TryRerollShop(0) == ActionResult::Ok);
+        CHECK(shopOk(*me));
+        me->TrySpendGold(me->Gold());
+        me->AddGold(20);
+        if (tally) match->AddListener(tally);   // (attached last: the set-up purchases are not the bot's)
+        return match;
+    };
+    const auto offersCostAtLeast = [](int cost) {
+        return [cost](const PlayerState& p) {
+            for (const ChampionDefinition* c : p.Shop().Slots()) {
+                if (c != nullptr && c->cost >= cost) return true;
+            }
+            return false;
+        };
+    };
+    const auto offersNothingAtLeast = [](int cost) {
+        return [cost](const PlayerState& p) {
+            for (const ChampionDefinition* c : p.Shop().Slots()) {
+                if (c == nullptr || c->cost >= cost) return false;
+            }
+            return true;
+        };
+    };
+    const auto countCost = [](const PlayerState& p, int cost) {
+        int n = 0;
+        for (const UnitInstance& u : p.Roster().Units()) n += u.champion->cost == cost ? 1 : 0;
+        return n;
+    };
+
+    {   // A full roster and a shop with better units: it sells cheap ones to buy them, and the gold adds up.
+        SaleTally tally;
+        auto match = fullRoster({101, 102, 103, 104, 105, 106, 107, 108, 109, 110}, offersCostAtLeast(2), &tally);
+        const PlayerState* me = match->Players().Get(0);
+        CHECK(me->Roster().Count() == 10);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(tally.sold >= 1 && tally.bought >= 1);
+        CHECK(countCost(*me, 2) + countCost(*me, 3) >= 1 && me->Roster().Count() <= 10 && me->Roster().CheckInvariants());
+        CHECK(me->Gold() == 20 + tally.goldIn - tally.goldOut);
+        CHECK(tally.sold <= tally.bought);   // a sale only ever makes room for a purchase
+        CHECK(match->VerifyPoolIntegrity());
+        const int sales = tally.sold;
+        bot.Tick(*match);   // acts once per round
+        CHECK(tally.sold == sales);
+    }
+    {   // Two copies of one champion are about to merge: neither is sold, however many purchases follow.
+        auto match = fullRoster({101, 101, 102, 103, 104, 105, 106, 107, 108, 109}, offersCostAtLeast(2), nullptr);
+        const PlayerState* me = match->Players().Get(0);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Roster().CountOf(db->Find(101), 1) == 2);
+    }
+    {   // A star-2 unit is never sold to make room.
+        auto match = fullRoster({101, 101, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110}, offersCostAtLeast(2), nullptr);   // three 101s merge: ten units
+        const PlayerState* me = match->Players().Get(0);
+        CHECK(me->Roster().CountOf(db->Find(101), 2) == 1 && me->Roster().Count() == 10);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Roster().CountOf(db->Find(101), 2) == 1);
+    }
+    {   // Nothing better on offer than what it owns: it keeps its units and its gold.
+        SaleTally tally;
+        auto match = fullRoster({301, 302, 303, 304, 305, 306, 307, 308, 309, 310}, offersNothingAtLeast(3), &tally);
+        const PlayerState* me = match->Players().Get(0);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(tally.sold == 0 && tally.bought == 0 && me->Gold() == 20 && me->Roster().Count() == 10);
+        CHECK(countCost(*me, 3) == 10);
+    }
+    {   // A unit that carries an item is the last one it would sell.
+        std::string err;
+        auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+        CHECK(items != nullptr);
+        if (!items) return;
+        SaleTally tally;
+        auto match = fullRoster({101, 102, 103, 104, 105, 106, 107, 108, 109, 110}, offersCostAtLeast(2), &tally, items.get());
+        PlayerState* me = match->PlayersMutable().Get(0);
+        me->TrySpendGold(me->Gold());
+        me->AddGold(2);   // one purchase: 2 gold, +1 from the sale, -2 for the unit
+        const UnitId carrier = me->Roster().BenchAt(0)->id;   // lowest id: the first unit the bot would sell, were it not carrying anything
+        CHECK(me->AddItemToBag(3) && match->TryEquipItem(0, carrier, 3) == ActionResult::Ok);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(tally.sold == 1 && me->Roster().Find(carrier) != nullptr);
+    }
+}
+
 static void TestFullBenchMergeViaMatchApi() {
     // A: 9/9 bench + full board, the shop offers a 3rd copy of something owned -> purchase allowed, merges.
     std::vector<ChampionDefinition> defs;
@@ -10172,6 +10395,8 @@ int main() {
         {"Recipe items through a full match", TestRecipeItemsThroughAFullMatch},
         {"Per-mille formula terms (Gunfire)", TestPermilleTermsAndGunfire},
         {"AI bot: economy + placement", TestBotEconomyAndPlacement},
+        {"AI bot: equips items", TestBotEquipsItems},
+        {"AI bot: sells units to make room", TestBotSellsUnits},
         {"Full bench still buys a merge (match API)", TestFullBenchMergeViaMatchApi},
         {"Full match: 7 bots + 1 player, real combat", TestFullMatchWithBots},
         {"Full match: roster-only shop, synergies in play", TestRosterOnlyMatchWithSynergies},

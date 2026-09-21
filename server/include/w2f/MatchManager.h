@@ -122,6 +122,9 @@ public:
     bool IsMotherNatureRound() const { return IsMotherNatureRound(round_); }
     bool IsMotherNatureRound(int round) const { return motherNature_ != nullptr && config_.match.IsMotherNatureRound(round); }
     const MotherNatureDatabase* MotherNature() const { return motherNature_; }
+    // The item data this match validates against (nullptr when the match runs without items). Read-only: lets a client of the match (a bot,
+    // a UI) look up what an item is.
+    const ItemDatabase* Items() const { return items_; }
     // What `player` may still choose from (empty once they picked, and outside the MotherNature phase), and whether their choice is settled
     // (picked, or nothing was on offer).
     const std::vector<GiftOffer>& GiftOffers(PlayerId player) const;

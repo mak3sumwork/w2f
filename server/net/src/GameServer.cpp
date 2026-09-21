@@ -4,6 +4,7 @@
 #include <random>
 #include <unordered_map>
 
+#include "w2f/AIBotController.h"
 #include "w2f/CombatSimulator.h"
 #include "w2f/net/Encoding.h"
 #include "w2f/net/Messages.h"
@@ -41,6 +42,7 @@ struct Conn {
 };
 
 struct Seat {
+    bool bot = false;        // an AI player: never given to a connection, never has a token
     std::string token;       // empty = free (lobby only: once a match runs, a seat is never freed)
     ConnectionId conn = 0;   // 0 = nobody connected
     std::string lastPrivate; // what the owner was last told, to send only real changes
@@ -50,6 +52,7 @@ int CommandCost(CommandType t) {
     switch (t) {
         case CommandType::GetState: return 3;
         case CommandType::GetFight: return 5;
+        case CommandType::GetCatalog: return 5;
         default: return 1;
     }
 }
@@ -60,6 +63,7 @@ class GameServer::Impl : public IMatchListener {
 public:
     Impl(const GameServerConfig& config, const GameData& data, IServerTransport& transport)
         : cfg_(config), seats_(static_cast<std::size_t>(config.seats)), data_(data), transport_(transport) {
+        for (int i = cfg_.seats - cfg_.bots; i < cfg_.seats; ++i) seats_[static_cast<std::size_t>(i)].bot = true;
         if (!cfg_.entropy) {
             cfg_.entropy = [] {
                 static std::random_device device;
@@ -97,7 +101,7 @@ public:
                 return;
             }
             for (std::size_t i = 0; i < seats_.size(); ++i) {
-                if (seats_[i].token.empty()) { seat = static_cast<int>(i); break; }
+                if (seats_[i].token.empty() && !seats_[i].bot) { seat = static_cast<int>(i); break; }
             }
             if (seat < 0) {   // cannot happen (the match starts the moment the last seat fills), but never assume
                 SendTo(id, msg::Error("server_full", "no free seat"));
@@ -111,11 +115,11 @@ public:
         Seat& s = seats_[static_cast<std::size_t>(seat)];
         s.conn = id;
         conns_[id].seat = seat;
-        SendTo(id, msg::Welcome(static_cast<PlayerId>(seat), s.token, reconnected, ConnectedCount(), cfg_.seats, state_ != State::Lobby));
+        SendTo(id, msg::Welcome(static_cast<PlayerId>(seat), s.token, reconnected, ConnectedCount(), cfg_.seats, cfg_.bots, state_ != State::Lobby));
 
         if (state_ == State::Lobby) {
             BroadcastLobby();
-            if (TakenSeats() == cfg_.seats) StartMatch();
+            if (TakenSeats() == cfg_.seats - cfg_.bots) StartMatch();
         } else {
             FullSync(seat);
         }
@@ -154,6 +158,7 @@ public:
         }
 
         if (cmd.type == CommandType::Ping) return SendTo(id, msg::Pong(cmd.hasId, cmd.id));
+        if (cmd.type == CommandType::GetCatalog) return SendTo(id, Catalog());
         if (!match_ || conn.seat < 0) return Violation(id, "not_in_match", "no match is running yet", cmd.hasId, cmd.id);
         const PlayerId player = static_cast<PlayerId>(conn.seat);
 
@@ -182,6 +187,7 @@ public:
             case CommandType::UnequipItem: result = match_->TryUnequipItem(player, cmd.unit, cmd.slot); break;
             case CommandType::GetState:
             case CommandType::GetFight:
+            case CommandType::GetCatalog:
             case CommandType::Ping: break;   // handled above
         }
         if (observer_) observer_(tick_, player, cmd, result);
@@ -198,6 +204,7 @@ public:
         ++tick_;
         if (state_ == State::Running) {
             match_->Tick();
+            for (AIBotController& bot : bots_) bot.Tick(*match_);   // after the engine's tick, so a bot sees the phase that just began
             if (dirty_) SyncAfterEngineCall();
             if (match_->IsFinished()) {
                 state_ = State::Finished;
@@ -273,6 +280,20 @@ private:
         std::string text;
     };
 
+    std::vector<PlayerId> BotSeats() const {
+        std::vector<PlayerId> out;
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            if (seats_[i].bot) out.push_back(static_cast<PlayerId>(i));
+        }
+        return out;
+    }
+
+    // The same for every connection: built once, on first use.
+    const std::string& Catalog() {
+        if (catalog_.empty()) catalog_ = msg::Catalog(*data_.champions, data_.items, data_.traits, data_.encounters);
+        return catalog_;
+    }
+
     int TakenSeats() const {
         int n = 0;
         for (const Seat& s : seats_) n += s.token.empty() ? 0 : 1;
@@ -333,7 +354,7 @@ private:
         for (std::size_t i = 0; i < seats_.size(); ++i) {
             if (!seats_[i].token.empty()) taken.push_back(static_cast<PlayerId>(i));
         }
-        Broadcast(msg::Lobby(taken, cfg_.seats));
+        Broadcast(msg::Lobby(taken, cfg_.seats, cfg_.bots));
     }
 
     // The fights of a round go out as one summary for everybody, then each fight's log to the players in it (fights are public
@@ -373,7 +394,7 @@ private:
     // A player (re)joining a running match gets everything they need to draw the game as it is right now.
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
-        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery()));
+        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats()));
         SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), tick_, match_->IsMotherNatureRound()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
@@ -407,7 +428,13 @@ private:
         fights_.clear();
         fightJson_.clear();
         combatBatchOpen_ = false;
-        for (std::size_t i = 0; i < seats_.size(); ++i) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery()));
+        bots_.clear();
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            if (seats_[i].bot) bots_.emplace_back(static_cast<PlayerId>(i), seed);
+        }
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats()));
+        }
         match_->Start();
         SyncAfterEngineCall();
     }
@@ -418,7 +445,12 @@ private:
             transport_.Close(id, kCloseNormal, "match over");
         }
         conns_.clear();
-        for (Seat& s : seats_) s = Seat{};
+        for (Seat& s : seats_) {
+            const bool bot = s.bot;
+            s = Seat{};
+            s.bot = bot;
+        }
+        bots_.clear();
         match_.reset();
         outbox_.clear();
         fights_.clear();
@@ -431,6 +463,8 @@ private:
     IServerTransport& transport_;
     GameConfig config_;
     std::vector<Out> outbox_;
+    std::vector<AIBotController> bots_;   // one per bot seat while a match runs
+    std::string catalog_;
     std::string lastPublic_;
     std::vector<msg::FightSummary> fights_;
     std::vector<std::string> fightJson_;
@@ -443,6 +477,7 @@ private:
 GameServer::GameServer(const GameServerConfig& config, const GameData& data, IServerTransport& transport) {
     GameServerConfig c = config;
     c.seats = std::max(2, std::min(kMaxPlayers, c.seats));
+    c.bots = std::max(0, std::min(c.seats - 1, c.bots));   // at least one seat stays human, or the lobby would never fill
     impl_ = std::make_unique<Impl>(c, data, transport);
 }
 GameServer::~GameServer() = default;
@@ -454,6 +489,7 @@ void GameServer::Tick(std::uint64_t) { impl_->Tick(); }
 GameServer::State GameServer::state() const { return impl_->state_; }
 int GameServer::connectedPlayers() const { return impl_->ConnectedCount(); }
 int GameServer::seats() const { return impl_->cfg_.seats; }
+int GameServer::bots() const { return impl_->cfg_.bots; }
 const MatchManager* GameServer::match() const { return impl_->match_.get(); }
 std::uint64_t GameServer::tickCount() const { return impl_->tick_; }
 void GameServer::SetCommandObserver(CommandObserver observer) { impl_->observer_ = std::move(observer); }

@@ -6,9 +6,9 @@ binary format, no floating point anywhere, and nothing a client sends can change
 the engine validates again by itself.
 
 ```
-w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--data DIR] [--seed N] [--autosave FILE] [--fast]
+w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--bots N] [--data DIR] [--seed N] [--autosave FILE] [--fast]
 ```
-`--players 2..8` seats per match (default 8). `--seed` fixes every match's seed (default: random per match). `--data` is the folder with
+`--players 2..8` seats per match (default 8). `--bots 0..players-1` makes that many seats AI players (see "Bot seats"): `--bots 7` lets one person play a whole match alone. `--seed` fixes every match's seed (default: random per match). `--data` is the folder with
 `champions.json`, `traits.json`, `items.json`, `pve.json`. `--autosave FILE` writes the engine's start-of-Planning snapshot there
 (atomically). `--fast` shortens every phase for client development. Ctrl-C / SIGTERM stop it cleanly (clients get close code 1001).
 
@@ -29,10 +29,18 @@ w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--data DIR] [--seed N] 
   network reads, so a message is always handled entirely before or entirely after a tick. Wall-clock time is read only by the loop
   that paces ticks (`RunServerLoop`); the engine never reads a clock.
 
+## Bot seats
+With `--bots N` the **last N seats are AI players**; the humans are seats `0 .. players-N-1`, the lobby waits for `players - N` connections and the match starts when the last human arrives.
+A bot is an `AIBotController` driven by `GameServer` once per tick *after* the engine's tick; it plays only through the same `MatchManager::Try*` calls a client uses, so it cannot break a rule. Each round, in Planning, it
+buys XP while it has more than 50 gold, buys units (another copy of a champion it owns first; when its roster is full it sells its weakest single 1-star unit to make room for something more valuable), fields bench units (tanks in front),
+and puts every item in its bag on a fielded unit (defence on tanks, damage on damage dealers, two components that combine first). In Mother Nature's phase it takes a unit, then an item, gold, XP, heal.
+Nothing about a bot is private information the server hands out: it has no connection, so its gold, shop and bench are never sent to anyone, and its board is public like any player's. `match_started.bot_seats` says which seats are AI.
+The bots' commands are not reported to `SetCommandObserver` (that hook is for client commands). After a match the lobby reopens with the same bot seats.
+
 ## Connecting
 `ws://host:7777/` (any path; plain `ws`, no TLS: put a TLS-terminating proxy in front for `wss`).
-* The server assigns the **lowest free seat** (`player_id` 0..N-1) the moment a client connects and answers with `welcome`.
-* When all seats are taken the **match starts by itself**.
+* The server assigns the **lowest free human seat** (`player_id`) the moment a client connects and answers with `welcome`.
+* When all human seats are taken the **match starts by itself**.
 * A client that leaves the lobby frees its seat. A client that leaves during a match keeps its seat reserved.
 * Every new player gets a random **reconnect token** in `welcome`. Reconnect with `ws://host:7777/?token=<token>`: the client gets its
   seat back plus a full resync (see below). A token is 32 lowercase hex characters; anything else is treated as "no token".
@@ -57,6 +65,7 @@ A message is at most 4096 bytes.
 | `unequip_item` | `unit_id`, `slot` 0..2 | back to the bag |
 | `get_state` | | re-send `state` and `public_state` |
 | `get_fight` | `fight_index` 0..7 | this round's combat log of any fight (they are public) |
+| `get_catalog` | | answered with `catalog`: what every champion / item / trait id means. Works in the lobby too (costs 5 rate-limit tokens) |
 | `ping` | | answered with `pong`, works in the lobby too |
 
 Every command that reaches the engine is answered with a `result` (below). Commands are only ever executed for the connection's own
@@ -74,7 +83,7 @@ Each message has a `"type"`.
 ### Sent to one player only (private)
 | type | when | fields |
 |---|---|---|
-| `welcome` | on connect | `protocol` (1), `player_id`, `token`, `reconnected`, `seats`, `connected`, `match_running` |
+| `welcome` | on connect | `protocol` (1), `player_id`, `token`, `reconnected`, `seats` (all seats), `bots` (how many of them are AI), `connected` (humans), `match_running` |
 | `result` | answer to a command | `id` (if given), `action`, `result`, `ok`. `result` is the engine's `ActionResult`: `Ok`, `WrongPhase`, `InvalidPlayer`, `PlayerEliminated`, `NotEnoughGold`, `InvalidSlot`, `EmptySlot`, `RosterFull`, `BoardFull`, `MaxLevel`, `InvalidUnit`, `ItemsFull`, `InvalidItem`, `ShopClosed`, `AlreadyPicked` |
 | `error` | a bad message | `code`, `detail`, `id` (if readable) |
 | `pong` | answer to `ping` | `id` |
@@ -89,8 +98,9 @@ A **unit** is `{"id", "champion", "star", "location": "bench"|"board", "x", "y",
 ### Sent to everyone (public: visible to every player anyway)
 | type | when | fields |
 |---|---|---|
-| `lobby` | someone joined / left before the match | `seats`, `connected`, `players` |
-| `match_started` | the match begins (and on reconnect) | `player_id`, `seats`, `tick_rate` (30), `phase_ticks` (`mother_nature`, `planning`, `combat`, `resolution`), `mother_nature_every` (every N rounds; 0 = no Mother Nature data), `board` dimensions, `combat_event_types` (names, index = event type number) |
+| `lobby` | someone joined / left before the match | `seats`, `bots`, `connected` (humans), `players` (the human seats taken) |
+| `catalog` | answer to `get_catalog` | `champions` (`id`, `name`, `cost`, `role` `tank`\|`damage`, `monster`, `summon`, `traits`, `hp[3]`, `attack_damage[3]`, `attack_speed_milli`, `range`, `max_mana`, `ability`, `passive` names; the PvE monsters are included, flagged `monster`), `items` (`id`, `name`, `components` (two ids for a finished item), `stats`, `traits` granted, `has_effect`), `traits` (`id`, `name`, `breakpoints`) |
+| `match_started` | the match begins (and on reconnect) | `player_id`, `seats`, `bot_seats` (the AI seats), `tick_rate` (30), `phase_ticks` (`mother_nature`, `planning`, `combat`, `resolution`), `mother_nature_every` (every N rounds; 0 = no Mother Nature data), `board` dimensions, `combat_event_types` (names, index = event type number) |
 | `phase` | every phase change (and on reconnect) | `phase` (`MotherNature`\|`Planning`\|`Combat`\|`Resolution`\|`MatchOver`), `round`, `stage`, `round_in_stage`, `pve`, `mother_nature` (this is one of her rounds: a gift phase first, and no shop until the round is over), `duration_ticks`, `ticks_remaining`, `server_tick`. Clients count the phase down themselves at 30 ticks/s |
 | `public_state` | whenever it changed | `round` and `players`: `player_id`, `alive`, `health`, `level`, `streak`, `placement`, **`board`** (units). Gold, XP, shop, bench and item bag are **not** in it |
 | `combat_summary` | a Combat phase begins | `round`, `fights`: `index`, `home`, `away` (`null` for monsters), `away_is_ghost`, `away_is_monsters`, `encounter`, `events` |
@@ -162,7 +172,6 @@ at most 64 sockets are open at once. Protocol violations are answered with the R
 ## Not built yet (deliberately)
 * **Restoring after a server crash.** The server can write the engine's Planning-start snapshot (`--autosave`), but does not yet read one back on start-up. Doing so also needs the seat tokens persisted.
 * **TLS.** Terminate it in a proxy.
-* **A catalogue message.** Clients are expected to have the champion / item data (they only ever see ids). A `catalog` message is easy to add when the designer's data settles.
 * **Windows.** The socket layer has a Winsock branch that has never been compiled or run; Linux and macOS are tested.
 * **Several matches at once.** One process hosts one lobby / match; run several processes on different ports.
 

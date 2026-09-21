@@ -11,21 +11,29 @@
 #include <string_view>
 #include <vector>
 
+#include "w2f/ChampionDatabase.h"
 #include "w2f/Combat.h"
 #include "w2f/Config.h"
+#include "w2f/Item.h"
 #include "w2f/MatchManager.h"
+#include "w2f/Pve.h"
+#include "w2f/Trait.h"
 #include "w2f/net/Protocol.h"
 
 namespace w2f::net::msg {
 
-std::string Welcome(PlayerId seat, std::string_view token, bool reconnected, int connected, int seats, bool matchRunning);
-std::string Lobby(const std::vector<PlayerId>& seatsTaken, int seats);
+// `seats` counts every seat; `bots` of them (the last ones) are AI, so `connected` humans fill `seats - bots` of them.
+std::string Welcome(PlayerId seat, std::string_view token, bool reconnected, int connected, int seats, int bots, bool matchRunning);
+std::string Lobby(const std::vector<PlayerId>& seatsTaken, int seats, int bots);
+// What the ids in every other message mean: champions (the PvE monsters too, flagged `monster`), items and traits, straight from the loaded
+// data. Public: the same for everyone, answered to `get_catalog`. Any of the optional databases may be null.
+std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters);
 std::string Error(std::string_view code, std::string_view detail, bool hasId = false, long long id = 0);
 std::string Result(const Command& command, ActionResult result);
 std::string Pong(bool hasId, long long id);
 
-// `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never).
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery);
+// `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never). `botSeats` = the AI players' seats.
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {});
 // `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
 std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound);
 

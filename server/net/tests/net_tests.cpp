@@ -1980,6 +1980,132 @@ static void TestSocketServerLoopRunsAndStops() {
 
 // ==== main =====================================================================================
 
+// ==== Bot seats ====================================================================================
+
+static void TestBotSeats() {
+    {   // One human, three bots: the lobby waits for the human only, and the match starts the moment they connect.
+        Rig r(4, [](GameData&, GameServerConfig& c) { c.bots = 3; });
+        CHECK(r.server->seats() == 4 && r.server->bots() == 3);
+        const ConnectionId a = r.Connect();
+        const json::Value welcome = r.Last(a, "welcome");
+        CHECK(Num(welcome, "player_id") == 0 && Num(welcome, "seats") == 4 && Num(welcome, "bots") == 3 && Num(welcome, "connected") == 1);
+        CHECK(r.server->state() == GameServer::State::Running && r.server->connectedPlayers() == 1);
+        const json::Value started = r.Last(a, "match_started");
+        CHECK(Num(started, "player_id") == 0 && Num(started, "seats") == 4);
+        const json::Value* botSeats = started.Find("bot_seats");
+        long long b1 = 0, b2 = 0, b3 = 0;
+        CHECK(botSeats && botSeats->Items().size() == 3 && botSeats->Items()[0].ToInt(b1) && botSeats->Items()[1].ToInt(b2) && botSeats->Items()[2].ToInt(b3) &&
+              b1 == 1 && b2 == 2 && b3 == 3);
+        CHECK(r.CountType(a, "lobby") == 1);   // (the one sent when the human took their seat)
+        // Nobody else can take a bot's seat.
+        const ConnectionId late = r.Connect();
+        CHECK(Str(r.Last(late, "error"), "code") == "match_in_progress");
+
+        // The bots play: they act in the planning phase like any other player (shop, roster), untouched by the human.
+        r.RunUntil([&] { return IsPlanning(r); }, 200);
+        r.Tick(10);
+        for (PlayerId bot = 1; bot <= 3; ++bot) {
+            const PlayerState* p = r.Match().Players().Get(bot);
+            CHECK(p->IsAlive() && p->Roster().Count() > 0);
+        }
+        CHECK(r.Match().Players().Get(0)->Roster().Count() == 0);   // the human has not done anything
+        // ...and nothing about them is ever sent to the human beyond what is public: every private message is about seat 0.
+        for (const json::Value& m : r.Inbox(a)) {
+            const std::string type = Str(m, "type");
+            if (type == "state" || type == "income") CHECK(Num(m, "player_id") == 0);
+            CHECK(type != "unit_event" || Num(*m.Find("unit"), "id") >> 24 == 1);   // unit ids carry (seat + 1) << 24: only seat 0's
+        }
+    }
+    {   // Two humans and one bot: the match waits for both humans.
+        Rig r(3, [](GameData&, GameServerConfig& c) { c.bots = 1; });
+        const ConnectionId a = r.Connect();
+        CHECK(r.server->state() == GameServer::State::Lobby && Num(r.Last(a, "lobby"), "bots") == 1 && Num(r.Last(a, "lobby"), "connected") == 1);
+        const ConnectionId b = r.Connect();
+        CHECK(Num(r.Last(a, "welcome"), "player_id") == 0 && Num(r.Last(b, "welcome"), "player_id") == 1 && r.server->state() == GameServer::State::Running);
+        long long bot = 0;
+        CHECK(r.Last(b, "match_started").Find("bot_seats")->Items()[0].ToInt(bot) && bot == 2);
+    }
+    {   // A human leaving the lobby frees a human seat: the next one to arrive gets it, and the bot seat stays a bot.
+        Rig r(3, [](GameData&, GameServerConfig& c) { c.bots = 1; });
+        const ConnectionId a = r.Connect();
+        r.server->OnDisconnect(a);
+        const ConnectionId a2 = r.Connect();
+        const ConnectionId b = r.Connect();
+        CHECK(Num(r.Last(a2, "welcome"), "player_id") == 0 && Num(r.Last(b, "welcome"), "player_id") == 1);
+    }
+    {   // The bot count is bounded: at least one human seat stays.
+        Rig r(3, [](GameData&, GameServerConfig& c) { c.bots = 9; });
+        CHECK(r.server->bots() == 2);
+        Rig none(3, [](GameData&, GameServerConfig& c) { c.bots = -4; });
+        CHECK(none.server->bots() == 0);
+    }
+    {   // A whole match: one human who does nothing against 7 bots. It ends, the engine's books balance the whole way through, and after the
+        // grace period the lobby reopens with the same bot seats.
+        Rig r(8, [](GameData& d, GameServerConfig& c) {
+            c.bots = 7;
+            c.postMatchTicks = 60;
+            d.config.player.startingHealth = 30;
+            d.config.damage.baseDamageByStage = {8, 12};
+        });
+        const ConnectionId a = r.Connect();
+        CHECK(r.server->state() == GameServer::State::Running);
+        bool balanced = true;
+        for (int tick = 0; tick < 60000 && r.server->state() == GameServer::State::Running; ++tick) {
+            r.Tick();
+            if (tick % 50 == 0) balanced = balanced && r.Match().VerifyPoolIntegrity() && r.Match().VerifyRosterLayouts();
+        }
+        CHECK(balanced);
+        CHECK(r.server->state() == GameServer::State::Finished && r.CountType(a, "match_over") == 1);
+        r.Tick(70);
+        CHECK(r.server->state() == GameServer::State::Lobby && r.server->bots() == 7);
+        r.server->OnDisconnect(a);
+        const ConnectionId again = r.Connect();
+        CHECK(Num(r.Last(again, "welcome"), "player_id") == 0 && r.server->state() == GameServer::State::Running);
+        r.Tick(600);   // the second match's bots are alive and playing
+        CHECK(r.Match().Players().Get(7)->Roster().Count() > 0);
+    }
+    {   // Bots are deterministic: the same seed and the same inputs give the same match, tick for tick.
+        std::uint64_t hashes[2] = {0, 0};
+        for (int run = 0; run < 2; ++run) {
+            Rig r(8, [](GameData&, GameServerConfig& c) { c.bots = 7; });
+            r.Connect();
+            r.Tick(4000);
+            hashes[run] = r.Match().StateHash();
+        }
+        CHECK(hashes[0] != 0 && hashes[0] == hashes[1]);
+    }
+}
+
+static void TestCatalog() {
+    Rig r(2);
+    const ConnectionId a = r.Connect();   // works in the lobby, before any match
+    r.Say(a, R"({"action": "get_catalog", "id": 4})");
+    const json::Value catalog = r.Last(a, "catalog");
+    CHECK(Str(catalog, "type") == "catalog");
+    const json::Value* champions = catalog.Find("champions");
+    const json::Value* items = catalog.Find("items");
+    const json::Value* traits = catalog.Find("traits");
+    CHECK(champions && items && traits && champions->Items().size() == r.champions->All().size() + r.encounters->Monsters().All().size() && items->Items().size() == r.items->All().size() &&
+          traits->Items().size() == r.traits->All().size());
+    bool alesk = false, sword = false, soulsSword = false, helios = false, monster = false;
+    for (const json::Value& c : champions->Items()) {
+        if (Num(c, "id") == 10001) monster = Str(c, "name") == "Gloop" && c.Find("monster") && c.Find("monster")->IsBool();
+        if (Num(c, "id") == 9001) alesk = Str(c, "name") == "Alesk" && Num(c, "cost") == 4 && Str(c, "role") == "tank" && c.Find("traits")->Items().size() == 1 && c.Find("hp")->Items().size() == 3;
+    }
+    for (const json::Value& i : items->Items()) {
+        if (Num(i, "id") == 3) sword = Str(i, "name") == "Coregons Sword" && i.Find("components")->Items().empty() && Num(*i.Find("stats"), "attack_damage") == 15;
+        if (Num(i, "id") == 24) soulsSword = i.Find("components")->Items().size() == 2;
+    }
+    for (const json::Value& t : traits->Items()) helios = helios || (Str(t, "name") == "Helios" && !t.Find("breakpoints")->Items().empty());
+    CHECK(alesk && sword && soulsSword && helios && monster);
+    // Identical for everyone, and the rate limiter counts it (5 tokens).
+    const ConnectionId b = r.Connect();
+    r.Say(b, R"({"action": "get_catalog"})");
+    CHECK(r.CountType(b, "catalog") == 1 && r.Last(b, "catalog").Find("champions")->Items().size() == champions->Items().size());
+    r.Say(a, R"({"action": "get_catalog", "extra": 1})");
+    CHECK(Str(r.Last(a, "error"), "code") == "unknown_field");
+}
+
 int main() {
     struct Test { const char* name; void (*fn)(); };
     const Test tests[] = {
@@ -2010,6 +2136,8 @@ int main() {
         {"Sockets: slow reader is dropped", TestSocketSlowReaderIsDropped},
         {"Sockets: two-player flow + token reconnect", TestSocketFullMatchFlow},
         {"Sockets: the real server loop starts and stops", TestSocketServerLoopRunsAndStops},
+        {"Bot seats: lobby, play, reset, determinism", TestBotSeats},
+        {"Catalog message", TestCatalog},
     };
     int failedTests = 0;
     for (const Test& t : tests) {

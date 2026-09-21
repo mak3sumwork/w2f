@@ -59,7 +59,11 @@ struct GameData {
 };
 
 struct GameServerConfig {
-    int seats = kMaxPlayers;   // the match starts by itself when this many players are connected (2..8)
+    int seats = kMaxPlayers;   // total seats in the match (2..8); it starts by itself when every HUMAN seat is taken
+    // How many of the seats are AI players (0..seats-1; at least one seat stays human). They take the LAST seats, so the humans are seats
+    // 0..seats-bots-1 and the lobby waits for `seats - bots` connections. A bot is an AIBotController driven by the server once per tick,
+    // acting only through the same MatchManager::Try* calls a client uses.
+    int bots = 0;
     // 0 = a fresh random seed per match (from `entropy`). A fixed seed makes every match identical: for tests and debugging.
     std::uint64_t seed = 0;
     // Where seeds and reconnect tokens come from. Default: std::random_device. Tests inject a deterministic source.
@@ -94,14 +98,15 @@ public:
 
     // ---- Observation ----
     State state() const;
-    int connectedPlayers() const;
-    int seats() const;
+    int connectedPlayers() const;   // humans only
+    int seats() const;              // all seats, bots included
+    int bots() const;
     // Read-only view of the running match (nullptr in the lobby). For tests, logging and admin tooling.
     const MatchManager* match() const;
     std::uint64_t tickCount() const;
 
-    // Every command that reached the engine, with the tick it ran on and its result (tests use it to replay a networked match
-    // against a bare engine and prove the network changed nothing).
+    // Every command that reached the engine FROM A CLIENT, with the tick it ran on and its result (tests use it to replay a networked match
+    // against a bare engine and prove the network changed nothing). The bots' actions are not reported: with bots the replay would need them too.
     using CommandObserver = std::function<void(std::uint64_t tick, PlayerId player, const Command& command, ActionResult result)>;
     void SetCommandObserver(CommandObserver observer);
     // Receives the engine's automatic snapshot at the start of every Planning phase (where the server persists it).

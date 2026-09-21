@@ -82,24 +82,109 @@ int PhaseTicks(const GameConfig& c, MatchPhase phase) {
 
 }  // namespace
 
-std::string Welcome(PlayerId seat, std::string_view token, bool reconnected, int connected, int seats, bool matchRunning) {
+std::string Welcome(PlayerId seat, std::string_view token, bool reconnected, int connected, int seats, int bots, bool matchRunning) {
     JsonWriter w = Start("welcome");
     w.Field("protocol", kProtocolVersion);
     w.Field("player_id", static_cast<int>(seat));
     w.Field("token", token);
     w.Field("reconnected", reconnected);
     w.Field("seats", seats);
+    w.Field("bots", bots);
     w.Field("connected", connected);
     w.Field("match_running", matchRunning);
     return Finish(w);
 }
 
-std::string Lobby(const std::vector<PlayerId>& seatsTaken, int seats) {
+std::string Lobby(const std::vector<PlayerId>& seatsTaken, int seats, int bots) {
     JsonWriter w = Start("lobby");
     w.Field("seats", seats);
+    w.Field("bots", bots);
     w.Field("connected", static_cast<int>(seatsTaken.size()));
     w.Key("players").BeginArray();
     for (PlayerId p : seatsTaken) w.Int(p);
+    w.EndArray();
+    return Finish(w);
+}
+
+namespace {
+void WriteStarValues(JsonWriter& w, const char* key, const StarValue& v) {
+    w.Key(key).BeginArray();
+    for (int x : v) w.Int(x);
+    w.EndArray();
+}
+void WriteStats(JsonWriter& w, const ItemStats& s) {
+    w.Key("stats").BeginObject();
+    if (s.maxHp != 0) w.Field("hp", s.maxHp);
+    if (s.armor != 0) w.Field("armor", s.armor);
+    if (s.magicResist != 0) w.Field("magic_resist", s.magicResist);
+    if (s.attackDamage != 0) w.Field("attack_damage", s.attackDamage);
+    if (s.abilityDamage != 0) w.Field("ability_damage", s.abilityDamage);
+    if (s.attackSpeedPercent != 0) w.Field("attack_speed_percent", s.attackSpeedPercent);
+    if (s.critChance != 0) w.Field("crit_chance", s.critChance);
+    if (s.startMana != 0) w.Field("start_mana", s.startMana);
+    if (s.manaRegenMilli != 0) w.Field("mana_regen_milli", s.manaRegenMilli);
+    w.EndObject();
+}
+}  // namespace
+
+std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters) {
+    JsonWriter w = Start("catalog");
+    w.Key("champions").BeginArray();
+    const auto writeChampions = [&w](const ChampionDatabase& db, bool monster) {
+        for (const ChampionDefinition& c : db.All()) {
+            w.BeginObject();
+            w.Field("monster", monster);
+            w.Field("id", c.id);
+            w.Field("name", c.name);
+            w.Field("cost", c.cost);
+            w.Field("role", c.role == ChampionRole::Tank ? "tank" : "damage");
+            w.Field("summon", c.summon);
+            w.Key("traits").BeginArray();
+            for (const std::string& t : c.traits) w.String(t);
+            w.EndArray();
+            WriteStarValues(w, "hp", c.stats.maxHp);
+            WriteStarValues(w, "attack_damage", c.stats.attackDamage);
+            w.Field("attack_speed_milli", c.stats.attackSpeedMilli);
+            w.Field("range", c.stats.attackRange);
+            w.Field("max_mana", c.stats.maxMana);
+            w.Field("ability", c.ability.name);
+            w.Field("passive", c.passive.name);
+            w.EndObject();
+        }
+    };
+    writeChampions(champions, false);
+    if (encounters != nullptr) writeChampions(encounters->Monsters(), true);
+    w.EndArray();
+    w.Key("items").BeginArray();
+    if (items != nullptr) {
+        for (const ItemDefinition& item : items->All()) {
+            w.BeginObject();
+            w.Field("id", item.id);
+            w.Field("name", item.name);
+            w.Key("components").BeginArray();
+            if (item.IsCombined()) w.UInt(item.components[0]).UInt(item.components[1]);
+            w.EndArray();
+            WriteStats(w, item.stats);
+            w.Key("traits").BeginArray();
+            for (const std::string& t : item.grantsTraits) w.String(t);
+            w.EndArray();
+            w.Field("has_effect", !item.abilities.empty() || !item.auras.empty());
+            w.EndObject();
+        }
+    }
+    w.EndArray();
+    w.Key("traits").BeginArray();
+    if (traits != nullptr) {
+        for (const TraitDefinition& t : traits->All()) {
+            w.BeginObject();
+            w.Field("id", t.id);
+            w.Field("name", t.name);
+            w.Key("breakpoints").BeginArray();
+            for (const TraitBreakpoint& b : t.breakpoints) w.Int(b.count);
+            w.EndArray();
+            w.EndObject();
+        }
+    }
     w.EndArray();
     return Finish(w);
 }
@@ -127,10 +212,13 @@ std::string Pong(bool hasId, long long id) {
     return Finish(w);
 }
 
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery) {
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats) {
     JsonWriter w = Start("match_started");
     w.Field("player_id", static_cast<int>(you));
     w.Field("seats", seats);
+    w.Key("bot_seats").BeginArray();
+    for (PlayerId bot : botSeats) w.Int(bot);
+    w.EndArray();
     w.Field("tick_rate", kTicksPerSecond);
     w.Key("phase_ticks").BeginObject();
     w.Field("mother_nature", config.match.motherNatureTicks);

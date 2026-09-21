@@ -17,7 +17,8 @@ Run from `server/`.
 | Engine tests only (includes the isolation check) | `make test-engine` |
 | Network tests only | `make test-net` |
 | Engine must contain no networking | `make check-isolation` |
-| Build the server | `make server` → `./build/w2f_server [--port N] [--bind ADDR] [--players 2..8] [--data DIR] [--seed N] [--autosave FILE] [--fast]` |
+| Build the server | `make server` → `./build/w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots N] [--data DIR] [--seed N] [--autosave FILE] [--fast]` |
+| Play 1 human vs 7 AI locally | `./build/w2f_server --bots 7` (add `--fast` for 4 s planning rounds), then open `client/index.html` in a browser and press Connect (see `client/README.md`) |
 | Headless 8-player demo match | `make demo SEED=7` (`W2F_ROSTER_ONLY=1` sells only the real 30 champions; `W2F_NO_DRILL=1` skips the crash-recovery drill) |
 | Clean | `make clean` |
 | CMake (what CI and Windows use) | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build && ctest --test-dir build --output-on-failure` |
@@ -27,7 +28,7 @@ Run from `server/`.
 * The Makefile builds with `clang++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Wshadow -Wconversion -fsanitize=address,undefined`. **A build with any warning is a failed build.**
 * The suite currently runs ~3,900 engine checks + ~1,460 network checks; a change is not done until `make test` is green with zero warnings.
 * CI: `.github/workflows/build.yml` (ubuntu clang+gcc, macOS, Windows MSVC, UE5-flags job, cross-platform determinism job). Docs: `server/docs/build.md`.
-* Layout: `src/` + `include/w2f/` = engine (no networking); `net/` = sockets, WebSocket, lobby, JSON protocol; `tools/` = server + demo; `tests/` = custom CHECK-macro runner + `tests/support`; `data/` = production JSON.
+* Layout: `src/` + `include/w2f/` = engine (no networking); `net/` = sockets, WebSocket, lobby, JSON protocol; `tools/` = server + demo; `tests/` = custom CHECK-macro runner + `tests/support`; `data/` = production JSON; `client/index.html` = the single-file browser test client (no build step, no dependencies).
 * Do **not** commit or push unless the user asks. End commit messages with `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
 
 ## Code Style & Architecture Guidelines
@@ -56,20 +57,20 @@ Run from `server/`.
 ## Auto-Memory Clause
 Whenever we lock down a major engine mechanic, rule or convention (a new primitive, a phase rule, a data-format decision, a determinism finding), **update the "Locked Engine Mechanics" section below in the same change**, keeping each entry to one or two lines. Also correct any entry that a change makes wrong. Do not wait to be asked.
 
-## Status & Honest Assessment (as of Phase 13; re-check before trusting)
-**Verdict:** the engine is a strong foundation for UE5, but the game is NOT playable yet and balance is unproven.
+## Status & Honest Assessment (as of Phase 14; re-check before trusting)
+**Verdict:** the engine is a strong foundation for UE5. Since Phase 14 it is playable locally (1 human vs 7 AI in the browser test client), but balance is unproven and the client is a test tool, not a game.
 * **UE5 fit:** good. Server-authoritative + replayable event log = UE only renders. The engine is C++17 with no exceptions/RTTI/floats/platform calls (CI builds it that way), so it can be embedded as a UE module or used through the WebSocket server. Engine speed is not a problem (12 full 8-bot matches ≈ 1 s).
   The hard part is everything visual, ~80% of the remaining work: art/animation for 30 champions, 60+ effect/status VFX, UI (shop, bench, board, gifts, item combining, traits), sound. The log has NO animation data (hits are instant: no windup, no projectile flight; the 0.5 s cast lock is a guess) and every DoT shows as the same `Burn` status.
-* **Not playable vs 7 AI:** (1) no client exists, only raw JSON over WebSocket; (2) `w2f_server` has no AI seats (bots exist only in tests/demo); (3) bots are weak: they never equip items, never sell, never reroll, never chase synergies; (4) PvE is no threat (bots won 99.8% of 595 PvE fights).
+* **Playable vs 7 AI (Phase 14):** `w2f_server --bots 7` + `client/index.html`. Still missing: (1) bots never reroll or chase synergies, and never swap a stronger bench unit onto a full board; (2) PvE is no threat (bots won 99.8% of 595 PvE fights); (3) the board is not capped by level (`limitBoardToLevel` is off, so a level-3 player fields 14+ units: an open design question that the first hands-on games will show).
 * **Balance facts** (12 bot-only matches, random comps, no items: a smoke test, low confidence): median 36 rounds (≈40–45 min at default timers); no seat bias; **16.7% of PvP fights hit the 40 s timeout** (avg fight 28.7 s) = stalling/low damage; outliers Mortis 75% and Coregons-3 74%; Baira weak (32% over 265 fights).
   Higher breakpoints are NEVER reached by bots (Coregons 6/8 and its zone, Helios 6, Hexagon 4, Assassin 4 are unmeasured). Bots took 0 Mother Nature heal gifts (ranked last) and 24/32 unit gifts were paid as gold (full rosters).
-* **CI:** Ubuntu clang+gcc, macOS, UE5-flags and the cross-platform determinism job passed. Windows/MSVC failed (ASan stack-use-after-scope in `StateHash`, range-for over a temporary's `.words`); fixed in commit `6a1f782` but the result was NOT seen (GitHub API rate limit). Check the Actions page first.
+* **CI:** all jobs green as of Phase 14 (the Windows/MSVC failure, an ASan stack-use-after-scope in `StateHash`, was fixed in `6a1f782`; the designer confirmed the run passed).
 * Unproven/assumed: all Mother Nature weights, Tier 3 start (stage 4), no Tier 2, cast lock 0.5 s, many `ASSUMED` numbers in the data (`server/docs/content-notes.md`).
 
 ## Roadmap (next steps, in order)
-1. Confirm Windows CI is green (Actions page for the latest commit); fix what its annotations show.
-2. Server-side AI seats (`--bots 7`) + smarter bots (equip items, sell, reroll, aim for synergies).
-3. Minimal local browser test client (a local HTML file; Artifacts cannot reach `ws://localhost`) so the designer can play 1 human vs 7 AI.
+1. ~~Confirm Windows CI is green~~ (done).
+2. ~~Server-side AI seats (`--bots 7`) + bots that equip items and sell~~ (done, Phase 14). Still open: bots that reroll, aim for synergies and put the strongest units on the board.
+3. ~~Minimal local browser test client~~ (done: `client/index.html`). Play it first: Mother Nature, board size vs level and fight length are the things to judge by hand.
 4. Real balance harness (win rate per champion and synergy tier, fight timeout rate, PvE difficulty, game length); a throwaway prototype was used for the numbers above. First tuning targets: fight timeouts and PvE difficulty.
 5. UE5 vertical slice: replay one recorded fight before any UI; decide WebSocket client vs embedding the engine as a module.
 6. Later: persistence/restore of autosaves, auth/matchmaking, Docker deploy, split `tests.cpp` and `CombatSimulator.cpp`, Android/iOS.
@@ -87,4 +88,6 @@ Whenever we lock down a major engine mechanic, rule or convention (a new primiti
 * Assassin (2/4) = Vex, Lunis, Raa (+ Assassin Emblem): abilities can crit, +20/+50 crit damage.
 * Mother Nature (Phase 13, replaces carousel + augments): every 3rd round (`motherNatureEveryRounds`) opens with a `MotherNature` phase (the old Draft phase is gone) — each player is offered 2 distinct concrete gifts from `data/mother_nature.json` (tier by stage; Gold/Xp/Heal/Item/Unit), picks 1 free (`TryPickGift`, `pick_gift`); shop closed the whole round (`ShopClosed`); units on offer are checked out of the pool; timeout auto-picks the first offer; phase ends early when all settled; snapshot format v3; bots pick unit > item > gold > xp > heal.
 * Helios burn `refreshes` (one burn per target, keeps its rhythm). Assassin also gives +15/+30 crit chance.
+* Bot seats + catalog (Phase 14): `GameServerConfig::bots` / `--bots N` = the LAST N seats are `AIBotController`s ticked by `GameServer` after the engine's tick (no connection, no token, never in the lobby count; a lobby needs at least one human). A bot's Planning turn is: XP, buy (owned champions first; sells its weakest lone 1-star, item-free, bench-first unit when the roster is full and the purchase is worth more), place (tanks front), equip (`ItemFit`: defence for tanks, offence for damage dealers, recipes first, only fielded units, no duplicate trait emblem, a bare Seed only where it combines). `MatchManager::Items()` exposes the item database read-only. Bots add no RNG use beyond the shop-order shuffle, so `AIBotController::State` is unchanged.
+* `get_catalog` -> `catalog` (id -> name/cost/traits/stats for champions, monsters, items, traits) is a command, not a push, so existing message sequences are unchanged; `welcome`/`lobby` carry `bots`, `match_started` carries `bot_seats`.
 * Open design questions live in `server/docs/content-notes.md` (Lum's active, Mother Nature weights / Tier 3 start stage / a Tier 2).

@@ -35,6 +35,7 @@ enum class CommandType : std::uint8_t {
     GetState,     // re-send the private and public state
     GetFight,     // fight_index: the combat log of one of this round's fights (any player's: fights are public)
     Ping,         // answered with "pong" even before a match exists
+    GetCatalog,   // answered with "catalog" (what every champion / item / trait id means), also before a match exists
 };
 
 constexpr const char* ToString(CommandType t) {
@@ -50,6 +51,7 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::GetState: return "get_state";
         case CommandType::GetFight: return "get_fight";
         case CommandType::Ping: return "ping";
+        case CommandType::GetCatalog: return "get_catalog";
     }
     return "?";
 }

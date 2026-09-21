@@ -79,7 +79,7 @@ ParseResult ParseCommand(std::string_view text) {
     static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp},
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
                                    {"unequip_item", CommandType::UnequipItem}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
-                                   {"ping", CommandType::Ping}};
+                                   {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}};
     bool found = false;
     for (const Known& k : kKnown) {
         if (name == k.name) { c.type = k.type; found = true; }
@@ -99,6 +99,7 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:
+        case CommandType::GetCatalog:
         case CommandType::Ping: allowed = {"id", "action"}; break;
     }
     for (std::size_t i = 0; i < root.MemberCount(); ++i) {
@@ -167,6 +168,7 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:
+        case CommandType::GetCatalog:
         case CommandType::Ping:
             break;
     }

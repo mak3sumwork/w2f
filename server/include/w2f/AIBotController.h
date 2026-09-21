@@ -6,9 +6,13 @@
 //
 // Once per round, the first time it is ticked during Planning, it:
 //   1. Buys XP while it holds more than `levelUpAboveGold` gold.
-//   2. Buys random units from its shop while it can afford them (keeping `reserveGold`).
+//   2. Buys units from its shop while it can afford them (keeping `reserveGold`): copies of champions it already owns
+//      first (they lead to a star-up), the rest in random order. When its roster is full it SELLS its weakest unit to make room
+//      for a purchase that is worth more (see MakeRoomFor).
 //   3. Moves benched units onto the board while the board has room: tanks take the front
 //      row (falling back toward the back), everyone else takes the back row (falling forward).
+//   4. Equips every item in its bag on a unit that is fielded: defensive items on tanks, damage items on the damage dealers,
+//      preferring the strongest units and pairs of components that combine into a finished item.
 //
 // Its only randomness is the shop-slot order, from its own seeded stream, so a match with
 // bots is exactly as reproducible as one without.
@@ -52,6 +56,13 @@ private:
     void BuyExperience(MatchManager& match);
     void BuyUnits(MatchManager& match);
     void PlaceUnits(MatchManager& match);
+    void EquipItems(MatchManager& match);
+    // The unit the bot would part with first, or nullptr when it has nothing it is willing to sell (it never sells a star-2+ unit or
+    // one of a pair of copies about to merge; units that carry items go last, bench units before board units, cheapest first).
+    const UnitInstance* WeakestSellable(const UnitRoster& roster) const;
+    // A purchase of `offered` does not fit: sells the weakest unit if `offered` is worth more (or is one more copy of a champion the
+    // bot already has). True once the roster can receive `offered`.
+    bool MakeRoomFor(MatchManager& match, const ChampionDefinition& offered);
 
     PlayerId player_;
     Rng rng_;

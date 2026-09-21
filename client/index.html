@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>W2F Test Client</title>
+<style>
+  :root {
+    --bg: #14161b; --panel: #1d2028; --panel2: #262a35; --line: #363b49; --text: #e6e8ee; --dim: #99a0b2;
+    --accent: #5b8def; --good: #4cc38a; --bad: #ef5b5b; --gold: #f5b301; --hex: #2c3140; --hex2: #343a4b; --hexSel: #46507a;
+    --c1: #9aa0a6; --c2: #4caf50; --c3: #2f80ed; --c4: #a855f7; --c5: #f5b301;
+    --W: 64px; --R: 37px; --RH: 55.5px;   /* hex width, circumradius, row pitch (1.5 R) */
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { border-color: var(--bad); color: var(--bad); }
+  input[type=text] { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .dim { color: var(--dim); } .good { color: var(--good); } .bad { color: var(--bad); } .gold { color: var(--gold); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  #app { max-width: 1500px; margin: 0 auto; padding: 10px 16px 30px; display: grid; gap: 10px; }
+  #conn { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #conn input { width: 260px; max-width: 100%; }
+  #status { margin-left: 6px; }
+
+  #hud { display: grid; grid-template-columns: minmax(200px, 1.3fr) repeat(4, minmax(90px, 1fr)) auto; gap: 10px; align-items: center; }
+  .stat .label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .stat .value { font-size: 20px; font-weight: 650; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .bar.hp > i { background: var(--good); }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-weight: 600; }
+  .chip.mn { background: #3b2f57; border-color: #7a58c9; }
+  .chip.plan { background: #23384f; border-color: #3f78b8; } .chip.combat { background: #4f2727; border-color: #b84a4a; }
+
+  #cols { display: grid; grid-template-columns: 250px minmax(560px, 1fr) 300px; gap: 10px; align-items: start; }
+  @media (max-width: 1150px) { #cols { grid-template-columns: 1fr; } #hud { grid-template-columns: repeat(3, 1fr); } }
+  aside, #center { display: grid; gap: 10px; align-content: start; min-width: 0; }
+
+  .tabs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .banner { padding: 6px 10px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); }
+
+  /* ---- hex boards (DOM, pointy-top, odd rows shifted half a hex to the right = the engine's "odd-r") ---- */
+  .field { position: relative; margin: 0 auto; }
+  .cell { position: absolute; width: var(--W); height: calc(var(--R) * 2); clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); background: var(--hex); }
+  .cell.alt { background: var(--hex2); }
+  .cell.sel, .cell.target:hover { background: var(--hexSel); }
+  .cell.front { box-shadow: inset 0 0 0 2px #fff2; }
+  .rowlabel { position: absolute; left: -4px; font-size: 10px; color: var(--dim); }
+
+  .tok { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; display: grid; place-items: center;
+         font-weight: 700; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #0008; cursor: pointer;
+         background: hsl(var(--hue), 45%, 38%); border: 3px solid var(--ring, var(--c1)); user-select: none; }
+  .tok .stars { position: absolute; bottom: -9px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--gold); letter-spacing: -1px; text-shadow: 0 1px 2px #000; }
+  .tok .dots { position: absolute; top: -6px; left: 0; right: 0; display: flex; justify-content: center; gap: 2px; }
+  .tok .dots i { width: 8px; height: 8px; border-radius: 50%; background: #fff; border: 1px solid #0007; }
+  .tok.sel { outline: 3px solid #fff; }
+  .tok.small { width: 40px; height: 40px; margin: -20px 0 0 -20px; font-size: 11px; }
+
+  #bench { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+  .slot { position: relative; height: 62px; border-radius: 8px; background: var(--hex); border: 1px dashed var(--line); cursor: pointer; }
+  .slot.sel, .slot.target:hover { background: var(--hexSel); }
+  .slot .idx { position: absolute; left: 4px; top: 2px; font-size: 9px; color: var(--dim); }
+
+  #shop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .card { border: 2px solid var(--c1); border-radius: 8px; padding: 6px 8px; background: var(--panel2); cursor: pointer; min-height: 74px; }
+  .card:hover { filter: brightness(1.15); }
+  .card.unaffordable { opacity: .45; }
+  .card.empty { border-style: dashed; border-color: var(--line); cursor: default; opacity: .5; }
+  .card .name { font-weight: 650; }
+  .card .cost { float: right; color: var(--gold); font-weight: 700; }
+  .card .traits { font-size: 11px; color: var(--dim); }
+  .closed { text-align: center; padding: 14px; color: #c8b3ff; background: #2a2340; border: 1px solid #7a58c9; border-radius: 8px; grid-column: 1 / -1; }
+
+  .players .p { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; padding: 5px 6px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+  .players .p:hover { border-color: var(--line); } .players .p.viewing { border-color: var(--accent); background: var(--panel2); }
+  .players .p.dead { opacity: .45; } .players .p.me .n { color: var(--gold); font-weight: 650; }
+  .players .p .bar { grid-column: 1 / -1; margin: 0; }
+  .syn { display: flex; justify-content: space-between; padding: 2px 6px; border-radius: 4px; }
+  .syn.active { background: #24402f; } .syn .bp { color: var(--dim); font-size: 11px; }
+  .syn.active .bp b { color: var(--good); }
+
+  #bag { display: flex; flex-wrap: wrap; gap: 6px; }
+  .item { padding: 3px 8px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
+  .item.sel { outline: 2px solid #fff; } .item.legend { border-color: var(--gold); } .item.emblem { border-color: #a855f7; }
+  #inspector .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  #log { max-height: 320px; overflow-y: auto; font-size: 12px; display: grid; gap: 1px; }
+  #log div { padding: 1px 4px; border-radius: 3px; } #log .err { color: var(--bad); } #log .imp { color: var(--gold); } #log .mn { color: #c8b3ff; } #log .sys { color: var(--dim); }
+
+  /* ---- battle ---- */
+  .ctok { position: absolute; left: 0; top: 0; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; display: grid; place-items: center; will-change: transform;
+          font-weight: 700; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #0008; background: hsl(var(--hue), 45%, 38%); border: 3px solid var(--team); }
+  .ctok.dead { opacity: 0; transition: opacity .35s; } .ctok.cast { box-shadow: 0 0 0 4px #fff8, 0 0 14px 6px var(--accent); } .ctok.stun { filter: grayscale(.8); }
+  .ctok .hpb { position: absolute; left: -4px; right: -4px; bottom: -9px; height: 5px; background: #000a; border-radius: 3px; overflow: hidden; }
+  .ctok .hpb i { display: block; height: 100%; background: var(--good); } .ctok .hpb.shield i { background: #9ad1ff; }
+  .ctok .mnb { position: absolute; left: -4px; right: -4px; bottom: -14px; height: 3px; background: #000a; border-radius: 2px; overflow: hidden; }
+  .ctok .mnb i { display: block; height: 100%; background: #5ab0ff; }
+  .fx { position: absolute; left: 0; top: 0; pointer-events: none; font-weight: 800; text-shadow: 0 1px 2px #000; animation: floatUp .9s ease-out forwards; z-index: 5; }
+  @keyframes floatUp { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -34px; } }
+  .fx.dmg { color: #ffd0d0; } .fx.crit { color: #ffcf40; font-size: 17px; } .fx.heal { color: var(--good); } .fx.txt { color: #cfe0ff; font-size: 11px; }
+  .arenaline { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed #fff2; pointer-events: none; }
+  .fights .f { display: flex; justify-content: space-between; gap: 8px; padding: 2px 4px; border-radius: 4px; } .fights .f.mine { background: #2b3350; }
+
+  /* ---- overlays ---- */
+  .overlay { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 20; padding: 16px; }
+  .overlay .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; max-width: 760px; width: 100%; }
+  .gifts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+  .gift { border: 2px solid #7a58c9; background: #2a2340; border-radius: 10px; padding: 14px; cursor: pointer; text-align: center; }
+  .gift:hover { filter: brightness(1.2); } .gift .k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #c8b3ff; } .gift .big { font-size: 20px; font-weight: 700; margin: 6px 0; }
+  table.place { width: 100%; border-collapse: collapse; margin: 10px 0; } table.place td, table.place th { padding: 3px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="conn" class="panel">
+    <b>W2F test client</b>
+    <input id="url" type="text" value="ws://localhost:7777/" aria-label="server address">
+    <button id="btnConnect" class="primary">Connect</button>
+    <button id="btnDisconnect">Disconnect</button>
+    <span id="status" class="dim">not connected</span>
+    <span class="dim" style="margin-left:auto">Shortcuts: <kbd>D</kbd> reroll &middot; <kbd>F</kbd> buy XP &middot; <kbd>E</kbd> sell selected &middot; <kbd>Esc</kbd> deselect</span>
+  </div>
+
+  <div id="hud" class="panel">
+    <div><span id="phaseChip" class="chip">Lobby</span> <span id="roundText" class="dim"></span>
+      <div class="bar"><i id="timerBar"></i></div><div id="timerText" class="dim"></div></div>
+    <div class="stat"><div class="label">Gold</div><div class="value gold" id="gold">-</div><div class="dim" id="interest"></div></div>
+    <div class="stat"><div class="label">Level</div><div class="value" id="level">-</div><div class="bar"><i id="xpBar"></i></div><div class="dim" id="xpText"></div></div>
+    <div class="stat"><div class="label">Health</div><div class="value" id="hp">-</div><div class="bar hp"><i id="hpBar"></i></div></div>
+    <div class="stat"><div class="label">Streak</div><div class="value" id="streak">-</div><div class="dim" id="boardCount"></div></div>
+    <div class="row"><button id="btnReroll">Reroll <span class="gold">2</span> (D)</button><button id="btnXp">Buy XP <span class="gold">4</span> (F)</button></div>
+  </div>
+
+  <div id="cols">
+    <aside>
+      <div class="panel players"><h3>Players</h3><div id="players" class="dim">not in a match</div></div>
+      <div class="panel"><h3 id="synTitle">Synergies</h3><div id="syn" class="dim">-</div></div>
+      <div class="panel fights"><h3>This round's fights</h3><div id="fights" class="dim">-</div></div>
+    </aside>
+
+    <section id="center">
+      <div class="tabs">
+        <button id="tabBoard" class="active">Board</button><button id="tabBattle" disabled>Battle</button>
+        <span id="viewBanner" class="banner" hidden></span>
+        <span id="replayCtl" class="row" hidden>
+          <button data-speed="1">1x</button><button data-speed="2">2x</button><button data-speed="4">4x</button><button id="btnPause">Pause</button><button id="btnRestart">Restart</button><button id="btnSkip">Skip to end</button>
+        </span>
+      </div>
+      <div class="panel" id="stage"><div id="board" class="field"></div><div id="arena" class="field" hidden></div><div id="battleResult" class="banner" hidden style="margin-top:8px"></div></div>
+      <div class="panel"><h3>Bench (click a unit, then a slot or a cell)</h3><div id="bench"></div></div>
+      <div class="panel"><h3>Shop</h3><div id="shop"></div></div>
+    </section>
+
+    <aside>
+      <div class="panel" id="inspector"><h3>Selected</h3><div class="dim">Click a unit or an item.</div></div>
+      <div class="panel"><h3>Item bag (click an item, then a unit)</h3><div id="bag" class="dim">-</div></div>
+      <div class="panel"><h3>Log</h3><div id="log"></div></div>
+    </aside>
+  </div>
+</div>
+
+<div id="giftOverlay" class="overlay" hidden><div class="box">
+  <h3 style="color:#c8b3ff">Mother Nature</h3><div id="giftTitle" style="font-size:18px;font-weight:650">Choose one gift - it is free</div>
+  <div id="giftCards" class="gifts"></div><div class="dim" id="giftTimer"></div>
+</div></div>
+
+<div id="overOverlay" class="overlay" hidden><div class="box">
+  <h3>Match over</h3><div id="overTitle" style="font-size:22px;font-weight:700"></div>
+  <table class="place" id="overTable"></table>
+  <div class="row"><button id="btnAgain" class="primary">Connect to a new match</button><button id="btnCloseOver">Close</button>
+  <span class="dim">The server reopens its lobby about 20 seconds after a match ends.</span></div>
+</div></div>
+
+<script>
+'use strict';
+// ====================================================================================================
+// W2F test client. A dumb viewer: it draws what the server says and sends commands; it decides nothing.
+// (Board geometry, synergy counts and sell values shown here are informational - the server is the authority.)
+// ====================================================================================================
+const TICK = 30;
+const $ = (id) => document.getElementById(id);
+const COST_COLOR = ['#9aa0a6', '#9aa0a6', '#4caf50', '#2f80ed', '#a855f7', '#f5b301'];
+const HEX_W = 64, HEX_R = 37, ROW_H = 55.5;
+
+function h(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function clear(e) { while (e.firstChild) e.removeChild(e.firstChild); return e; }
+
+// ---- game state ---------------------------------------------------------------------------------
+const G = {
+  ws: null, token: null, seat: null, seats: 8, bots: 0, botSeats: [], lobbyHumans: 0,
+  champ: {}, item: {}, trait: {}, traitByName: {}, catalogReady: false,
+  meta: null, phase: null, me: null, pub: null, maxHealth: 0,
+  fights: [], fightRound: 0, logs: {},
+  sel: null, viewSeat: null, view: 'board', replay: null, wantFight: null,
+  over: null, log: [], nextId: 1, pending: {}, reconnectTimer: null, manualClose: false,
+};
+
+// ---- log ----------------------------------------------------------------------------------------
+function logLine(text, cls) {
+  G.log.push({ text, cls: cls || '' });
+  if (G.log.length > 250) G.log.shift();
+  const box = $('log');
+  const d = h('div', cls, text);
+  const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 12;
+  box.appendChild(d);
+  while (box.childNodes.length > 250) box.removeChild(box.firstChild);
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+
+// ---- catalog helpers ------------------------------------------------------------------------------
+const cName = (id) => (G.champ[id] ? G.champ[id].name : '#' + id);
+const iName = (id) => (G.item[id] ? G.item[id].name : 'item ' + id);
+const seatLabel = (s) => (s === G.seat ? 'You' : G.botSeats.includes(s) ? 'AI ' + s : 'Player ' + s);
+function hueOf(id) { return (id * 47) % 360; }
+function statText(st) {
+  const names = { hp: 'HP', armor: 'Armor', magic_resist: 'MR', attack_damage: 'AD', ability_damage: 'AP', attack_speed_percent: '% AS', crit_chance: '% Crit', start_mana: 'Mana' };
+  const parts = [];
+  for (const k of Object.keys(st || {})) {
+    if (k === 'mana_regen_milli') parts.push('+' + st[k] / 1000 + ' Mana/s');
+    else parts.push('+' + st[k] + ' ' + (names[k] || k));
+  }
+  return parts.join(', ');
+}
+function itemTip(id) {
+  const it = G.item[id];
+  if (!it) return 'item ' + id;
+  const lines = [it.name];
+  if (it.components.length) lines.push('= ' + it.components.map(iName).join(' + '));
+  const s = statText(it.stats);
+  if (s) lines.push(s);
+  if (it.traits.length) lines.push('grants trait: ' + it.traits.join(', '));
+  if (it.has_effect) lines.push('(has a special effect)');
+  const recipes = Object.values(G.item).filter((o) => o.components.includes(id)).map((o) => 'with ' + iName(o.components[0] === id ? o.components[1] : o.components[0]) + ' -> ' + o.name);
+  if (recipes.length) lines.push('Combines: ' + recipes.join('; '));
+  return lines.join('\n');
+}
+function champTip(id) {
+  const c = G.champ[id];
+  if (!c) return '#' + id;
+  const lines = [c.name + '  (cost ' + c.cost + ', ' + c.role + ')'];
+  if (c.traits.length) lines.push(c.traits.join(' / '));
+  lines.push('HP ' + c.hp.join('/') + '   AD ' + c.attack_damage.join('/') + '   range ' + c.range + '   speed ' + (c.attack_speed_milli / 1000).toFixed(2));
+  if (c.ability) lines.push('Ability: ' + c.ability + (c.max_mana ? ' (mana ' + c.max_mana + ')' : ''));
+  if (c.passive) lines.push('Passive: ' + c.passive);
+  return lines.join('\n');
+}
+function sellValue(u) {
+  const c = G.champ[u.champion];
+  if (!c) return 0;
+  const copies = Math.pow(3, u.star - 1);
+  return copies * c.cost - (u.star > 1 && c.cost > 1 ? 1 : 0);
+}
+
+// ---- connection -----------------------------------------------------------------------------------
+function setStatus(text, cls) { const s = $('status'); s.textContent = text; s.className = cls || 'dim'; }
+function storeToken() { try { sessionStorage.setItem('w2f_token', G.token || ''); sessionStorage.setItem('w2f_url', $('url').value); } catch (e) { /* private mode */ } }
+
+function connect(withToken) {
+  if (G.ws) { G.manualClose = true; try { G.ws.close(); } catch (e) { /* already closed */ } }
+  clearTimeout(G.reconnectTimer);
+  let url = $('url').value.trim();
+  if (withToken && G.token) url += (url.includes('?') ? '&' : '?') + 'token=' + G.token;
+  setStatus('connecting...');
+  let ws;
+  try { ws = new WebSocket(url); } catch (e) { setStatus('bad address: ' + e.message, 'bad'); return; }
+  G.ws = ws; G.manualClose = false;
+  ws.onopen = () => { setStatus('connected', 'good'); if (!G.catalogReady) send({ action: 'get_catalog' }); };
+  ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } handle(m); };
+  ws.onerror = () => setStatus('cannot reach the server (is w2f_server running?)', 'bad');
+  ws.onclose = (e) => {
+    if (G.ws !== ws) return;   // superseded by a newer connection
+    G.ws = null;
+    setStatus('disconnected (code ' + e.code + ')', 'bad');
+    const running = G.meta && !G.over;
+    if (running && G.token && !G.manualClose && e.code !== 4001) {
+      logLine('Connection lost - reconnecting...', 'sys');
+      G.reconnectTimer = setTimeout(() => connect(true), 1000);
+    }
+  };
+}
+function send(obj) {
+  if (!G.ws || G.ws.readyState !== 1) return false;
+  obj.id = G.nextId++;
+  G.pending[obj.id] = obj.action;
+  G.ws.send(JSON.stringify(obj));
+  return true;
+}
+
+// ---- message handling -----------------------------------------------------------------------------
+function handle(m) {
+  switch (m.type) {
+    case 'welcome':
+      G.seat = m.player_id; G.token = m.token; G.seats = m.seats; G.bots = m.bots; storeToken();
+      setStatus('seat ' + m.player_id + (m.reconnected ? ' (reconnected)' : ''), 'good');
+      if (!m.match_running) logLine('Joined as seat ' + m.player_id + ' of ' + m.seats + ' (' + m.bots + ' AI). Waiting for the match to start...', 'sys');
+      break;
+    case 'lobby':
+      $('phaseChip').textContent = 'Lobby'; $('roundText').textContent = m.connected + '/' + (m.seats - m.bots) + ' humans connected';
+      break;
+    case 'catalog':
+      for (const c of m.champions) G.champ[c.id] = c;
+      for (const i of m.items) G.item[i.id] = i;
+      for (const t of m.traits) { G.trait[t.id] = t; G.traitByName[t.name] = t; }
+      G.catalogReady = true; renderAll();
+      break;
+    case 'match_started':
+      G.meta = m; G.botSeats = m.bot_seats || []; G.over = null; G.me = null; G.pub = null; G.maxHealth = 0; G.sel = null; G.viewSeat = null;
+      G.fights = []; G.logs = {}; stopReplay(); showView('board');
+      $('overOverlay').hidden = true;
+      logLine('Match started: you are seat ' + m.player_id + ' against ' + G.botSeats.length + ' AI players. Mother Nature every ' + m.mother_nature_every + ' rounds.', 'imp');
+      renderAll();
+      break;
+    case 'phase':
+      G.phase = Object.assign({}, m, { at: performance.now() });
+      if (m.phase === 'Planning' || m.phase === 'MotherNature') { stopReplay(); showView('board'); }
+      if (m.phase === 'MotherNature') logLine('Round ' + m.round + ': Mother Nature is here - pick a gift (no shop this round).', 'mn');
+      else if (m.phase === 'Planning') logLine('Round ' + m.round + ' (stage ' + m.stage + '-' + m.round_in_stage + (m.pve ? ', monsters' : '') + ') - planning.', 'sys');
+      renderHud(); renderShop(); renderGifts();
+      break;
+    case 'state':
+      G.me = m; if (!G.maxHealth) G.maxHealth = Math.max(m.health, 1);
+      if (G.sel && G.sel.type === 'unit' && !findUnit(G.sel.id)) G.sel = null;
+      if (G.sel && G.sel.type === 'item' && !m.item_bag.includes(G.sel.item)) G.sel = null;
+      renderAll();
+      break;
+    case 'public_state':
+      G.pub = m;
+      if (!G.maxHealth) G.maxHealth = Math.max(...m.players.map((p) => p.health), 1);
+      renderPlayers(); renderBoard(); renderSynergies();
+      break;
+    case 'income': logLine('Income: +' + m.total_gold + ' gold (' + m.base_gold + ' base, ' + m.interest_gold + ' interest, ' + m.streak_gold + ' streak), +' + m.passive_xp + ' XP.', 'sys'); break;
+    case 'result':
+      if (!m.ok) logLine(m.action + ' refused: ' + m.result, 'err');
+      delete G.pending[m.id];
+      break;
+    case 'error': logLine('Server error: ' + m.code + ' - ' + m.detail, 'err'); break;
+    case 'unit_event': onUnitEvent(m); break;
+    case 'gift_event':
+      if (m.event === 'picked') logLine('Mother Nature: took ' + giftText(m.gift) + (m.automatic ? ' (time ran out)' : '') + (m.gold_converted ? ' - no room for the unit, paid ' + m.gold_converted + ' gold instead' : '') + '.', 'mn');
+      break;
+    case 'pve_drop': logLine('Monster drop: ' + (m.drop === 'gold' ? m.gold + ' gold' : m.drop === 'champion' ? cName(m.champion) : m.drop === 'item' ? iName(m.item) : 'nothing') + '.', 'imp'); break;
+    case 'combat_summary': G.fights = m.fights; G.fightRound = m.round; renderFights(); break;
+    case 'combat':
+      G.logs[m.fight_index] = m;
+      if (m.home === G.seat || m.away === G.seat || G.wantFight === m.fight_index) startReplay(m);
+      if (G.wantFight === m.fight_index) G.wantFight = null;
+      renderFights();
+      break;
+    case 'player_damaged': logLine(seatLabel(m.player_id) + ' lost ' + m.damage + ' HP (now ' + m.health + ').', m.player_id === G.seat ? 'err' : 'sys'); break;
+    case 'player_eliminated': logLine(seatLabel(m.player_id) + ' was eliminated (place ' + m.placement + ').', 'imp'); break;
+    case 'match_over': G.over = m; showMatchOver(m); break;
+    default: break;
+  }
+}
+
+function onUnitEvent(m) {
+  const u = m.unit;
+  switch (m.event) {
+    case 'bought': logLine('Bought ' + cName(u.champion) + (m.gold_spent ? ' for ' + m.gold_spent : ' (free)') + '.'); break;
+    case 'sold': logLine('Sold ' + cName(u.champion) + ' ' + '*'.repeat(u.star) + ' for ' + m.gold_gained + '.'); break;
+    case 'merged': logLine(cName(u.champion) + ' is now ' + u.star + '-star!', 'imp'); break;
+    case 'items_combined': logLine('Items combined into ' + iName(m.result) + ' on ' + cName(u.champion) + '.', 'imp'); break;
+    case 'item_equipped': logLine('Equipped ' + iName(m.item) + ' on ' + cName(u.champion) + '.'); break;
+    default: break;
+  }
+}
+function giftText(g) {
+  if (g.kind === 'gold') return '+' + g.amount + ' gold';
+  if (g.kind === 'xp') return '+' + g.amount + ' XP';
+  if (g.kind === 'heal') return '+' + g.amount + ' HP';
+  if (g.kind === 'item') return iName(g.item);
+  if (g.kind === 'unit') return cName(g.champion) + ' (cost ' + g.cost + ')';
+  return g.name;
+}
+
+// ---- queries --------------------------------------------------------------------------------------
+function myUnits() {
+  if (!G.me) return [];
+  return G.me.bench.filter(Boolean).concat(G.me.board);
+}
+function findUnit(id) { return myUnits().find((u) => u.id === id) || null; }
+function viewedBoard() {
+  if (G.viewSeat !== null && G.viewSeat !== G.seat && G.pub) {
+    const p = G.pub.players.find((q) => q.player_id === G.viewSeat);
+    return p ? p.board : [];
+  }
+  return G.me ? G.me.board : [];
+}
+const viewingOther = () => G.viewSeat !== null && G.viewSeat !== G.seat;
+
+// ---- actions --------------------------------------------------------------------------------------
+function clickShop(i) { send({ action: 'buy_unit', shop_index: i }); }
+function reroll() { send({ action: 'reroll_shop' }); }
+function buyXp() { send({ action: 'buy_xp' }); }
+function sellSelected() { if (G.sel && G.sel.type === 'unit') { send({ action: 'sell_unit', unit_id: G.sel.id }); G.sel = null; } }
+
+function clickPlace(location, x, y) {
+  if (viewingOther() || !G.me) return;
+  const here = location === 'bench' ? G.me.bench[x] : G.me.board.find((u) => u.x === x && u.y === y);
+  const sel = G.sel;
+  if (sel && sel.type === 'item') {
+    if (here) { send({ action: 'equip_item', unit_id: here.id, item_id: sel.item }); G.sel = null; }
+    return;
+  }
+  if (sel && sel.type === 'unit') {
+    if (here && here.id === sel.id) { G.sel = null; renderAll(); return; }
+    send({ action: 'move_unit', unit_id: sel.id, location, x, y: location === 'bench' ? 0 : y });
+    G.sel = null; renderAll();
+    return;
+  }
+  if (here) { G.sel = { type: 'unit', id: here.id }; renderAll(); }
+}
+
+// ---- rendering: HUD -------------------------------------------------------------------------------
+const PHASE_NAME = { MotherNature: 'Mother Nature', Planning: 'Planning', Combat: 'Combat', Resolution: 'Resolution', MatchOver: 'Match over' };
+function ticksLeft() {
+  const p = G.phase;
+  if (!p) return 0;
+  return Math.max(0, p.ticks_remaining - ((performance.now() - p.at) * TICK) / 1000);
+}
+function renderHud() {
+  const p = G.phase, me = G.me;
+  const chip = $('phaseChip');
+  chip.textContent = p ? PHASE_NAME[p.phase] || p.phase : 'Lobby';
+  chip.className = 'chip' + (p && p.phase === 'MotherNature' ? ' mn' : p && p.phase === 'Planning' ? ' plan' : p && p.phase === 'Combat' ? ' combat' : '');
+  $('roundText').textContent = p ? 'Round ' + p.round + '  (' + p.stage + '-' + p.round_in_stage + ')' + (p.pve ? '  monsters' : '') + (p.mother_nature ? '  (no shop)' : '') : '';
+  if (me) {
+    $('gold').textContent = me.gold;
+    const interest = Math.min(5, Math.floor(me.gold / 10));
+    $('interest').textContent = 'interest +' + interest;
+    $('level').textContent = me.level;
+    $('xpText').textContent = me.xp_to_next ? me.xp + ' / ' + (me.xp + me.xp_to_next) + ' XP' : 'max level';
+    $('xpBar').style.width = me.xp_to_next ? (100 * me.xp) / (me.xp + me.xp_to_next) + '%' : '100%';
+    $('hp').textContent = me.health;
+    $('hpBar').style.width = Math.max(0, Math.min(100, (100 * me.health) / Math.max(G.maxHealth, 1))) + '%';
+    $('streak').textContent = (me.streak > 0 ? '+' : '') + me.streak;
+    $('streak').className = 'value ' + (me.streak > 0 ? 'good' : me.streak < 0 ? 'bad' : '');
+    $('boardCount').textContent = me.board.length + ' on board, ' + me.bench.filter(Boolean).length + ' on bench';
+  }
+  const planning = p && p.phase === 'Planning';
+  $('btnReroll').disabled = !planning || !me || me.gold < 2 || p.mother_nature;
+  $('btnXp').disabled = !planning || !me || me.gold < 4 || me.xp_to_next === 0;
+}
+function tickTimer() {
+  const p = G.phase;
+  if (!p) return;
+  const left = ticksLeft();
+  $('timerText').textContent = (left / TICK).toFixed(1) + ' s left';
+  $('timerBar').style.width = (p.duration_ticks ? (100 * left) / p.duration_ticks : 0) + '%';
+  const gt = $('giftTimer');
+  if (gt) gt.textContent = (left / TICK).toFixed(0) + ' s left - the first gift is taken for you when time runs out.';
+}
+
+// ---- rendering: tokens and boards ------------------------------------------------------------------
+function makeToken(u, cls) {
+  const c = G.champ[u.champion];
+  const t = h('div', 'tok' + (cls ? ' ' + cls : ''), (c ? c.name : '#' + u.champion).slice(0, 3));
+  t.style.setProperty('--hue', hueOf(u.champion));
+  t.style.setProperty('--ring', COST_COLOR[c ? c.cost : 1]);
+  t.title = champTip(u.champion) + '\n' + '★'.repeat(u.star) + (u.items.length ? '\nItems: ' + u.items.map(iName).join(', ') : '');
+  if (u.star > 1) t.appendChild(h('span', 'stars', '★'.repeat(u.star)));
+  if (u.items.length) {
+    const d = h('span', 'dots');
+    for (const id of u.items) { const i = h('i'); i.title = iName(id); d.appendChild(i); }
+    t.appendChild(d);
+  }
+  if (G.sel && G.sel.type === 'unit' && G.sel.id === u.id) t.classList.add('sel');
+  return t;
+}
+
+// Board geometry: odd rows sit half a hex to the right; "row" is the DISPLAY row (0 = top).
+const hexLeft = (x, y) => (x + 0.5 * (y & 1)) * HEX_W;
+function sizeField(field, rows) {
+  field.style.width = 7.5 * HEX_W + 'px';
+  field.style.height = (rows - 1) * ROW_H + 2 * HEX_R + 'px';
+}
+function renderBoard() {
+  const field = clear($('board'));
+  sizeField(field, 4);
+  const units = viewedBoard();
+  const interactive = !viewingOther();
+  for (let y = 3; y >= 0; --y) {        // front row (y = 3) at the top, next to the enemy
+    for (let x = 0; x < 7; ++x) {
+      const cell = h('div', 'cell' + ((x + y) % 2 ? ' alt' : '') + (y === 3 ? ' front' : '') + (interactive ? ' target' : ''));
+      cell.style.left = hexLeft(x, y) + 'px';
+      cell.style.top = (3 - y) * ROW_H + 'px';
+      const u = units.find((q) => q.x === x && q.y === y);
+      if (u) {
+        cell.appendChild(makeToken(u));
+        if (G.sel && G.sel.type === 'unit' && G.sel.id === u.id) cell.classList.add('sel');
+      }
+      if (interactive) cell.onclick = () => clickPlace('board', x, y);
+      field.appendChild(cell);
+    }
+  }
+  const lab = h('div', 'rowlabel', 'front');
+  lab.style.top = '2px'; lab.style.right = '0'; lab.style.left = 'auto';
+  field.appendChild(lab);
+}
+function renderBench() {
+  const bench = clear($('bench'));
+  for (let i = 0; i < 9; ++i) {
+    const u = G.me ? G.me.bench[i] : null;
+    const s = h('div', 'slot target');
+    s.appendChild(h('span', 'idx', i + 1));
+    if (u) { s.appendChild(makeToken(u, 'small')); if (G.sel && G.sel.type === 'unit' && G.sel.id === u.id) s.classList.add('sel'); }
+    s.onclick = () => clickPlace('bench', i, 0);
+    bench.appendChild(s);
+  }
+}
+
+// ---- rendering: shop, bag, inspector ---------------------------------------------------------------
+function renderShop() {
+  const shop = clear($('shop'));
+  const me = G.me, p = G.phase;
+  if (p && (p.mother_nature || p.phase === 'MotherNature')) {
+    shop.appendChild(h('div', 'closed', 'The shop is closed in Mother Nature rounds. Pick a gift instead.'));
+    return;
+  }
+  const slots = me ? me.shop : [0, 0, 0, 0, 0];
+  slots.forEach((id, i) => {
+    const c = G.champ[id];
+    const card = h('div', 'card' + (id === 0 ? ' empty' : ''));
+    if (id === 0) { card.textContent = 'empty'; shop.appendChild(card); return; }
+    card.style.borderColor = COST_COLOR[c ? c.cost : 1];
+    const top = h('div', 'name', c ? c.name : '#' + id);
+    top.appendChild(h('span', 'cost', c ? String(c.cost) : '?'));
+    card.appendChild(top);
+    card.appendChild(h('div', 'traits', c ? c.traits.join(' / ') + (c.role === 'tank' ? '  (tank)' : '') : ''));
+    if (c) card.appendChild(h('div', 'traits', 'HP ' + c.hp[0] + '  AD ' + c.attack_damage[0] + '  rng ' + c.range));
+    card.title = champTip(id);
+    if (me && c && me.gold < c.cost) card.classList.add('unaffordable');
+    card.onclick = () => clickShop(i);
+    shop.appendChild(card);
+  });
+}
+function renderBag() {
+  const bag = clear($('bag'));
+  const items = G.me ? G.me.item_bag : [];
+  if (!items.length) { bag.textContent = 'empty'; bag.className = 'dim'; return; }
+  bag.className = '';
+  items.forEach((id) => {
+    const it = G.item[id];
+    const chip = h('div', 'item' + (it && it.components.length ? (it.traits.length ? ' emblem' : ' legend') : ''), iName(id));
+    chip.title = itemTip(id);
+    if (G.sel && G.sel.type === 'item' && G.sel.item === id) chip.classList.add('sel');
+    chip.onclick = () => { G.sel = G.sel && G.sel.type === 'item' && G.sel.item === id ? null : { type: 'item', item: id }; renderAll(); };
+    bag.appendChild(chip);
+  });
+}
+function renderInspector() {
+  const box = clear($('inspector'));
+  box.appendChild(h('h3', '', 'Selected'));
+  const sel = G.sel;
+  if (!sel) { box.appendChild(h('div', 'dim', 'Click a unit (board or bench) or an item in your bag.')); return; }
+  if (sel.type === 'item') {
+    box.appendChild(h('div', '', iName(sel.item)));
+    const pre = h('div', 'dim', itemTip(sel.item)); pre.style.whiteSpace = 'pre-line';
+    box.appendChild(pre);
+    box.appendChild(h('div', 'gold', 'Now click the unit that should carry it.'));
+    return;
+  }
+  const u = findUnit(sel.id);
+  if (!u) { box.appendChild(h('div', 'dim', 'Nothing selected.')); return; }
+  const c = G.champ[u.champion];
+  box.appendChild(h('div', '', cName(u.champion) + '  ' + '★'.repeat(u.star)));
+  const pre = h('div', 'dim', champTip(u.champion)); pre.style.whiteSpace = 'pre-line';
+  box.appendChild(pre);
+  const chips = h('div', 'chips');
+  u.items.forEach((id, slot) => {
+    const b = h('button', '', iName(id) + '  ×');
+    b.title = itemTip(id) + '\n\nClick to take it off.';
+    b.onclick = () => send({ action: 'unequip_item', unit_id: u.id, slot });
+    chips.appendChild(b);
+  });
+  box.appendChild(chips);
+  const sell = h('button', 'danger', 'Sell for ' + sellValue(u) + ' gold (E)');
+  sell.onclick = sellSelected;
+  sell.disabled = !G.phase || G.phase.phase !== 'Planning';
+  box.appendChild(sell);
+}
+
+// ---- rendering: players, synergies, fights ---------------------------------------------------------
+function renderPlayers() {
+  const box = clear($('players'));
+  if (!G.pub) { box.textContent = 'not in a match'; return; }
+  box.className = '';
+  const list = G.pub.players.slice().sort((a, b) => (a.placement || 99) - (b.placement || 99) || b.health - a.health || a.player_id - b.player_id);
+  for (const p of list) {
+    const row = h('div', 'p' + (p.player_id === G.seat ? ' me' : '') + (!p.alive ? ' dead' : '') + ((G.viewSeat === null ? G.seat : G.viewSeat) === p.player_id ? ' viewing' : ''));
+    row.appendChild(h('span', 'n', seatLabel(p.player_id) + (p.alive ? '' : '  (out, #' + p.placement + ')')));
+    const st = h('span', 'dim', 'L' + p.level + '  ' + p.board.length + ' units  ' + (p.streak > 0 ? '+' : '') + p.streak);
+    row.appendChild(st);
+    const bar = h('div', 'bar hp'); const i = h('i'); i.style.width = Math.max(0, Math.min(100, (100 * p.health) / Math.max(G.maxHealth, 1))) + '%'; bar.appendChild(i);
+    row.appendChild(bar);
+    row.title = p.health + ' HP - click to look at their board';
+    row.onclick = () => { G.viewSeat = p.player_id === G.seat ? null : p.player_id; showView('board'); renderAll(); };
+    box.appendChild(row);
+  }
+}
+function renderSynergies() {
+  const box = clear($('syn'));
+  const units = viewedBoard();
+  $('synTitle').textContent = viewingOther() ? 'Synergies - ' + seatLabel(G.viewSeat) : 'Synergies';
+  const holders = {};   // trait name -> set of champion ids
+  for (const u of units) {
+    const c = G.champ[u.champion];
+    if (!c) continue;
+    const tags = new Set(c.traits);
+    for (const id of u.items) { const it = G.item[id]; if (it) it.traits.forEach((t) => tags.add(t)); }
+    tags.forEach((t) => { (holders[t] = holders[t] || new Set()).add(u.champion); });
+  }
+  const names = Object.keys(holders).sort((a, b) => holders[b].size - holders[a].size || a.localeCompare(b));
+  if (!names.length) { box.textContent = 'no units on the board'; box.className = 'dim'; return; }
+  box.className = '';
+  for (const name of names) {
+    const n = holders[name].size;
+    const bps = (G.traitByName[name] && G.traitByName[name].breakpoints) || [];
+    const reached = bps.filter((b) => b <= n);
+    const row = h('div', 'syn' + (reached.length ? ' active' : ''));
+    row.appendChild(h('span', '', name + '  ' + n));
+    const bp = h('span', 'bp');
+    bps.forEach((b, i) => { const s = h(b <= n && b === reached[reached.length - 1] ? 'b' : 'span', '', String(b)); bp.appendChild(s); if (i < bps.length - 1) bp.appendChild(document.createTextNode(' / ')); });
+    row.appendChild(bp);
+    box.appendChild(row);
+  }
+}
+function renderFights() {
+  const box = clear($('fights'));
+  if (!G.fights.length) { box.textContent = '-'; box.className = 'dim'; return; }
+  box.className = '';
+  for (const f of G.fights) {
+    const mine = f.home === G.seat || f.away === G.seat;
+    const row = h('div', 'f' + (mine ? ' mine' : ''));
+    const vs = f.away_is_monsters ? 'monsters' : seatLabel(f.away) + (f.away_is_ghost ? ' (ghost)' : '');
+    row.appendChild(h('span', '', seatLabel(f.home) + ' vs ' + vs));
+    const b = h('button', '', G.logs[f.index] ? 'Watch' : 'Load');
+    b.onclick = () => { if (G.logs[f.index]) startReplay(G.logs[f.index]); else { G.wantFight = f.index; send({ action: 'get_fight', fight_index: f.index }); } };
+    row.appendChild(b);
+    box.appendChild(row);
+  }
+}
+
+// ---- Mother Nature overlay -------------------------------------------------------------------------
+function renderGifts() {
+  const ov = $('giftOverlay');
+  const me = G.me, p = G.phase;
+  const open = me && p && p.phase === 'MotherNature' && me.gifts.length > 0 && !me.gift_settled;
+  ov.hidden = !open;
+  if (!open) return;
+  const cards = clear($('giftCards'));
+  me.gifts.forEach((g) => {
+    const card = h('div', 'gift');
+    card.appendChild(h('div', 'k', g.kind));
+    card.appendChild(h('div', 'big', giftText(g)));
+    card.appendChild(h('div', 'dim', g.name));
+    if (g.kind === 'item') { card.title = itemTip(g.item); }
+    if (g.kind === 'unit') { card.title = champTip(g.champion); }
+    card.onclick = () => { send({ action: 'pick_gift', gift_index: g.index }); };
+    cards.appendChild(card);
+  });
+}
+
+// ---- match over ------------------------------------------------------------------------------------
+function showMatchOver(m) {
+  const mine = m.placements[G.seat];
+  $('overTitle').textContent = mine === 1 ? 'You won!' : 'You finished ' + mine + (mine === 2 ? 'nd' : mine === 3 ? 'rd' : 'th') + ' of ' + m.placements.length;
+  const t = clear($('overTable'));
+  const order = m.placements.map((pl, seat) => ({ pl, seat })).sort((a, b) => a.pl - b.pl);
+  for (const r of order) {
+    const tr = h('tr');
+    tr.appendChild(h('td', '', '#' + r.pl)); tr.appendChild(h('td', r.seat === G.seat ? 'gold' : '', seatLabel(r.seat)));
+    t.appendChild(tr);
+  }
+  $('overOverlay').hidden = false;
+  logLine('Match over. You placed #' + mine + '.', 'imp');
+}
+
+// ---- battle replay ---------------------------------------------------------------------------------
+// The engine's combat log is a list of timestamped events (see docs/network-protocol.md). This plays them back; it simulates nothing.
+class Replay {
+  constructor(msg, bottomTeam) {
+    const col = {};
+    msg.columns.forEach((n, i) => { col[n] = i; });
+    this.msg = msg;
+    this.bottomTeam = bottomTeam;
+    this.ev = msg.events.map((r) => {
+      const e = {};
+      for (const k of Object.keys(col)) e[k] = r[col[k]];
+      return e;
+    });
+    this.endTick = msg.end_tick;
+    this.reset();
+  }
+  reset() {
+    this.t = 0; this.i = 0; this.units = new Map(); this.fx = []; this.notes = []; this.finished = false;
+  }
+  advance(dt) { this.t += dt; this.applyUntil(this.t); }
+  seekEnd() { this.t = this.endTick + 1; this.applyUntil(1e9); }
+  applyUntil(t) {
+    while (this.i < this.ev.length && this.ev[this.i].tick <= t) this.apply(this.ev[this.i++]);
+    if (this.i >= this.ev.length && this.t >= this.endTick) this.finished = true;
+  }
+  unit(id) { return this.units.get(id); }
+  apply(e) {
+    const u = this.unit(e.unit);
+    switch (e.type) {
+      case 0:   // Spawn
+        this.units.set(e.unit, { id: e.unit, champion: e.champion, star: e.star, team: e.team, x: e.to_x, y: e.to_y, from: null, hp: e.amount, maxHp: Math.max(e.amount, 1),
+          alive: true, shield: 0, mana: 0, manaMax: e.mana_max, cast: 0, stun: 0, lunge: null, summon: (e.flags & 128) !== 0 });
+        break;
+      case 1:   // Move
+        if (u) { u.from = { x: u.x, y: u.y, t0: e.tick, dur: Math.max(e.amount, 1) }; u.x = e.to_x; u.y = e.to_y; }
+        break;
+      case 13:  // Teleport
+        if (u) { u.x = e.to_x; u.y = e.to_y; u.from = null; }
+        break;
+      case 2:   // Attack
+        if (u) u.lunge = { target: e.other, t0: e.tick, dur: 6 };
+        break;
+      case 3:   // Damage
+        if (u) {
+          u.hp = e.hp_after; u.maxHp = Math.max(u.maxHp, u.hp);
+          const lost = e.amount - e.absorbed;
+          if (e.absorbed > 0 && u.shield > 0) u.shield = Math.max(0, u.shield - e.absorbed);
+          this.fx.push({ unit: e.unit, text: String(Math.max(lost, 0)), cls: (e.flags & 1) ? 'crit' : 'dmg' });
+        }
+        break;
+      case 4: if (u) { u.alive = false; u.hp = 0; } break;   // Death
+      case 5: if (u) { u.cast = e.tick + Math.max(e.duration, 1); this.fx.push({ unit: e.unit, text: this.abilityName(u), cls: 'txt' }); } break;
+      case 6: if (u) u.shield += e.amount; break;            // ShieldApplied
+      case 7: if (u) u.shield = 0; break;                    // ShieldEnded
+      case 8:   // StatusApplied (subtype 0 = Stun); hp_after is the holder's HP afterwards (max-HP statuses move it)
+        if (u) { if (e.subtype === 0 && e.duration) u.stun = e.tick + e.duration; if (e.hp_after > 0) { u.hp = e.hp_after; u.maxHp = Math.max(u.maxHp, u.hp); } }
+        break;
+      case 9: if (u && e.subtype === 0) u.stun = 0; break;   // StatusEnded
+      case 10: if (u) u.mana = e.amount; break;              // ManaChanged
+      case 11:  // Heal
+        if (u) { u.hp = e.hp_after; u.maxHp = Math.max(u.maxHp, u.hp); if (e.amount > 0) this.fx.push({ unit: e.unit, text: '+' + e.amount, cls: 'heal' }); }
+        break;
+      case 12:  // TraitActivated
+        this.notes.push({ team: e.team, trait: e.trait_id, count: e.amount, level: e.subtype });
+        break;
+      default: break;
+    }
+  }
+  abilityName(u) { const c = G.champ[u.champion]; return c && c.ability ? c.ability : 'cast'; }
+}
+
+const ARENA_ROWS = 8;
+function arenaPixel(x, y, flip) {
+  // pixel centre of arena hex (x, y); `flip` turns the arena upside down so the viewer's team is at the bottom (geometry is preserved)
+  const row = flip ? ARENA_ROWS - 1 - y : y;
+  return { px: (x + 0.5 * (y & 1)) * HEX_W + HEX_W / 2, py: row * ROW_H + HEX_R };
+}
+// Where a unit is drawn right now (in pixels): on its hex, or part of the way from the hex it left while a step is in progress.
+function unitPixel(rp, u, flip) {
+  const b = arenaPixel(u.x, u.y, flip);
+  if (u.from && rp.t < u.from.t0 + u.from.dur) {
+    const a = arenaPixel(u.from.x, u.from.y, flip);
+    const f = Math.max(0, (rp.t - u.from.t0) / u.from.dur);
+    return { px: a.px + (b.px - a.px) * f, py: a.py + (b.py - a.py) * f };
+  }
+  return b;
+}
+const R = { raf: 0, last: 0, speed: 1, paused: false, els: new Map() };
+
+function startReplay(msg) {
+  const myTeam = msg.home === G.seat ? 0 : msg.away === G.seat ? 1 : 0;
+  G.replay = new Replay(msg, myTeam);
+  R.paused = false; $('btnPause').textContent = 'Pause';
+  $('tabBattle').disabled = false;
+  buildArena();
+  showView('battle');
+  const who = msg.away_is_monsters ? 'monsters' : seatLabel(msg.away) + (msg.away_is_ghost ? "'s ghost" : '');
+  logLine('Battle: ' + seatLabel(msg.home) + ' vs ' + who + ' - ' + msg.winner + ' wins (' + msg.winner_survivors + ' survivors).', 'sys');
+  R.last = performance.now();
+  cancelAnimationFrame(R.raf);
+  R.raf = requestAnimationFrame(frame);
+}
+function stopReplay() { cancelAnimationFrame(R.raf); G.replay = null; R.els.clear(); }
+function buildArena() {
+  const arena = clear($('arena'));
+  arena.style.width = 7.5 * HEX_W + 'px';
+  arena.style.height = (ARENA_ROWS - 1) * ROW_H + 2 * HEX_R + 'px';
+  R.els.clear();
+  const flip = G.replay.bottomTeam === 0;
+  for (let y = 0; y < ARENA_ROWS; ++y) {
+    for (let x = 0; x < 7; ++x) {
+      const c = h('div', 'cell' + ((x + y) % 2 ? ' alt' : ''));
+      const row = flip ? ARENA_ROWS - 1 - y : y;
+      c.style.left = (x + 0.5 * (y & 1)) * HEX_W + 'px'; c.style.top = row * ROW_H + 'px';
+      arena.appendChild(c);
+    }
+  }
+  const mid = h('div', 'arenaline'); mid.style.top = 3.5 * ROW_H + HEX_R + 'px';
+  arena.appendChild(mid);
+  $('battleResult').hidden = true;
+}
+function drawReplay() {
+  const rp = G.replay;
+  if (!rp) return;
+  const arena = $('arena');
+  const flip = rp.bottomTeam === 0;
+  for (const u of rp.units.values()) {
+    let el = R.els.get(u.id);
+    if (!el) {
+      el = h('div', 'ctok', cName(u.champion).slice(0, 3));
+      el.style.setProperty('--hue', hueOf(u.champion));
+      el.style.setProperty('--team', u.team === rp.bottomTeam ? '#4cc38a' : '#ef5b5b');
+      el.title = champTip(u.champion) + '\n' + '★'.repeat(u.star);
+      const hp = h('div', 'hpb'); el.hpFill = h('i'); hp.appendChild(el.hpFill); el.hpBox = hp; el.appendChild(hp);
+      const mn = h('div', 'mnb'); el.mnFill = h('i'); mn.appendChild(el.mnFill); el.appendChild(mn);
+      arena.appendChild(el);
+      R.els.set(u.id, el);
+    }
+    const a = unitPixel(rp, u, flip);
+    let ox = 0, oy = 0;
+    if (u.lunge && rp.t < u.lunge.t0 + u.lunge.dur) {
+      const tg = rp.unit(u.lunge.target);
+      if (tg) {
+        const b = unitPixel(rp, tg, flip);
+        const k = 0.28 * Math.sin(((rp.t - u.lunge.t0) / u.lunge.dur) * Math.PI);
+        ox = (b.px - a.px) * k; oy = (b.py - a.py) * k;
+      }
+    }
+    el.style.transform = 'translate(' + (a.px + ox) + 'px,' + (a.py + oy) + 'px)';
+    el.classList.toggle('dead', !u.alive);
+    el.classList.toggle('cast', u.alive && rp.t < u.cast);
+    el.classList.toggle('stun', u.alive && rp.t < u.stun);
+    el.hpFill.style.width = Math.max(0, Math.min(100, (100 * u.hp) / u.maxHp)) + '%';
+    el.hpBox.classList.toggle('shield', u.shield > 0);
+    el.mnFill.style.width = u.manaMax > 0 ? Math.max(0, Math.min(100, (100 * u.mana) / u.manaMax)) + '%' : '0';
+  }
+  while (rp.fx.length) {
+    const f = rp.fx.shift();
+    const u = rp.unit(f.unit);
+    if (!u || rp.t > rp.endTick + 5) continue;
+    const a = unitPixel(rp, u, flip);
+    const fx = h('div', 'fx ' + f.cls, f.text);
+    fx.style.transform = 'translate(' + (a.px - 10) + 'px,' + (a.py - 28) + 'px)';
+    arena.appendChild(fx);
+    setTimeout(() => fx.remove(), 950);
+  }
+  if (rp.notes.length) {
+    for (const n of rp.notes.splice(0)) {
+      const tr = G.trait[n.trait];
+      logLine((n.team === rp.bottomTeam ? 'Your team' : 'Enemy team') + ': ' + (tr ? tr.name : 'trait ' + n.trait) + ' (' + n.count + ') tier ' + n.level + ' active.', 'sys');
+    }
+  }
+}
+function frame(now) {
+  const rp = G.replay;
+  if (!rp) return;
+  const dt = Math.min(100, now - R.last);
+  R.last = now;
+  if (!R.paused && !rp.finished) rp.advance((dt * TICK * R.speed) / 1000);
+  drawReplay();
+  if (rp.finished) showBattleResult();
+  R.raf = requestAnimationFrame(frame);
+}
+function showBattleResult() {
+  const rp = G.replay, m = rp.msg, box = $('battleResult');
+  if (!box.hidden) return;
+  const mine = m.home === G.seat || m.away === G.seat;
+  const homeWon = m.winner === 'home', awayWon = m.winner === 'away';
+  let text = m.winner === 'draw' ? 'Draw (time ran out)' : (homeWon ? seatLabel(m.home) : m.away_is_monsters ? 'The monsters' : seatLabel(m.away)) + ' won with ' + m.winner_survivors + ' units left';
+  if (mine && m.home === G.seat && m.winner !== 'draw') text = (homeWon ? 'Victory' : 'Defeat') + ' - ' + text;
+  if (mine && m.away === G.seat && m.winner !== 'draw') text = (awayWon ? 'Victory' : 'Defeat') + ' - ' + text;
+  box.textContent = text + '  (fight ended at ' + (m.end_tick / TICK).toFixed(1) + ' s)';
+  box.hidden = false;
+}
+
+function showView(v) {
+  G.view = v;
+  const battle = v === 'battle' && G.replay;
+  $('board').hidden = !!battle; $('arena').hidden = !battle; $('replayCtl').hidden = !battle;
+  $('tabBoard').classList.toggle('active', !battle); $('tabBattle').classList.toggle('active', !!battle);
+  if (!battle) $('battleResult').hidden = true;
+  const vb = $('viewBanner');
+  vb.hidden = !viewingOther() || battle;
+  if (!vb.hidden) vb.textContent = 'Looking at ' + seatLabel(G.viewSeat) + "'s board (read-only)";
+}
+
+// ---- render everything -----------------------------------------------------------------------------
+function renderAll() {
+  renderHud(); renderBoard(); renderBench(); renderShop(); renderBag(); renderInspector(); renderPlayers(); renderSynergies(); renderGifts(); renderFights(); showView(G.view);
+}
+
+// ---- wiring ----------------------------------------------------------------------------------------
+$('btnConnect').onclick = () => connect(false);
+$('btnDisconnect').onclick = () => { G.manualClose = true; if (G.ws) G.ws.close(); };
+$('btnReroll').onclick = reroll;
+$('btnXp').onclick = buyXp;
+$('tabBoard').onclick = () => { G.viewSeat = null; showView('board'); renderAll(); };
+$('tabBattle').onclick = () => { if (G.replay) showView('battle'); };
+document.querySelectorAll('[data-speed]').forEach((b) => { b.onclick = () => { R.speed = Number(b.dataset.speed); }; });
+$('btnPause').onclick = () => { R.paused = !R.paused; $('btnPause').textContent = R.paused ? 'Resume' : 'Pause'; };
+$('btnRestart').onclick = () => { if (G.replay) { G.replay.reset(); R.els.clear(); buildArena(); } };
+$('btnSkip').onclick = () => { if (G.replay) { G.replay.seekEnd(); } };
+$('btnAgain').onclick = () => { $('overOverlay').hidden = true; G.token = null; G.meta = null; connect(false); };
+$('btnCloseOver').onclick = () => { $('overOverlay').hidden = true; };
+document.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'd') reroll(); else if (k === 'f') buyXp(); else if (k === 'e') sellSelected(); else if (k === 'escape') { G.sel = null; renderAll(); }
+});
+setInterval(() => { tickTimer(); if (G.phase) { renderHud(); } }, 200);
+
+try { const u = sessionStorage.getItem('w2f_url'); if (u) $('url').value = u; } catch (e) { /* private mode */ }
+window.W2F = { G, send, connect, handle, Replay, startReplay };   // for debugging in the console
+renderAll();
+</script>
+</body>
+</html>

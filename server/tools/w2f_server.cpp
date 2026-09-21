@@ -1,8 +1,9 @@
 // The W2F game server: a standalone WebSocket server that hosts one lobby and one match at a time.
 //
-//   w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--data DIR] [--seed N] [--autosave FILE] [--fast]
+//   w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--bots N] [--data DIR] [--seed N] [--autosave FILE] [--fast]
 //
-// Clients connect with a WebSocket (ws://host:port/), are given a seat, and when the last seat fills the match starts by itself.
+// Clients connect with a WebSocket (ws://host:port/), are given a seat, and when the last human seat fills the match starts by itself.
+// `--bots 7` makes 7 of the seats AI players: one person can then play a whole match alone (the last N seats are the bots).
 // The protocol is documented in docs/network-protocol.md.
 
 #include <atomic>
@@ -34,6 +35,7 @@ struct Options {
     std::uint16_t port = 7777;
     std::string bind = "0.0.0.0";
     int players = kMaxPlayers;
+    int bots = 0;        // AI seats (the last ones); the lobby waits for players - bots humans
     std::string dataDir = W2F_DATA_DIR;
     std::uint64_t seed = 0;
     std::string autosave;
@@ -51,16 +53,18 @@ bool ParseArgs(int argc, char** argv, Options& o) {
         if (a == "--port") { if (!(v = value("--port"))) return false; o.port = static_cast<std::uint16_t>(std::strtoul(v, nullptr, 10)); }
         else if (a == "--bind") { if (!(v = value("--bind"))) return false; o.bind = v; }
         else if (a == "--players") { if (!(v = value("--players"))) return false; o.players = std::atoi(v); }
+        else if (a == "--bots") { if (!(v = value("--bots"))) return false; o.bots = std::atoi(v); }
         else if (a == "--data") { if (!(v = value("--data"))) return false; o.dataDir = v; }
         else if (a == "--seed") { if (!(v = value("--seed"))) return false; o.seed = std::strtoull(v, nullptr, 10); }
         else if (a == "--fast") { o.fast = true; }
         else if (a == "--autosave") { if (!(v = value("--autosave"))) return false; o.autosave = v; }
         else {
-            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--data DIR] [--seed N] [--autosave FILE] [--fast]\n", a.c_str());
+            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--fast]\n", a.c_str());
             return false;
         }
     }
     if (o.players < 2 || o.players > kMaxPlayers) { std::fprintf(stderr, "--players must be between 2 and %d\n", kMaxPlayers); return false; }
+    if (o.bots < 0 || o.bots > o.players - 1) { std::fprintf(stderr, "--bots must be between 0 and %d (at least one seat has to be a human)\n", o.players - 1); return false; }
     return true;
 }
 
@@ -139,6 +143,7 @@ int main(int argc, char** argv) {
 
     GameServerConfig gsc;
     gsc.seats = opt.players;
+    gsc.bots = opt.bots;
     gsc.seed = opt.seed;
     if (opt.fast) gsc.postMatchTicks = Seconds(3);
 
@@ -163,8 +168,8 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
 
-    std::printf("W2F server listening on %s:%u  (%d players per match, %zu champions, %zu items, %zu encounters)\n", opt.bind.c_str(),
-                static_cast<unsigned>(tcp.port()), opt.players, champions->All().size(), items->All().size(), encounters->All().size());
+    std::printf("W2F server listening on %s:%u  (%d players per match, %d of them bots, %zu champions, %zu items, %zu encounters)\n", opt.bind.c_str(),
+                static_cast<unsigned>(tcp.port()), opt.players, opt.bots, champions->All().size(), items->All().size(), encounters->All().size());
     std::fflush(stdout);
     RunServerLoop(tcp, game, g_stop);
     std::printf("W2F server stopped\n");
