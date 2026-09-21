@@ -1342,6 +1342,36 @@
   {
    "kind": "helper",
    "id": 0,
+   "name": "SM_HexTile_Home",
+   "file": "SM_HexTile_Home.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_HexTile_Away",
+   "file": "SM_HexTile_Away.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_BenchSlot",
+   "file": "SM_BenchSlot.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_ArenaBase",
+   "file": "SM_ArenaBase.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
+   "name": "SM_Backdrop",
+   "file": "SM_Backdrop.glb"
+  },
+  {
+   "kind": "helper",
+   "id": 0,
    "name": "SM_ProjectileOrb",
    "file": "SM_ProjectileOrb.glb"
   },

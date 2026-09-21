@@ -7,7 +7,9 @@ Reads data/champions.json and data/pve.json (roster, roles, ranges, traits), bui
 its traits, and writes:
   SM_<Kind>_<id>_<Name>.glb   one static mesh each: metres, +Y up, feet at the origin, facing +Z (the glTF convention; UE's importer turns it into Z-up, facing +X),
                               flat-shaded, colour in the COLOR_0 vertex colours (one material "M_Blockout" whose base colour is the model's main colour as a fallback)
-  SM_HexTile.glb, SM_ProjectileOrb.glb, SM_AreaDisc.glb   board tile (pointy-top, 1 m across the flats), projectile, unit-radius disc for spell areas
+  SM_HexTile.glb, SM_HexTile_Home/_Away.glb, SM_BenchSlot.glb, SM_ArenaBase.glb, SM_Backdrop.glb, SM_ProjectileOrb.glb, SM_AreaDisc.glb
+                              board tiles (pointy-top, 1 m across the flats; outlined like an auto-battler board), a bench slab, the island with pillars and pines, the sky
+                              plane, a projectile, a unit-radius disc for spell areas
   manifest.json               per model: id, name, file, height, colours, and sockets (positions on the centre line, in metres: forward = +Z, up = +Y)
   contact_sheet.png           a picture of everything (software-rendered, so it needs no viewer)
 Everything is a pure function of the data: run it again after adding a champion and the new one gets a model automatically (a hand-made recipe in RECIPES is
@@ -438,6 +440,52 @@ def write_png(path, w, h, px):
 
 # ------------------------------------------------------------------------------------------------------------------------------ main
 
+# ------------------------------------------------------------------------------------------------------------------------------ the arena set (board tiles, bench, island, backdrop)
+# All symmetric about their own origin (so an importer that mirrors an axis cannot misplace them); the viewer positions them. Metres, +Y up, +Z = the "forward" (rows), +X = sideways (columns).
+
+def coloured(tris, hexcolour):
+    return [(t, srgb(hexcolour)) for t in tris]
+
+def hex_tile(fill, outline, R=1.0 / math.sqrt(3)):
+    """A pointy-top hex tile like an auto-battler board: a coloured outline ring around an inset fill, 12 cm thick, top face at y = 0."""
+    pts = lambda r: [(r * math.sin(math.radians(60 * i)), r * math.cos(math.radians(60 * i))) for i in range(6)]
+    outer, inner = pts(R), pts(R * 0.90)
+    mid = (0.0, -0.06, 0.0)
+    ring_t, fill_t, side_t = [], [], []
+    for i in range(6):
+        j = (i + 1) % 6
+        (ax, az), (bx, bz), (cx_, cz), (dx, dz) = outer[i], outer[j], inner[j], inner[i]
+        ring_t += _tri((ax, 0, az), (bx, 0, bz), (cx_, 0, cz), mid) + _tri((ax, 0, az), (cx_, 0, cz), (dx, 0, dz), mid)
+        fill_t += _tri((0, -0.008, 0), (cx_, -0.008, cz), (dx, -0.008, dz), mid)
+        side_t += _tri((ax, -0.12, az), (bx, -0.12, bz), (bx, 0, bz), mid) + _tri((ax, -0.12, az), (bx, 0, bz), (ax, 0, az), mid)
+        side_t += _tri((0, -0.12, 0), (ax, -0.12, az), (bx, -0.12, bz), mid)
+        side_t += _tri((dx, -0.008, dz), (cx_, -0.008, cz), (cx_, 0, cz), mid) + _tri((dx, -0.008, dz), (cx_, 0, cz), (dx, 0, dz), mid)   # the step down into the fill
+    return coloured(fill_t, fill) + coloured(ring_t, outline) + coloured(side_t, outline)
+
+def bench_slot():
+    """One bench slot: a stone slab with a lighter raised plate, 80 cm square, top at y = 0."""
+    return coloured(box(0, -0.0625, 0, 0.80, 0.125, 0.80), "8E897D") + coloured(box(0, 0.0, 0, 0.66, 0.012, 0.66), "B5B0A0")
+
+def arena_base():
+    """The floating island the board sits on (10 m along Z, 9 m along X, grass top at y = 0), a stone rim, four brazier pillars and a few pines."""
+    t = []
+    t += coloured(box(0, -0.25, 0, 9.0, 0.5, 10.0), "5E8C4A")                                   # grass
+    t += coloured(box(0, -1.2, 0, 8.4, 1.4, 9.4), "6B5B4A") + coloured(box(0, -2.4, 0, 6.0, 1.0, 7.0), "574A3C")   # rock underneath
+    for sz in (-1, 1): t += coloured(box(0, 0.09, sz * 4.85, 9.0, 0.18, 0.30), "9C978A")          # rim
+    for sx in (-1, 1): t += coloured(box(sx * 4.35, 0.09, 0, 0.30, 0.18, 10.0), "9C978A")
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            px, pz = sx * 4.1, sz * 4.6
+            t += coloured(box(px, 0.55, pz, 0.5, 1.1, 0.5), "9C978A") + coloured(cyl(px, 1.1, pz, 0.30, 0.22, 0.14, 8), "3A3A42") + coloured(cyl(px, 1.24, pz, 0.16, 0.0, 0.42, 6), "FFA733")
+    for sx in (-1, 1):                                                                             # pines down both long sides
+        for pz in (-3.2, -1.6, 0.0, 1.6, 3.2):
+            px = sx * 4.15
+            t += coloured(cyl(px, 0.0, pz, 0.09, 0.09, 0.4, 5), "6B4A2B") + coloured(cyl(px, 0.3, pz, 0.5, 0.0, 1.3, 7), "3F7A3A") + coloured(cyl(px, 0.9, pz, 0.38, 0.0, 1.0, 7), "4C8E45")
+    return t
+
+def backdrop():
+    return coloured(box(0, -0.05, 0, 80.0, 0.1, 80.0), "A9CBEA")
+
 def safe(name): return "".join(ch for ch in name if ch.isalnum())
 
 def main():
@@ -493,6 +541,11 @@ def main():
         tile += _tri((a[0], -0.12, a[1]), (b[0], -0.12, b[1]), (b[0], 0, b[1]), mid) + _tri((a[0], -0.12, a[1]), (b[0], 0, b[1]), (a[0], 0, a[1]), mid)
     tile = [(t, srgb("6C7A89")) for t in tile]
     extras = [("SM_HexTile", tile, (0.42, 0.48, 0.54), 1.0),
+              ("SM_HexTile_Home", hex_tile("B7B26B", "3FB6B0"), srgb("B7B26B"), 1.0),      # warm field, teal outline: your half
+              ("SM_HexTile_Away", hex_tile("B98F6A", "D6664F"), srgb("B98F6A"), 1.0),      # clay field, red outline: the enemy half
+              ("SM_BenchSlot", bench_slot(), srgb("8E897D"), 1.0),
+              ("SM_ArenaBase", arena_base(), srgb("5E8C4A"), 1.0),
+              ("SM_Backdrop", backdrop(), srgb("A9CBEA"), 1.0),
               ("SM_ProjectileOrb", [(t, srgb("FFE9A8")) for t in sphere(0, 0, 0, 0.12, lat=4, lon=8)], srgb("FFE9A8"), 1.0),
               ("SM_AreaDisc", [(t, srgb("FF7043")) for t in cyl(0, 0, 0, 1.0, 1.0, 0.02, 24)], srgb("FF7043"), 0.5)]
     for name, tris, base, alpha in extras:

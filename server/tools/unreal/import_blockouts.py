@@ -39,16 +39,21 @@ def import_models():
 
 
 def vertex_colour_material():
+    """M_BlockoutVC: Base Color = the mesh's vertex colour. (Re)builds the graph every time, so an earlier broken version is repaired.
+    NB: the Vertex Color node's outputs are all UNNAMED, the first one ("") is RGB: naming it "RGB" connects nothing and the material renders black."""
     path = "%s/%s" % (MAT_DIR, MAT_NAME)
-    if unreal.EditorAssetLibrary.does_asset_exist(path):
-        return unreal.EditorAssetLibrary.load_asset(path)
-    material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(MAT_NAME, MAT_DIR, unreal.Material, unreal.MaterialFactoryNew())
     lib = unreal.MaterialEditingLibrary
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        material = unreal.EditorAssetLibrary.load_asset(path)
+        lib.delete_all_material_expressions(material)
+    else:
+        material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(MAT_NAME, MAT_DIR, unreal.Material, unreal.MaterialFactoryNew())
     colour = lib.create_material_expression(material, unreal.MaterialExpressionVertexColor, -400, 0)
-    lib.connect_material_property(colour, "RGB", unreal.MaterialProperty.MP_BASE_COLOR)
+    if not lib.connect_material_property(colour, "", unreal.MaterialProperty.MP_BASE_COLOR):
+        unreal.log_error("W2F: could not connect the vertex colour to Base Color")
     lib.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material)
-    unreal.log("W2F: created %s" % path)
+    unreal.log("W2F: %s rebuilt" % path)
     return material
 
 
@@ -65,5 +70,6 @@ def assign_material(material):
     unreal.log("W2F: %s applied to %d static meshes" % (MAT_NAME, done))
 
 
-if import_models():
-    assign_material(vertex_colour_material())
+if __name__ == "__main__":
+    if import_models():
+        assign_material(vertex_colour_material())

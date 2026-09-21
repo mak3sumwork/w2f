@@ -9,7 +9,10 @@ Low-poly stand-ins for every champion, summon and PvE monster, so a UE5 client c
 | `SM_Champion_<id>_<Name>.glb` | the 30 champions (about 300-600 triangles each) |
 | `SM_Summon_9101_Skeleton.glb`, `SM_Summon_9102_LostSoul.glb` | fight-only summons |
 | `SM_Monster_100xx_<Name>.glb` | the PvE monsters (Gloop, Spitter, Boulder, Elder Wraith) |
-| `SM_HexTile.glb` | one board tile: pointy-top hexagon, 1 m across the flats, top face at height 0 |
+| `SM_HexTile.glb`, `SM_HexTile_Home.glb`, `SM_HexTile_Away.glb` | board tiles: pointy-top hexagon, 1 m across the flats, top face at height 0. Home = warm field with a teal outline, Away = clay with a red outline |
+| `SM_BenchSlot.glb` | one 80 cm bench slab (the bench is 9 of them in a row in front of the home back row) |
+| `SM_ArenaBase.glb` | the floating island under the board: grass, stone rim, four brazier pillars, pines (10 m x 9 m, symmetric about its origin) |
+| `SM_Backdrop.glb` | a big pale-sky plane to put far below the island |
 | `SM_ProjectileOrb.glb` | a 12 cm ball for projectiles |
 | `SM_AreaDisc.glb` | a flat disc of radius 1 m, translucent: scale it to show a spell area (circle / cone / line shapes) |
 | `manifest.json` | per model: id, name, file, height/width/depth, main colour, and **sockets** (see below) |
@@ -19,6 +22,9 @@ cost (1-cost about 1.5 m, 5-cost about 2 m; `height_m` in the manifest includes 
 (lunge for an attack, squash for a hit, rise and glow for a cast). The colours are **vertex colours**: each synergy has a colour (Helios orange, Phaisa purple,
 Hexagon teal, Coregons pale green, Selini blue, Najmi pink, Omnilium gold, Protector steel, Assassin dark accent), a second trait becomes the secondary colour,
 undead (Coregons) champions have bone-coloured skin. The glTF material `M_Blockout` also carries the main colour as a fallback.
+
+**Axis mapping (measured in UE 5.8.2).** The importer maps a model's X to UE X and its Z (the forward direction) to UE **+Y**, so a unit comes in facing +Y: `W2FArena::UnitYawOffset` is
+-90 to face +X (the direction the rows run), and the pointy hex tiles and the island are spawned turned 90 degrees. Handedness is preserved (nothing is mirrored).
 
 **Sockets** (manifest `sockets_m`, in metres on the model's centre line, `forward` along the facing direction and `up` from the feet): `feet`, `chest`, `cast_origin`
 (where a spell effect starts), `muzzle` (where a projectile leaves), `head_top`, `overhead` (health bar / star marker). In UE add a `SceneComponent` per socket at
@@ -34,6 +40,9 @@ undead (Coregons) champions have bone-coloured skin. The glTF material `M_Blocko
 2. **Automatic (recommended).** Enable *Edit > Plugins > "Python Editor Script Plugin"* (and restart) if it is not on yet. Then in the editor choose *Tools > Execute Python Script...*
    and pick `server/tools/unreal/import_blockouts.py` from this repository (or type `py "/Users/<you>/Desktop/work2fight/server/tools/unreal/import_blockouts.py"` in the
    Output Log's Cmd box). It imports every model into `/Game/W2F/Blockouts`, creates `/Game/W2F/Materials/M_BlockoutVC` (Base Color = vertex colour) and puts it on all of them.
+   `tools/unreal/setup_viewer.py` (same way, or headless with the editor closed: `UnrealEditor-Cmd <project>.uproject -run=pythonscript -script=<path>`) repairs the material and creates
+   the viewer level `/Game/W2F/Maps/L_Viewer` (an empty level with one `W2FArena` actor that builds its own floor, lights and camera).
+   Gotcha found in practice: the Vertex Color node's outputs are all unnamed, so connecting output `"RGB"` silently connects nothing and every model renders black; the scripts use `""`.
 3. **Manual fallback.** Drag all `SM_*.glb` into `Content/W2F/Blockouts`; in the import dialog turn on **Import Vertex Colors** (Replace) if there is such an option.
    Create a Material `M_BlockoutVC`: add a **Vertex Color** node, connect its **RGB** output to **Base Color**, save. Open each mesh and set its material slot to `M_BlockoutVC`
    (select all meshes in the Content Browser, right-click > *Asset Actions > Bulk Edit via Property Matrix* > Static Materials makes it one step).
@@ -45,3 +54,8 @@ undead (Coregons) champions have bone-coloured skin. The glTF material `M_Blocko
 **Not tested in the editor here:** the generator validates its own output (well-formed glTF, index and colour ranges, unit normals, plausible size) and the contact sheet is
 rendered from the very files it wrote, but the Unreal import script was written against the 5.x Python API without an editor at hand. If a call fails, the Output Log names
 the line: send it to me and I will fix the script.
+
+## Trying the viewer without the editor
+
+`UnrealEditor.app/Contents/MacOS/UnrealEditor <project>.uproject -game -windowed -ResX=1600 -ResY=900 -w2fshot=9` runs the viewer, takes a screenshot after 9 seconds
+(`Saved/Screenshots/`) and quits. The same import can run headless with the editor closed: `UnrealEditor-Cmd <project>.uproject -run=pythonscript -script=.../tools/unreal/setup_viewer.py`.
