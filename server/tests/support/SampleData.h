@@ -52,6 +52,7 @@ inline std::string Phase10ItemsPath() { return std::string(W2F_DATA_DIR) + "/ite
 inline std::string ProductionPvePath() { return std::string(W2F_DATA_DIR) + "/pve.json"; }
 inline std::string ProductionItemsPath() { return std::string(W2F_DATA_DIR) + "/items.json"; }
 inline std::string ProductionMotherNaturePath() { return std::string(W2F_DATA_DIR) + "/mother_nature.json"; }
+inline std::string ProductionTextPath() { return std::string(W2F_DATA_DIR) + "/text_en.json"; }
 inline std::string ProductionTraitsPath() { return std::string(W2F_DATA_DIR) + "/traits.json"; }
 // The designer's numbers, frozen before the balance pass (see the header of tests/data/designer_spec_champions.json): what the mechanics tests use.
 inline std::string SpecChampionsPath() { return std::string(W2F_TEST_DATA_DIR) + "/designer_spec_champions.json"; }

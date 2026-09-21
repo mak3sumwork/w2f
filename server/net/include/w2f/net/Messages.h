@@ -17,6 +17,7 @@
 #include "w2f/Item.h"
 #include "w2f/MatchManager.h"
 #include "w2f/Pve.h"
+#include "w2f/Text.h"
 #include "w2f/Trait.h"
 #include "w2f/net/Protocol.h"
 
@@ -28,7 +29,8 @@ std::string Lobby(const std::vector<PlayerId>& seatsTaken, int seats, int bots);
 // What the ids in every other message mean: champions (the PvE monsters too, flagged `monster`), items and traits, straight from the loaded
 // data. Public: the same for everyone, answered to `get_catalog`. Any of the optional databases may be null.
 // `combat` supplies the presentation defaults (windup / projectile speed), so every champion is given its EFFECTIVE timings.
-std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters, const CombatConfig& combat);
+std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters, const CombatConfig& combat,
+                    const TextTable* text = nullptr);
 std::string Error(std::string_view code, std::string_view detail, bool hasId = false, long long id = 0);
 std::string Result(const Command& command, ActionResult result);
 std::string Pong(bool hasId, long long id);

@@ -516,6 +516,7 @@ struct Rig {
     std::unique_ptr<ItemDatabase> items;
     std::unique_ptr<TraitDatabase> traits = sample::LoadProductionTraits();
     std::unique_ptr<EncounterDatabase> encounters;
+    std::unique_ptr<TextTable> text = TextTable::FromFile(sample::ProductionTextPath());
     GameData data;
     GameServerConfig cfg;
     FakeTransport net;
@@ -533,6 +534,7 @@ struct Rig {
         data.items = items.get();
         data.traits = traits.get();
         data.encounters = encounters.get();
+        data.text = text.get();
         data.config.match.motherNatureTicks = 30;
         data.config.match.planningTicks = 90;
         data.config.match.combatTicks = Seconds(125);   // the real maximum: a fight that a shorter phase cut off would be decided by the tie-break, not fought to the end
@@ -2387,7 +2389,7 @@ static void TestJsonSchemas() {
         checkMessage(msg::MatchStarted(r.data.config, 8, 0, 3, {1, 2, 3, 4, 5, 6, 7}));
         checkMessage(msg::Phase(r.data.config, MatchPhase::Combat, 5, 10, 600, 12345678901ull, false, false));
         checkMessage(msg::Phase(r.data.config, MatchPhase::MotherNature, 3, 0, 600, 0, true, true));
-        checkMessage(msg::Catalog(*r.champions, r.items.get(), r.traits.get(), r.encounters.get(), r.data.config.combat));
+        checkMessage(msg::Catalog(*r.champions, r.items.get(), r.traits.get(), r.encounters.get(), r.data.config.combat, r.text.get()));
     }
 
     // 2. Whole matches: everything every client is sent (state, public_state, phases, fights, results, gifts, drops, events...).
@@ -2848,6 +2850,14 @@ static void TestCatalog() {
     }
     for (const json::Value& t : traits->Items()) helios = helios || (Str(t, "name") == "Helios" && !t.Find("breakpoints")->Items().empty());
     CHECK(alesk && sword && soulsSword && helios && monster);
+    // The display text travels with the catalog: a flat key -> string map (data/text_en.json), so a client needs no hard-coded wording.
+    const json::Value* text = catalog.Find("text");
+    CHECK(text != nullptr && text->IsObject() && Str(*text, "language") == "en");
+    const json::Value* entries = text != nullptr ? text->Find("entries") : nullptr;
+    CHECK(entries != nullptr && entries->IsObject() && entries->MemberCount() == r.text->Entries().size());
+    const json::Value* aleskName = entries != nullptr ? entries->Find("champion.9001.name") : nullptr;
+    const json::Value* aleskDesc = entries != nullptr ? entries->Find("champion.9001.ability.desc") : nullptr;
+    CHECK(aleskName != nullptr && aleskName->AsString() == "Alesk" && aleskDesc != nullptr && aleskDesc->AsString().size() > 20);
     // Identical for everyone, and the rate limiter counts it (5 tokens).
     const ConnectionId b = r.Connect();
     r.Say(b, R"({"action": "get_catalog"})");

@@ -679,6 +679,26 @@
       ],
       "additionalProperties": false
      }
+    },
+    "text": {
+     "type": "object",
+     "description": "Display text (data/text_en.json): a flat map key -> string. Keys are documented at the top of that file; absent when the server has no text file.",
+     "properties": {
+      "language": {
+       "type": "string"
+      },
+      "entries": {
+       "type": "object",
+       "additionalProperties": {
+        "type": "string"
+       }
+      }
+     },
+     "required": [
+      "language",
+      "entries"
+     ],
+     "additionalProperties": false
     }
    },
    "required": [

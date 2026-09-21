@@ -284,3 +284,12 @@ Every `Teleport` / `Displace` shows up in the combat stream as a `Teleport` even
 * the Lost Soul is a `summon` champion: `Untargetable` passive, `attackType: Magic`, and an `OnAllyDealDamage` echo whose percent is per star (**5 / 8 / 12 %** of the hit, as magic damage to the same victim) — the breakpoint picks the star, so the summon's own data carries the echo;
 * from 6 the **Lost Soul Zone**, all `Team` effects: `AllEnemies` get `BonusMaxMana` 15, `HpPerSecond` −2 % (−4 % at 8) and `ExecuteBelow` 5 % (10 % at 8); `AllAllies` get `BonusManaRegen` 2 mana/s and `HpPerSecond` +2 % (+4 %).
   The client shows the blue floor when it receives the trait's `TraitActivated` event with tier 2 or 3.
+
+## text_en.json (display text)
+
+`data/text_en.json` holds every player-facing string: `{"version": 1, "language": "en", "entries": {"<key>": "<text>", ...}}`. It is not part of the game rules: the engine never reads it,
+it is not in the data hash and changing it never changes a fight. The server sends it inside the `catalog` message. Keys are dotted and use the ids of the other data files
+(`champion.9014.ability.desc`, `trait.8.bp6`, `item.50.desc`, `gift.104.name`; the full list is at the top of the file). `a/b/c` inside a text means 1 / 2 / 3 stars.
+`TestDisplayText` requires an entry for every champion / monster name, ability, passive, trait breakpoint, item and Mother Nature gift, requires each name to equal the name in the data,
+and fails on an entry for something that no longer exists. The numbers in the descriptions are hand-written: **after a balance change, update the sentence.**
+A server started without the file still runs (the catalog then has no `text`).

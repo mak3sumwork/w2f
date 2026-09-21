@@ -130,7 +130,8 @@ void WriteNameList(JsonWriter& w, const char* key, const char* const* names, std
 }
 }  // namespace
 
-std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters, const CombatConfig& combat) {
+std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items, const TraitDatabase* traits, const EncounterDatabase* encounters, const CombatConfig& combat,
+                    const TextTable* text) {
     JsonWriter w = Start("catalog");
     // The vocabularies of the combat log: an index into each list is the number a log row carries.
     w.Key("enums").BeginObject();
@@ -237,6 +238,15 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
         }
     }
     w.EndArray();
+    // Display text (data/text_en.json): a flat key -> string map, keys documented in that file. Absent when the server has no text file.
+    if (text != nullptr) {
+        w.Key("text").BeginObject();
+        w.Field("language", text->Language());
+        w.Key("entries").BeginObject();
+        for (const auto& entry : text->Entries()) w.Field(entry.first, entry.second);
+        w.EndObject();
+        w.EndObject();
+    }
     return Finish(w);
 }
 

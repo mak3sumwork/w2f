@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
     auto traits = champions ? LoadTraitDatabaseFromFile(dataDir + "/traits.json", &error) : nullptr;
     auto items = traits ? LoadItemDatabaseFromFile(dataDir + "/items.json", &error) : nullptr;
     auto encounters = items ? LoadEncounterDatabaseFromFile(dataDir + "/pve.json", champions.get(), items.get(), &error) : nullptr;
+    auto text = encounters ? TextTable::FromFile(dataDir + "/text_en.json", &error) : nullptr;   // the catalog carries the display text too
     if (!encounters) { std::fprintf(stderr, "Cannot load the data: %s\n", error.c_str()); return 2; }
 
     // Champion ids: Alesk 9001, Baira 9002, Les 9006, Lum 9007, Lunis 9009, Soul 9010, Vega 9012, Ignis 9013, Pyra 9014, Vex 9015, Null 9016, Bone 9017, Rot 9018, Bit 9019,
@@ -107,7 +108,7 @@ int main(int argc, char** argv) {
          {{9001, 2, 3, 3}, {9018, 2, 2, 1}, {9002, 2, 4, 1}, {9024, 2, 3, 1}, {9007, 2, 2, 3}, {9029, 2, 4, 3, {12}}}, 33},
     };
 
-    if (!Write(outDir + "/catalog.json", net::msg::Catalog(*champions, items.get(), traits.get(), encounters.get(), GameConfig{}.combat))) { std::fprintf(stderr, "cannot write to %s\n", outDir.c_str()); return 2; }
+    if (!Write(outDir + "/catalog.json", net::msg::Catalog(*champions, items.get(), traits.get(), encounters.get(), GameConfig{}.combat, text.get()))) { std::fprintf(stderr, "cannot write to %s\n", outDir.c_str()); return 2; }
     std::string readme =
         "# Sample fights\n\n"
         "Real `combat` messages, exactly as `w2f_server` sends them (one JSON object per file), plus `catalog.json`, the `catalog` message that says what every id in them means (names, costs, presentation timings, the\n"

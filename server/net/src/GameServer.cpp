@@ -297,7 +297,7 @@ private:
 
     // The same for every connection: built once, on first use.
     const std::string& Catalog() {
-        if (catalog_.empty()) catalog_ = msg::Catalog(*data_.champions, data_.items, data_.traits, data_.encounters, data_.config.combat);
+        if (catalog_.empty()) catalog_ = msg::Catalog(*data_.champions, data_.items, data_.traits, data_.encounters, data_.config.combat, data_.text);
         return catalog_;
     }
 

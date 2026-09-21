@@ -24,6 +24,7 @@
 #include "w2f/Item.h"
 #include "w2f/MatchManager.h"
 #include "w2f/Pve.h"
+#include "w2f/Text.h"
 #include "w2f/Trait.h"
 #include "w2f/net/Protocol.h"
 
@@ -55,6 +56,7 @@ struct GameData {
     const TraitDatabase* traits = nullptr;       // optional
     const EncounterDatabase* encounters = nullptr;   // optional (no PvE data: PvE rounds are rounds nobody fights)
     const MotherNatureDatabase* motherNature = nullptr;   // optional (no data: no gift rounds; every round has its shop)
+    const TextTable* text = nullptr;             // optional display text; sent in the `catalog` message
     GameConfig config;
 };
 

@@ -29,6 +29,7 @@
 #include "w2f/Hex.h"
 #include "w2f/ChampionLoader.h"
 #include "w2f/Json.h"
+#include "w2f/Text.h"
 #include "SampleData.h"
 #include "ScriptedPlayer.h"
 
@@ -3260,6 +3261,105 @@ static void TestLoaderErrors() {
     std::string err;
     CHECK(w2f::LoadChampionDatabaseFromFile("/definitely/not/here.json", &err) == nullptr && Has(err, {"cannot open", "/definitely/not/here.json"}));
     CHECK(!LoadErr(Doc(Champ())).empty() && LoadErr(Doc(Champ())).find("loaded without error") != std::string::npos);  // a valid minimal doc really loads
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// Display text (data/text_en.json): the loader is strict, and the production file covers every champion, ability, passive, trait breakpoint, item and
+// Mother Nature gift with the SAME name the data has, and holds nothing for things that do not exist (so a renamed or removed one is caught here).
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+static void TestDisplayText() {
+    // ---- the loader ----
+    const auto rejects = [](const char* json, const char* expected) {
+        std::string err;
+        auto table = w2f::TextTable::FromJson(json, &err);
+        CHECK(table == nullptr);
+        CHECK(err.find(expected) != std::string::npos);
+        if (err.find(expected) == std::string::npos) std::printf("    wanted \"%s\", got \"%s\"\n", expected, err.c_str());
+    };
+    {
+        std::string err;
+        auto ok = w2f::TextTable::FromJson(R"({"version": 1, "language": "en", "entries": {"a.b": "Hello", "c": "World"} // a comment
+        })", &err);
+        CHECK(ok != nullptr);
+        if (ok) {
+            CHECK(ok->Language() == "en" && ok->Entries().size() == 2 && ok->Entries()[0].first == "a.b");
+            const std::string* hello = ok->Find("a.b");
+            CHECK(hello != nullptr && *hello == "Hello");
+            CHECK(ok->Find("nope") == nullptr);
+        }
+    }
+    rejects(R"({"language": "en", "entries": {"a": "x"}})", "version");
+    rejects(R"({"version": 1, "entries": {"a": "x"}})", "language");
+    rejects(R"({"version": 1, "language": "en"})", "entries");
+    rejects(R"({"version": 1, "language": "en", "entries": {"a": "x"}, "extra": 1})", "unknown key \"extra\"");
+    rejects(R"({"version": 1, "language": "en", "entries": {"a": 5}})", "non-empty string");
+    rejects(R"({"version": 1, "language": "en", "entries": {"a": ""}})", "non-empty string");
+    rejects(R"({"version": 1, "language": "en", "entries": {"a": "x", "a": "y"}})", "duplicate key");
+    rejects(R"([1, 2])", "must be a JSON object");
+
+    // ---- the production file ----
+    std::string err;
+    auto text = w2f::TextTable::FromFile(sample::ProductionTextPath(), &err);
+    if (!text) std::printf("  text_en.json failed to load: %s\n", err.c_str());
+    auto champions = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath(), &err);
+    auto traits = sample::LoadProductionTraits();
+    auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+    auto encounters = items ? w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), champions.get(), items.get(), &err) : nullptr;
+    auto nature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get(), &err);
+    CHECK(text && champions && traits && items && encounters && nature);
+    if (!text || !champions || !traits || !items || !encounters || !nature) return;
+    CHECK(text->Language() == "en");
+
+    std::set<std::string> known;
+    int missing = 0;
+    const auto need = [&](const std::string& key, const std::string* sameAs) {
+        known.insert(key);
+        const std::string* found = text->Find(key);
+        if (found == nullptr) { ++missing; std::printf("    missing text: %s\n", key.c_str()); return; }
+        if (sameAs != nullptr && *found != *sameAs) { ++missing; std::printf("    %s is \"%s\" but the data says \"%s\"\n", key.c_str(), found->c_str(), sameAs->c_str()); }
+    };
+    const auto optional = [&](const std::string& key) { if (text->Find(key) != nullptr) known.insert(key); };
+    const auto champion = [&](const w2f::ChampionDefinition& c, bool mustDescribe) {
+        const std::string id = "champion." + std::to_string(c.id);
+        need(id + ".name", &c.name);
+        optional(id + ".title");
+        optional(id + ".desc");   // summons
+        if (c.ability.HasAbility()) {
+            need(id + ".ability.name", &c.ability.name);
+            if (mustDescribe) need(id + ".ability.desc", nullptr); else optional(id + ".ability.desc");
+        }
+        if (!c.passive.name.empty()) {
+            need(id + ".passive.name", &c.passive.name);
+            if (mustDescribe) need(id + ".passive.desc", nullptr); else optional(id + ".passive.desc");
+        }
+    };
+    for (const w2f::ChampionDefinition& c : champions->All()) champion(c, true);
+    for (const w2f::ChampionDefinition& c : encounters->Monsters().All()) champion(c, false);
+    for (const w2f::TraitDefinition& t : traits->All()) {
+        const std::string id = "trait." + std::to_string(t.id);
+        need(id + ".name", &t.name);
+        optional(id + ".tagline");
+        for (const w2f::TraitBreakpoint& b : t.breakpoints) need(id + ".bp" + std::to_string(b.count), nullptr);
+    }
+    for (const w2f::ItemDefinition& item : items->All()) {
+        const std::string id = "item." + std::to_string(item.id);
+        need(id + ".name", &item.name);
+        need(id + ".desc", nullptr);
+    }
+    for (const w2f::MotherNatureTier& tier : nature->Tiers()) {
+        for (const w2f::GiftDefinition& gift : tier.gifts) {
+            const std::string id = "gift." + std::to_string(gift.id);
+            need(id + ".name", &gift.name);
+            need(id + ".desc", nullptr);
+        }
+    }
+    CHECK(missing == 0);
+    int orphans = 0;
+    for (const auto& entry : text->Entries()) {
+        if (known.count(entry.first) == 0) { ++orphans; std::printf("    text for something that does not exist: %s\n", entry.first.c_str()); }
+    }
+    CHECK(orphans == 0);
+    CHECK(text->Entries().size() > 250);
 }
 
 static void TestProductionDataKeepsTheDesignerStructure() {
@@ -11515,6 +11615,7 @@ int main(int argc, char** argv) {
         {"Loader: every mistake names its path", TestLoaderErrors},
         {"Production data matches the designer spec", TestProductionDataMatchesDesignerSpec},
         {"Production data keeps the designer's structure (balance moves numbers only)", TestProductionDataKeepsTheDesignerStructure},
+        {"Display text: strict loader, full coverage of the data, no orphans", TestDisplayText},
         {"Passives at start of combat (Alesk)", TestPassivesAtStartOfCombat},
         {"Baira: wound passive + new burn", TestBairaWoundAndNewBurn},
         {"Attack count resets on target change", TestResetCountOnTargetChange},

@@ -117,8 +117,24 @@ catalog
  |                 presentation.attack   { style "melee"|"projectile", windup_ticks, projectile_speed_milli }
  |                 presentation.ability  null | { id, windup_ticks, cast_lock_ticks, channel_ticks, area { shape, size }, dot_visuals[] }
  |- items[]      id, name, components[] (two ids for a finished item), stats{}, traits[] granted, has_effect, consumable (the Item Remover)
- `- traits[]     id, name, breakpoints[] (how many DIFFERENT champions activate each tier)
+ |- traits[]     id, name, breakpoints[] (how many DIFFERENT champions activate each tier)
+ `- text         { language, entries } the DISPLAY TEXT: a flat map key -> string (descriptions, titles, gift wording), see below
 ```
+
+**Display text and localisation.** `text.entries` is the content of `data/text_en.json`. Keys use the ids of the data, so they survive renames:
+
+| key | meaning |
+|---|---|
+| `champion.<id>.name` / `.title` / `.desc` | every champion, summon and PvE monster has a name; a title ("Purple Sniper") and a summon's description are optional |
+| `champion.<id>.ability.name` / `.ability.desc` | the active ability (names equal the catalog's `ability`) |
+| `champion.<id>.passive.name` / `.passive.desc` | the passive |
+| `trait.<id>.name` / `.tagline` / `.bp<count>` | a trait, its flavour line and one description per breakpoint (`bp3`, `bp6` ...) |
+| `item.<id>.name` / `.desc` | every item |
+| `gift.<id>.name` / `.desc` | every Mother Nature gift (the `gift` ids in `gifts_offered`) |
+
+In a text, `a/b/c` means the value at 1 / 2 / 3 stars. Import the map as a UE **String Table** (namespace `W2F`, key = the key, source string = the text) and show it with
+`FText::FromStringTable`; translating later means adding a `text_<lang>.json` with the same keys. The tests guarantee that every ability, passive, breakpoint, item and gift
+has an entry and that names equal the data's names. The numbers inside descriptions are written by hand (a balance change to a champion means editing its sentence).
 
 Champions with `monster: true` exist only in PvE fights; `summon: true` ones (Lost Souls, Skeletons) exist only inside fights. Neither appears in a shop or a roster.
 All timings are **effective**: the champion's own numbers, else the server's defaults. Timings are hints for animation lead times, they never change the outcome of a fight.

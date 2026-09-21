@@ -133,12 +133,17 @@ int main(int argc, char** argv) {
     auto motherNature = LoadMotherNatureDatabaseFromFile(opt.dataDir + "/mother_nature.json", items.get(), &error);
     if (!motherNature) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
 
+    // Display text is optional: a server without it still runs (clients then have no descriptions), but say so.
+    auto text = TextTable::FromFile(opt.dataDir + "/text_en.json", &error);
+    if (!text) std::fprintf(stderr, "Note: no display text (%s)\n", error.c_str());
+
     GameData data;
     data.champions = champions.get();
     data.items = items.get();
     data.traits = traits.get();
     data.encounters = encounters.get();
     data.motherNature = motherNature.get();
+    data.text = text.get();
     if (opt.fast) {
         data.config.match.motherNatureTicks = Seconds(3);
         data.config.match.planningTicks = Seconds(4);
