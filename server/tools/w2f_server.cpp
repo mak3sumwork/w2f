@@ -43,6 +43,7 @@ struct Options {
     std::string autosave;
     std::string resume;  // restart from an autosave (see --autosave): FILE and FILE.seats
     std::string joinCode;   // a private server: connections must bring ?code=...
+    bool giveItems = false;   // development: seat 0 gets four item components (Sword, Bow, Vest, Sword) once the match runs, to try equipping and combining
     bool fast = false;   // development: much shorter phases, so a client can be tried against a whole match in minutes
 };
 
@@ -61,11 +62,12 @@ bool ParseArgs(int argc, char** argv, Options& o) {
         else if (a == "--data") { if (!(v = value("--data"))) return false; o.dataDir = v; }
         else if (a == "--seed") { if (!(v = value("--seed"))) return false; o.seed = std::strtoull(v, nullptr, 10); }
         else if (a == "--fast") { o.fast = true; }
+        else if (a == "--give-items") { o.giveItems = true; }
         else if (a == "--resume") { if (!(v = value("--resume"))) return false; o.resume = v; }
         else if (a == "--join-code") { if (!(v = value("--join-code"))) return false; o.joinCode = v; }
         else if (a == "--autosave") { if (!(v = value("--autosave"))) return false; o.autosave = v; }
         else {
-            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast]\n", a.c_str());
+            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items]\n", a.c_str());
             return false;
         }
     }
@@ -83,7 +85,15 @@ public:
         std::printf("[conn %llu] connected%s  (%d/%d seats, %s)\n", static_cast<unsigned long long>(id), token.empty() ? "" : " with a reconnect token",
                     game_.connectedPlayers(), game_.seats(), Describe());
     }
-    void OnMessage(ConnectionId id, std::string_view text, std::uint64_t now) override { game_.OnMessage(id, text, now); }
+    void OnMessage(ConnectionId id, std::string_view text, std::uint64_t now) override {
+        if (giveItems && game_.match() != nullptr) {   // --give-items (development only)
+            giveItems = false;
+            PlayerState* p = const_cast<MatchManager*>(game_.match())->PlayersMutable().Get(0);
+            for (ItemId item : {3u, 5u, 4u, 3u}) p->AddItemToBag(item);
+        }
+        game_.OnMessage(id, text, now);
+    }
+    bool giveItems = false;
     void OnDisconnect(ConnectionId id) override {
         game_.OnDisconnect(id);
         std::printf("[conn %llu] disconnected  (%d/%d seats, %s)\n", static_cast<unsigned long long>(id), game_.connectedPlayers(), game_.seats(), Describe());
@@ -188,6 +198,7 @@ int main(int argc, char** argv) {
         if (opt.autosave.empty()) opt.autosave = opt.resume;   // keep saving to the same file
     }
     LoggingHandler logging(game);
+    logging.giveItems = opt.giveItems;
     tcp.SetHandler(&logging);
     if (!tcp.Listen(&error)) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
 
