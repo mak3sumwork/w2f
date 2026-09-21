@@ -2868,6 +2868,19 @@ static void TestCombineItemsAndPublicBenchOverTheProtocol() {
     }
     CHECK(sawBench);
 
+
+    // The shop lock: a boolean command, echoed in `state.shop_locked`.
+    r.net.sent.clear();
+    r.Say(a, R"({"action": "set_shop_lock", "locked": true, "id": 8})");
+    CHECK(Str(r.Last(a, "result"), "result") == "Ok" && Num(r.Last(a, "result"), "id") == 8);
+    CHECK(r.Last(a, "state").Find("shop_locked")->AsBool());
+    r.Say(a, R"({"action": "set_shop_lock", "locked": false})");
+    CHECK(!r.Last(a, "state").Find("shop_locked")->AsBool());
+    r.Say(a, R"({"action": "set_shop_lock"})");
+    CHECK(Str(r.Last(a, "error"), "code") == "missing_field");
+    r.Say(a, R"({"action": "set_shop_lock", "locked": 1})");
+    CHECK(Str(r.Last(a, "error"), "code") == "wrong_type");
+
     // The fighters' items travel with the fight: combat.unit_items maps a unit id to its item ids.
     const UnitId unit = player->Roster().Units()[0].id;
     CHECK(player->AddItemToBag(4));

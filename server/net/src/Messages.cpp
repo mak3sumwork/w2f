@@ -329,6 +329,7 @@ std::string PrivateState(const MatchManager& match, PlayerId player) {
     w.Field("xp", p.Xp());
     w.Field("xp_to_next", p.XpToNextLevel());
     w.Field("streak", p.Streak());
+    w.Field("shop_locked", p.ShopLocked());
     w.Key("shop").BeginArray();
     for (const ChampionDefinition* slot : p.Shop().Slots()) w.UInt(slot != nullptr ? slot->id : 0);
     w.EndArray();

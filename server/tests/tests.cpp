@@ -7215,6 +7215,48 @@ static void TestEncounterDataAndSelection() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
+// Shop lock: a locked shop keeps its offer through the automatic refresh at the start of the next round; an unlocked one is refreshed. The lock is in the state hash and the snapshot.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+static void TestShopLock() {
+    auto db = sample::MakeCombatDatabase();
+    auto match = PlanningMatch(*db, nullptr);
+    const auto offer = [&](PlayerId id) {
+        std::vector<ChampionId> ids;
+        for (const ChampionDefinition* slot : match->Players().Get(id)->Shop().Slots()) ids.push_back(slot != nullptr ? slot->id : 0);
+        return ids;
+    };
+    const auto nextPlanning = [&] {
+        const int round = match->Round();
+        for (int guard = 0; guard < 400000 && !(match->Phase() == MatchPhase::Planning && match->Round() > round); ++guard) match->Tick();
+        return match->Phase() == MatchPhase::Planning && match->Round() > round;
+    };
+    const std::uint64_t hashBefore = match->StateHash();
+    const auto bytesBefore = match->Snapshot();
+    CHECK(match->TrySetShopLock(0, true) == ActionResult::Ok && match->Players().Get(0)->ShopLocked() && !match->Players().Get(1)->ShopLocked());
+    CHECK(match->StateHash() != hashBefore && match->Snapshot() != bytesBefore);   // the lock is part of the state
+    CHECK(match->TrySetShopLock(99, true) == ActionResult::InvalidPlayer);
+
+    const std::vector<ChampionId> kept = offer(0), other = offer(1);
+    CHECK(nextPlanning());
+    CHECK(offer(0) == kept);        // locked: the same five champions
+    CHECK(offer(1) != other);       // not locked: a fresh offer
+    CHECK(match->VerifyPoolIntegrity());
+
+    // Buying and rerolling still work while locked, and the lock stays.
+    match->PlayersMutable().Get(0)->AddGold(50);
+    CHECK(match->TryRerollShop(0) == ActionResult::Ok && match->Players().Get(0)->ShopLocked());
+    const std::vector<ChampionId> rerolled = offer(0);
+    CHECK(nextPlanning());
+    CHECK(offer(0) == rerolled && match->Players().Get(0)->ShopLocked());   // it keeps the rerolled offer, not the old one
+
+    // Unlocked: refreshed again.
+    CHECK(match->TrySetShopLock(0, false) == ActionResult::Ok && !match->Players().Get(0)->ShopLocked());
+    CHECK(nextPlanning());
+    CHECK(offer(0) != rerolled);
+    CHECK(match->VerifyPoolIntegrity());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
 // Combining two components of the item BAG into a finished item (combine_items): recipes, either order, the same component twice, refusals change nothing.
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 static void TestCombineBagItems() {
@@ -11643,6 +11685,7 @@ int main(int argc, char** argv) {
         {"Shop + bench during Combat, board locked", TestShopAndBenchDuringCombat},
         {"Mother Nature: unit gifts scale with the stage", TestMotherNatureUnitGiftsScaleWithTheStage},
         {"Match rhythm: phase lengths, safety limit, shop rule", TestRoundRhythmAndShopRule},
+        {"Shop lock: a locked shop keeps its offer", TestShopLock},
         {"Bag: combine two components into a finished item", TestCombineBagItems},
         {"Item Remover (consumable)", TestItemRemover},
         {"Combat: movement + targeting", TestCombatMovementAndTargeting},

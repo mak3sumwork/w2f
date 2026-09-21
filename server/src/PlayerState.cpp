@@ -316,6 +316,7 @@ bool PlayerState::RestoreState(const PlayerRestoreData& data, std::string* error
     xp_ = data.xp;
     gold_ = data.gold;
     streak_ = data.streak;
+    shopLocked_ = data.shopLocked;
     eliminated_ = data.eliminated;
     placement_ = data.placement;
     itemBag_ = data.itemBag;
@@ -330,6 +331,7 @@ bool PlayerState::RestoreState(const PlayerRestoreData& data, std::string* error
 
 void PlayerState::Eliminate(int placement) {
     if (eliminated_) return;
+    shopLocked_ = false;
     shop_->ReturnShopToPool();
     for (const UnitInstance& unit : roster_.Units()) {
         const bool returned = pool_.Return(unit.champion, SharedChampionPool::CopiesForStarLevel(unit.starLevel));

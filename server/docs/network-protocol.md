@@ -67,6 +67,7 @@ A message is at most 4096 bytes.
 | `move_unit` | `unit_id`, `location` `"bench"`\|`"board"`, `x`, `y` | bench: `x` 0..8 (`y` optional, must be 0); board: `x` 0..6, `y` 0..3 (3 = front row). Swaps with whatever is there. In Combat / Resolution only bench <-> bench (`UnitInCombat` otherwise). The board holds as many units as the player's level (`BoardFull`) |
 | `equip_item` | `unit_id`, `item_id` | the item comes from the player's item bag. Planning; in Combat / Resolution onto bench units only. An **Item Remover** (consumable) takes all items off the unit instead (`NoItemsToRemove` if it has none) |
 | `unequip_item` | `unit_id`, `slot` 0..2 | back to the bag. Same phase rule as `equip_item` |
+| `set_shop_lock` | `locked` (true / false) | (revision 3) lock or unlock the shop: a locked shop keeps its offer through the next round's automatic refresh (buying and rerolling still work; it stays locked until you unlock). `state.shop_locked` says which |
 | `combine_items` | `first`, `second` (item ids) | (revision 2) combine two base components that are both **in the item bag** into the finished item (recipes in items.json, either order; the same id twice needs two copies). `InvalidItem` (nothing changes) if either is not in the bag or there is no recipe. Answered with `result`, a `bag_event` (`event` `combined`, `first`, `second`, `result`) and the new `state`. Same phase rules as `equip_item` |
 | `get_state` | | re-send `state` and `public_state` |
 | `get_fight` | `fight_index` 0..7 | this round's combat log of any fight (they are public) |

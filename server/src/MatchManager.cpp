@@ -579,6 +579,14 @@ ActionResult MatchManager::TryBuyShopUnit(PlayerId player, std::size_t shopSlot)
     return result;
 }
 
+ActionResult MatchManager::TrySetShopLock(PlayerId player, bool locked) {
+    PlayerState* p = nullptr;
+    const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
+    if (check != ActionResult::Ok) return check;
+    p->SetShopLocked(locked);
+    return ActionResult::Ok;
+}
+
 ActionResult MatchManager::TryBuyXp(PlayerId player) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
@@ -710,6 +718,7 @@ std::uint64_t MatchManager::StateHash() const {
         h.AddInt(p->Xp());
         h.AddInt(p->Gold());
         h.AddInt(p->Streak());
+        h.AddInt(p->ShopLocked() ? 1 : 0);
         h.AddInt(p->Placement());
         h.Add(p->IsAlive() ? 1 : 0);
         for (const UnitInstance& unit : p->Roster().Units()) {

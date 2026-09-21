@@ -31,6 +31,7 @@ struct PlayerRestoreData {
     int xp = 0;
     int gold = 0;
     int streak = 0;
+    bool shopLocked = false;
     bool eliminated = false;
     int placement = 0;
     std::vector<UnitInstance> units;   // roster order
@@ -65,6 +66,9 @@ public:
     bool IsMaxLevel() const { return level_ >= kMaxPlayerLevel; }
     int XpToNextLevel() const;  // 0 at max level
     int Streak() const { return streak_; }  // > 0 win streak, < 0 loss streak
+    // A LOCKED shop keeps its offer through the automatic refresh at the start of a round (rerolling and buying still work); it stays locked until unlocked.
+    bool ShopLocked() const { return shopLocked_; }
+    void SetShopLocked(bool locked) { shopLocked_ = locked; }
     bool IsAlive() const { return !eliminated_; }
     int Placement() const { return placement_; }  // 0 until eliminated / match won; 1 = winner
     const UnitRoster& Roster() const { return roster_; }
@@ -156,6 +160,7 @@ private:
     int xp_ = 0;
     int gold_;
     int streak_ = 0;
+    bool shopLocked_ = false;
     bool eliminated_ = false;
     int placement_ = 0;
     bool benchOnly_ = false;   // not state: only ever true inside one player action

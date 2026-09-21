@@ -46,4 +46,4 @@ The MatchManager takes one itself at the start of every Planning phase and offer
 derived data: it is not part of a snapshot or of `StateHash()`.
 
 ## Changing the format
-Bump `kSnapshotVersion` for any change to the layout (version 2 added the PvE fields and the PvE data hash; version 3 the Mother Nature offers and data hash, and replaced the Draft phase; version 4 the presentation fields of every combat event: windup, flight, kind, shape, size). Old versions are refused with a clear message; there is deliberately no in-place migration yet.
+Bump `kSnapshotVersion` for any change to the layout (version 2 added the PvE fields and the PvE data hash; version 3 the Mother Nature offers and data hash, and replaced the Draft phase; version 4 the presentation fields of every combat event: windup, flight, kind, shape, size; version 5 each player's shop lock). Old versions are refused with a clear message; there is deliberately no in-place migration yet.

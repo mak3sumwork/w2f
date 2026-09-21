@@ -154,6 +154,8 @@ public:
     ActionResult TryRerollShop(PlayerId player);
     ActionResult TryBuyShopUnit(PlayerId player, std::size_t shopSlot);
     ActionResult TryBuyXp(PlayerId player);
+    // Lock / unlock the shop (the offer then survives the next round's automatic refresh). Allowed whenever the player may use the shop; never refused because the shop is closed.
+    ActionResult TrySetShopLock(PlayerId player, bool locked);
     // MotherNature phase only: take offer `index` for free. The other offers are gone (their unit copies return to the pool).
     ActionResult TryPickGift(PlayerId player, std::size_t index);
     ActionResult TrySellUnit(PlayerId player, UnitId unit);

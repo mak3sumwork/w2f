@@ -42,7 +42,7 @@ void PlayerManager::GrantRoundIncome(int round) {
 
 void PlayerManager::RefreshAllShops() {
     for (auto& p : players_) {
-        if (p->IsAlive()) p->Shop().Refresh();
+        if (p->IsAlive() && !p->ShopLocked()) p->Shop().Refresh();   // a locked shop keeps its offer
     }
 }
 

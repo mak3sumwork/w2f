@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 2;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 3;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -29,6 +29,7 @@ enum class CommandType : std::uint8_t {
     RerollShop,
     PickGift,     // gift_index: Mother Nature's phase only -- take one of the offered gifts, free
     BuyXp,
+    SetShopLock,  // locked (bool): a locked shop keeps its offer through the next refresh
     SellUnit,     // unit_id
     MoveUnit,     // unit_id, location ("bench" | "board"), x, [y]
     EquipItem,    // unit_id, item_id
@@ -46,6 +47,7 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::RerollShop: return "reroll_shop";
         case CommandType::PickGift: return "pick_gift";
         case CommandType::BuyXp: return "buy_xp";
+        case CommandType::SetShopLock: return "set_shop_lock";
         case CommandType::SellUnit: return "sell_unit";
         case CommandType::MoveUnit: return "move_unit";
         case CommandType::EquipItem: return "equip_item";
@@ -73,6 +75,7 @@ struct Command {
     int y = 0;
     int slot = 0;
     int fightIndex = 0;
+    bool locked = false;   // set_shop_lock
 };
 
 struct ProtocolError {

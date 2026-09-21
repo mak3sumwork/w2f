@@ -292,6 +292,7 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
         w.U32(static_cast<std::uint32_t>(p.Shop().Slots().size()));
         for (const ChampionDefinition* slot : p.Shop().Slots()) w.U32(slot != nullptr ? slot->id : kInvalidChampionId);
         w.Rng(p.Shop().GetRngState());
+        w.Bool(p.ShopLocked());
 
         const PlayerGifts& gifts = gifts_[static_cast<std::size_t>(i)];
         w.Bool(gifts.settled);
@@ -428,6 +429,7 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
             data.shopSlots.push_back(champion);
         }
         data.shopRng = r.Rng();
+        data.shopLocked = r.Bool();
         if (!r.ok()) return fail("truncated player section");
 
         // Mother Nature's offers: only ever present during the gift phase, and every one must resolve in the loaded data.

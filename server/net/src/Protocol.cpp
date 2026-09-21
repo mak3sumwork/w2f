@@ -34,6 +34,13 @@ struct Reader {
         out = n;
         return true;
     }
+    bool Bool(const char* key, bool& out) {
+        const json::Value* v = Take(key);
+        if (v == nullptr) return Fail("missing_field", std::string("\"") + key + "\" is required");
+        if (!v->IsBool()) return Fail("wrong_type", std::string("\"") + key + "\" must be true or false");
+        out = v->AsBool();
+        return true;
+    }
     bool Required(const char* key, long long lo, long long hi, long long& out) {
         bool present = false;
         return Int(key, lo, hi, true, out, present);
@@ -76,7 +83,7 @@ ParseResult ParseCommand(std::string_view text) {
     long long v = 0;
     bool present = false;
     struct Known { const char* name; CommandType type; };
-    static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp},
+    static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp}, {"set_shop_lock", CommandType::SetShopLock},
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
                                    {"unequip_item", CommandType::UnequipItem}, {"combine_items", CommandType::CombineItems}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
                                    {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}};
@@ -96,6 +103,7 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::EquipItem: allowed = {"id", "action", "unit_id", "item_id"}; break;
         case CommandType::UnequipItem: allowed = {"id", "action", "unit_id", "slot"}; break;
         case CommandType::CombineItems: allowed = {"id", "action", "first", "second"}; break;
+        case CommandType::SetShopLock: allowed = {"id", "action", "locked"}; break;
         case CommandType::GetFight: allowed = {"id", "action", "fight_index"}; break;
         case CommandType::RerollShop:
         case CommandType::BuyXp:
@@ -161,6 +169,9 @@ ParseResult ParseCommand(std::string_view text) {
             if (!ok) break;
             ok = in.Required("slot", 0, kMaxItemsPerUnit - 1, v);
             c.slot = static_cast<int>(v);
+            break;
+        case CommandType::SetShopLock:
+            ok = in.Bool("locked", c.locked);
             break;
         case CommandType::CombineItems:
             ok = in.Required("first", 1, 4294967295LL, v);

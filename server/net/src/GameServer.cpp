@@ -183,6 +183,7 @@ public:
             case CommandType::RerollShop: result = match_->TryRerollShop(player); break;
             case CommandType::PickGift: result = match_->TryPickGift(player, static_cast<std::size_t>(cmd.giftIndex)); break;
             case CommandType::BuyXp: result = match_->TryBuyXp(player); break;
+            case CommandType::SetShopLock: result = match_->TrySetShopLock(player, cmd.locked); break;
             case CommandType::SellUnit: result = match_->TrySellUnit(player, cmd.unit); break;
             case CommandType::MoveUnit: result = match_->TryMoveUnit(player, cmd.unit, cmd.location, cmd.x, cmd.y); break;
             case CommandType::EquipItem: result = match_->TryEquipItem(player, cmd.unit, cmd.item); break;
