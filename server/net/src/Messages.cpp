@@ -240,7 +240,7 @@ std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int 
     return Finish(w);
 }
 
-std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound) {
+std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed) {
     JsonWriter w = Start("phase");
     w.Field("phase", ToString(phase));
     w.Field("round", round);
@@ -249,6 +249,7 @@ std::string Phase(const GameConfig& config, MatchPhase phase, int round, int tic
     w.Field("round_in_stage", sr.roundInStage);
     w.Field("pve", config.match.IsPveRound(round));
     w.Field("mother_nature", motherNatureRound);   // a gift phase this round, and no shop until it is over
+    w.Field("shop_closed", shopClosed);            // no shop this round: Mother Nature's, or the opening round
     const int duration = PhaseTicks(config, phase);
     w.Field("duration_ticks", duration);
     w.Field("ticks_remaining", duration > ticksElapsed ? duration - ticksElapsed : 0);

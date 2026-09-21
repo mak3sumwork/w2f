@@ -222,7 +222,7 @@ public:
     void OnPhaseChanged(MatchPhase, MatchPhase to, int round) override {
         if (to == MatchPhase::Combat) QueueCombat(round);
         combatBatchOpen_ = false;
-        Queue(-1, msg::Phase(config_, to, round, 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round)));
+        Queue(-1, msg::Phase(config_, to, round, 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round), match_ != nullptr && match_->IsShopClosed(round)));
     }
     void OnPlayerEliminated(PlayerId p, int placement) override { Queue(-1, msg::PlayerEliminated(p, placement)); }
     void OnMatchEnded(PlayerId) override { dirty_ = true; }   // the final message needs the placements: sent when Tick() returns
@@ -395,7 +395,7 @@ private:
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
         SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats()));
-        SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), tick_, match_->IsMotherNatureRound()));
+        SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), tick_, match_->IsMotherNatureRound(), match_->IsShopClosed()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
         SendTo(s.conn, msg::PublicState(*match_));
@@ -430,7 +430,7 @@ private:
         combatBatchOpen_ = false;
         bots_.clear();
         for (std::size_t i = 0; i < seats_.size(); ++i) {
-            if (seats_[i].bot) bots_.emplace_back(static_cast<PlayerId>(i), seed);
+            if (seats_[i].bot) bots_.emplace_back(static_cast<PlayerId>(i), seed, BotProfile{}, data_.traits);
         }
         for (std::size_t i = 0; i < seats_.size(); ++i) {
             if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats()));

@@ -534,6 +534,9 @@ struct Rig {
         data.config.match.combatTicks = 300;
         data.config.match.resolutionTicks = 30;
         data.config.player.startingGold = 20;
+        data.config.match.shopClosedOpeningRounds = 0;   // the protocol tests want a shop from round 1 and a free-form board;
+        data.config.match.openingUnitCosts.clear();      // TestOpeningAndBoardLimit runs the real defaults
+        data.config.player.limitBoardToLevel = false;
         cfg.seats = seats;
         cfg.seed = 12345;
         cfg.rateBurst = 100;   // roomy by default: the tests that are about rate limiting set their own
@@ -2076,6 +2079,48 @@ static void TestBotSeats() {
     }
 }
 
+static void TestOpeningRoundOverTheWire() {
+    // The real rules: round 1 has no shop and a free unit for everyone, and the board holds `level` units. One human and three bots.
+    Rig r(4, [](GameData& d, GameServerConfig& c) {
+        c.bots = 3;
+        d.config.match.shopClosedOpeningRounds = 1;
+        d.config.match.openingUnitCosts = {1};
+        d.config.player.limitBoardToLevel = true;
+    });
+    const ConnectionId a = r.Connect();
+    r.Tick(3);
+    const json::Value phase = r.Last(a, "phase");
+    CHECK(Str(phase, "phase") == "Planning" && Num(phase, "round") == 1 && phase.Find("shop_closed") && phase.Find("shop_closed")->IsBool());
+    CHECK(r.Last(a, "phase").Find("shop_closed")->AsBool() && !r.Last(a, "phase").Find("mother_nature")->AsBool());
+    const json::Value state = r.Last(a, "state");
+    long long owned = 0;
+    for (const json::Value& u : state.Find("bench")->Items()) owned += u.IsNull() ? 0 : 1;
+    CHECK(owned == 1 && state.Find("board")->Items().empty());   // the dealt unit waits on the bench
+    for (const json::Value& slot : state.Find("shop")->Items()) {   // every shop slot is empty (0)
+        long long id = -1;
+        CHECK(slot.ToInt(id) && id == 0);
+    }
+    r.Say(a, R"({"action": "buy_unit", "shop_index": 0, "id": 5})");
+    CHECK(Str(r.Last(a, "result"), "result") == "ShopClosed");
+    r.Say(a, R"({"action": "reroll_shop", "id": 6})");
+    CHECK(Str(r.Last(a, "result"), "result") == "ShopClosed");
+    for (PlayerId bot = 1; bot <= 3; ++bot) {   // the bots field theirs at once
+        const PlayerState* p = r.Match().Players().Get(bot);
+        CHECK(p->Roster().Count() == 1 && p->Roster().BoardCount() == 1);
+    }
+    // The next round: the shop is open again, and the phase message says so.
+    CHECK(r.RunUntil([&] { return r.Match().Round() == 2 && r.Match().Phase() == MatchPhase::Planning; }, 4000));
+    r.Tick(2);
+    CHECK(!r.Last(a, "phase").Find("shop_closed")->AsBool());
+    long long filled = 0;
+    const json::Value openState = r.Last(a, "state");   // (a named local: never range-for over a member of a temporary)
+    for (const json::Value& slot : openState.Find("shop")->Items()) {
+        long long id = 0;
+        filled += slot.ToInt(id) && id != 0 ? 1 : 0;
+    }
+    CHECK(filled == r.Match().Config().shop.slotCount);
+}
+
 static void TestCatalog() {
     Rig r(2);
     const ConnectionId a = r.Connect();   // works in the lobby, before any match
@@ -2137,6 +2182,7 @@ int main() {
         {"Sockets: two-player flow + token reconnect", TestSocketFullMatchFlow},
         {"Sockets: the real server loop starts and stops", TestSocketServerLoopRunsAndStops},
         {"Bot seats: lobby, play, reset, determinism", TestBotSeats},
+        {"Opening round + board = level, over the wire", TestOpeningRoundOverTheWire},
         {"Catalog message", TestCatalog},
     };
     int failedTests = 0;

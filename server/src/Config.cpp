@@ -61,6 +61,10 @@ bool GameConfig::Validate(std::string* error) const {
     if (match.firstStagePveRounds < 0 || match.firstStagePveRounds > match.firstStageRounds) {
         return Fail(error, "firstStagePveRounds must be between 0 and firstStageRounds");
     }
+    if (match.shopClosedOpeningRounds < 0) return Fail(error, "shopClosedOpeningRounds must be >= 0");
+    for (int cost : match.openingUnitCosts) {
+        if (cost < 1 || cost > kMaxCostTier) return Fail(error, "openingUnitCosts entries must be between 1 and kMaxCostTier");
+    }
     if (match.pveRoundInLaterStages < 0 || match.pveRoundInLaterStages > match.roundsPerStage) {
         return Fail(error, "pveRoundInLaterStages must be between 0 (none) and roundsPerStage");
     }
@@ -130,6 +134,9 @@ std::uint64_t GameConfig::ContentHash() const {
     h.AddInt(match.roundsPerStage);
     h.AddInt(match.firstStagePveRounds);
     h.AddInt(match.pveRoundInLaterStages);
+    h.AddInt(match.shopClosedOpeningRounds);
+    h.AddInt(static_cast<std::int64_t>(match.openingUnitCosts.size()));
+    for (int cost : match.openingUnitCosts) h.AddInt(cost);
 
     for (int v : {combat.ticksPerHexMove, combat.repathBackoffTicks, combat.minDamage, combat.manaPerAttackMilli,
                   combat.rawDamagePerMana, combat.manaFromDamagePerTickCapMilli, combat.critBonusPercent,

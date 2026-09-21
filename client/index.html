@@ -344,7 +344,7 @@ function handle(m) {
       break;
     case 'income': logLine('Income: +' + m.total_gold + ' gold (' + m.base_gold + ' base, ' + m.interest_gold + ' interest, ' + m.streak_gold + ' streak), +' + m.passive_xp + ' XP.', 'sys'); break;
     case 'result':
-      if (!m.ok) logLine(m.action + ' refused: ' + m.result, 'err');
+      if (!m.ok) logLine(m.action + ' refused: ' + m.result + (m.result === 'BoardFull' && G.me ? ' (at level ' + G.me.level + ' you can field ' + G.me.level + ' units: swap with a unit on the board, or level up)' : ''), 'err');
       delete G.pending[m.id];
       break;
     case 'error': logLine('Server error: ' + m.code + ' - ' + m.detail, 'err'); break;
@@ -437,7 +437,7 @@ function renderHud() {
   const chip = $('phaseChip');
   chip.textContent = p ? PHASE_NAME[p.phase] || p.phase : 'Lobby';
   chip.className = 'chip' + (p && p.phase === 'MotherNature' ? ' mn' : p && p.phase === 'Planning' ? ' plan' : p && p.phase === 'Combat' ? ' combat' : '');
-  $('roundText').textContent = p ? 'Round ' + p.round + '  (' + p.stage + '-' + p.round_in_stage + ')' + (p.pve ? '  monsters' : '') + (p.mother_nature ? '  (no shop)' : '') : '';
+  $('roundText').textContent = p ? 'Round ' + p.round + '  (' + p.stage + '-' + p.round_in_stage + ')' + (p.pve ? '  monsters' : '') + (p.shop_closed ? '  (no shop)' : '') : '';
   if (me) {
     $('gold').textContent = me.gold;
     const interest = Math.min(5, Math.floor(me.gold / 10));
@@ -449,10 +449,10 @@ function renderHud() {
     $('hpBar').style.width = Math.max(0, Math.min(100, (100 * me.health) / Math.max(G.maxHealth, 1))) + '%';
     $('streak').textContent = (me.streak > 0 ? '+' : '') + me.streak;
     $('streak').className = 'value ' + (me.streak > 0 ? 'good' : me.streak < 0 ? 'bad' : '');
-    $('boardCount').textContent = me.board.length + ' on board, ' + me.bench.filter(Boolean).length + ' on bench';
+    $('boardCount').textContent = me.board.length + '/' + me.level + ' on board, ' + me.bench.filter(Boolean).length + ' on bench';
   }
   const planning = p && p.phase === 'Planning';
-  $('btnReroll').disabled = !planning || !me || me.gold < 2 || p.mother_nature;
+  $('btnReroll').disabled = !planning || !me || me.gold < 2 || p.shop_closed;
   $('btnXp').disabled = !planning || !me || me.gold < 4 || me.xp_to_next === 0;
 }
 function tickTimer() {
@@ -527,8 +527,9 @@ function renderBench() {
 function renderShop() {
   const shop = clear($('shop'));
   const me = G.me, p = G.phase;
-  if (p && (p.mother_nature || p.phase === 'MotherNature')) {
-    shop.appendChild(h('div', 'closed', 'The shop is closed in Mother Nature rounds. Pick a gift instead.'));
+  if (p && (p.shop_closed || p.phase === 'MotherNature')) {
+    shop.appendChild(h('div', 'closed', p.mother_nature || p.phase === 'MotherNature' ? 'The shop is closed in Mother Nature rounds. Pick a gift instead.'
+      : 'Opening round: the shop is closed. Everyone was dealt a free unit - put it on the board. The shop opens next round.'));
     return;
   }
   const slots = me ? me.shop : [0, 0, 0, 0, 0];

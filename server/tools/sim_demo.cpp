@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
     struct Clients { sample::ScriptedPlayer human{0}; std::vector<AIBotController> bots; };
     sample::ScriptedPlayer human(0);
     std::vector<AIBotController> bots;
-    for (int seat = 1; seat < kMaxPlayers; ++seat) bots.emplace_back(static_cast<PlayerId>(seat), seed);
+    for (int seat = 1; seat < kMaxPlayers; ++seat) bots.emplace_back(static_cast<PlayerId>(seat), seed, BotProfile{}, traits.get());
     Clients atSnapshot{human, bots};
     int snapshotRound = 0;
     bool drilled = false;

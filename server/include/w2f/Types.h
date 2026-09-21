@@ -45,7 +45,7 @@ enum class ActionResult : std::uint8_t {
     InvalidUnit,
     ItemsFull,     // the unit already carries kMaxItemsPerUnit items
     InvalidItem,   // unknown item id, or the player does not have it in their item bag
-    ShopClosed,    // Mother Nature's round: there is no shop (buy / reroll)
+    ShopClosed,    // the opening round or a Mother Nature round: there is no shop (buy / reroll)
     AlreadyPicked, // the player already took their Mother Nature gift this round
 };
 

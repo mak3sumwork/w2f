@@ -14,7 +14,8 @@ The match starts the moment you connect. After it ends the server reopens its lo
 Useful server options: `--seed N` (the same seed = the same shops, gifts and bot rolls), `--port N`.
 
 ## Using it
-* **Shop**: click a card to buy. **Reroll** `D`, **Buy XP** `F`. The shop is closed in Mother Nature rounds.
+* **Rules you will notice**: the board holds as many units as your level (level 1 = 1 unit ... level 10 = 10). Round 1 has no shop: everyone is dealt one free random 1-cost unit (it is on your bench: put it on the board). The shop opens in round 2.
+* **Shop**: click a card to buy. **Reroll** `D`, **Buy XP** `F`. The shop is also closed in Mother Nature rounds.
 * **Units**: click a unit (bench or board), then a bench slot or a board cell to move it (swaps with what is there). The row at the top of the board is the front row. **Sell** `E` (or the button in "Selected").
 * **Items**: click an item in the bag, then a unit. Two components that combine become one finished item (hover an item to see its recipes). Click an item chip in "Selected" to take it off.
 * **Mother Nature** (every 3rd round): a window offers 2 gifts; click one. If time runs out the first is taken for you.

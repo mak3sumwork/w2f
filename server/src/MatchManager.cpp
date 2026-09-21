@@ -47,7 +47,26 @@ void MatchManager::RemoveListener(IMatchListener* listener) {
 void MatchManager::Start() {
     if (phase_ != MatchPhase::NotStarted) return;
     round_ = 1;
+    DealOpeningUnits();
     BeginRound();
+}
+
+// The opening: every living player, in seat order, is dealt one random unit of each cost the config lists, taken from the shared pool like
+// any other copy. A tier that has run dry is skipped; a unit that does not fit in the roster goes back.
+void MatchManager::DealOpeningUnits() {
+    if (config_.match.openingUnitCosts.empty()) return;
+    Rng rng(seed_, kRngStreamOpening);
+    for (int seat = 0; seat < players_.PlayerCount(); ++seat) {
+        PlayerState* p = players_.Get(static_cast<PlayerId>(seat));
+        if (p == nullptr || !p->IsAlive()) continue;
+        for (int cost : config_.match.openingUnitCosts) {
+            if (pool_.RemainingInTier(cost) <= 0) continue;
+            const ChampionDefinition* champion = pool_.DrawFromTier(cost, rng);
+            if (champion == nullptr) continue;
+            if (p->CanAcquire(champion)) p->AcquireUnit(champion, 0);
+            else pool_.Return(champion, 1);
+        }
+    }
 }
 
 void MatchManager::Tick() {
@@ -114,8 +133,8 @@ void MatchManager::EnterPhase(MatchPhase next) {
             GenerateGifts();
             break;
         case MatchPhase::Planning:
-            // A Mother Nature round has no shop at all: the gift was the reward for the round.
-            if (IsMotherNatureRound()) players_.CloseAllShops();
+            // No shop in the opening round (the free unit was the reward) nor in a Mother Nature round (the gift is).
+            if (IsShopClosed()) players_.CloseAllShops();
             else players_.RefreshAllShops();
             if (config_.snapshot.atPlanningStart) TakeAutoSnapshot();
             break;
@@ -524,14 +543,14 @@ ActionResult MatchManager::TryRerollShop(PlayerId player) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p);
     if (check != ActionResult::Ok) return check;
-    return IsMotherNatureRound() ? ActionResult::ShopClosed : p->Shop().TryReroll();
+    return IsShopClosed() ? ActionResult::ShopClosed : p->Shop().TryReroll();
 }
 
 ActionResult MatchManager::TryBuyShopUnit(PlayerId player, std::size_t shopSlot) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p);
     if (check != ActionResult::Ok) return check;
-    return IsMotherNatureRound() ? ActionResult::ShopClosed : p->Shop().TryBuy(shopSlot);
+    return IsShopClosed() ? ActionResult::ShopClosed : p->Shop().TryBuy(shopSlot);
 }
 
 ActionResult MatchManager::TryBuyXp(PlayerId player) {

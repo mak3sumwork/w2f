@@ -52,10 +52,16 @@ static int g_failures = 0;
 
 // Most tests are about PvP rounds, and a default GameConfig makes rounds 1-3 and X-7 PvE. This config keeps every round PvP;
 // the PvE tests build their own.
+// The rules most engine tests were written against: no PvE, an open shop from round 1, no free opening unit, and the board limited only by its
+// 28 cells. (The real defaults -- board = level, closed shop + free unit in round 1 -- are covered by the opening / board-limit tests; the full-match
+// tests use GameConfig directly.)
 struct TestGameConfig : GameConfig {
     TestGameConfig() {
         match.firstStagePveRounds = 0;
         match.pveRoundInLaterStages = 0;
+        match.shopClosedOpeningRounds = 0;
+        match.openingUnitCosts.clear();
+        player.limitBoardToLevel = false;
     }
 };
 
@@ -8246,6 +8252,153 @@ static void TestPermilleTermsAndGunfire() {
     CHECK(items->Find(37) && items->FindCombination(7, 2)->id == 37);   // Fishscale
 }
 
+// A bot that leaves its level alone (the tests that count gold do not want XP purchases in the sums).
+static BotProfile NoLevelProfile() {
+    BotProfile profile;
+    profile.targetLevelByStage.fill(1);
+    return profile;
+}
+
+static void TestOpeningRoundAndBoardLimit() {
+    auto db = MakeDb();
+    const auto planningOf = [&](GameConfig cfg, std::uint64_t seed) {
+        cfg.match.playerCount = 4;
+        std::string err;
+        auto match = MatchManager::Create(cfg, *db, seed, nullptr, &err);
+        CHECK(match != nullptr);
+        return match;
+    };
+
+    {   // The real defaults: round 1 has no shop, and every player has been dealt one random 1-cost unit, free.
+        GameConfig cfg;
+        auto match = planningOf(cfg, 11);
+        EventLog log;
+        match->AddListener(&log);
+        match->Start();
+        CHECK(match->Round() == 1 && match->Phase() == MatchPhase::Planning && match->IsShopClosed() && !match->IsMotherNatureRound());
+        CHECK(log.Count(UnitEvent::Bought) == 4);   // one per player, announced like any unit that enters a roster
+        for (const UnitEvent& e : log.events) CHECK(e.kind == UnitEvent::Bought && e.number == 0);   // for 0 gold
+        for (PlayerId p = 0; p < 4; ++p) {
+            const PlayerState* me = match->Players().Get(p);
+            CHECK(me->Roster().Count() == 1 && me->Roster().BenchCount() == 1 && me->Roster().Units()[0].champion->cost == 1);
+            for (const ChampionDefinition* slot : me->Shop().Slots()) CHECK(slot == nullptr);   // the shop is closed
+            CHECK(me->Level() == 1 && me->Gold() == 2);   // round 1's income only
+        }
+        CHECK(match->VerifyPoolIntegrity());
+        PlayerState* p0 = match->PlayersMutable().Get(0);
+        CHECK(match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed);
+        CHECK(p0->Gold() == 2);   // refused actions change nothing
+        // The unit can be fielded (level 1 = one unit on the board) ...
+        const UnitId first = p0->Roster().Units()[0].id;
+        CHECK(match->TryMoveUnit(0, first, LocationType::Board, 3, 3) == ActionResult::Ok);
+        // ... and the shop opens with round 2.
+        while (match->Round() == 1) match->Tick();
+        CHECK(match->Round() == 2 && match->Phase() == MatchPhase::Planning && !match->IsShopClosed());
+        for (PlayerId p = 0; p < 4; ++p) {
+            int filled = 0;
+            for (const ChampionDefinition* slot : match->Players().Get(p)->Shop().Slots()) filled += slot != nullptr ? 1 : 0;
+            CHECK(filled == cfg.shop.slotCount);
+        }
+        CHECK(match->TryRerollShop(0) == ActionResult::Ok && match->VerifyPoolIntegrity());
+    }
+    {   // Same seed = same units; the deal is part of the match seed, not of the tick.
+        GameConfig cfg;
+        auto a = planningOf(cfg, 5);
+        auto b = planningOf(cfg, 5);
+        a->Start();
+        b->Start();
+        CHECK(a->StateHash() == b->StateHash());
+        bool differs = false;
+        for (std::uint64_t seed = 6; seed < 16 && !differs; ++seed) {
+            auto c = planningOf(cfg, seed);
+            c->Start();
+            differs = c->StateHash() != a->StateHash();
+        }
+        CHECK(differs);
+    }
+    {   // Configurable: several costs, none, a longer closed-shop opening, and bad values refused.
+        GameConfig cfg;
+        cfg.match.openingUnitCosts = {1, 2};
+        auto two = planningOf(cfg, 3);
+        two->Start();
+        for (PlayerId p = 0; p < 4; ++p) {
+            const PlayerState* me = two->Players().Get(p);
+            CHECK(me->Roster().Count() == 2 && me->Roster().CountOf(nullptr, 1) == 0);
+            int cost1 = 0, cost2 = 0;
+            for (const UnitInstance& u : me->Roster().Units()) (u.champion->cost == 1 ? cost1 : cost2) += 1;
+            CHECK(cost1 == 1 && cost2 == 1);
+        }
+        cfg.match.openingUnitCosts.clear();
+        cfg.match.shopClosedOpeningRounds = 2;
+        auto none = planningOf(cfg, 3);
+        none->Start();
+        CHECK(none->Players().Get(0)->Roster().Count() == 0 && none->IsShopClosed());
+        while (none->Round() < 2) none->Tick();
+        CHECK(none->IsShopClosed());
+        while (none->Round() < 3) none->Tick();
+        CHECK(!none->IsShopClosed());
+        cfg.match.shopClosedOpeningRounds = 0;
+        auto open = planningOf(cfg, 3);
+        open->Start();
+        CHECK(!open->IsShopClosed() && open->Players().Get(0)->Shop().Slots()[0] != nullptr);
+        std::string err;
+        GameConfig bad;
+        bad.match.openingUnitCosts = {0};
+        CHECK(!bad.Validate(&err) && err.find("openingUnitCosts") != std::string::npos);
+        bad.match.openingUnitCosts = {kMaxCostTier + 1};
+        CHECK(!bad.Validate(&err));
+        bad.match.openingUnitCosts = {1};
+        bad.match.shopClosedOpeningRounds = -1;
+        CHECK(!bad.Validate(&err));
+        // ... and both settings are part of the rules a snapshot pins.
+        GameConfig other;
+        other.match.openingUnitCosts = {2};
+        CHECK(other.ContentHash() != GameConfig{}.ContentHash());
+        other = GameConfig{};
+        other.match.shopClosedOpeningRounds = 2;
+        CHECK(other.ContentHash() != GameConfig{}.ContentHash());
+    }
+    {   // A snapshot of the opening round restores it exactly (closed shop, dealt units) and the restored match plays on identically.
+        GameConfig cfg;
+        cfg.match.playerCount = 4;
+        auto match = planningOf(cfg, 21);
+        match->Start();
+        const std::vector<std::uint8_t> bytes = match->Snapshot();
+        std::string err;
+        auto restored = MatchManager::Restore(bytes, cfg, *db, nullptr, &err);
+        CHECK(restored != nullptr && restored->StateHash() == match->StateHash() && restored->IsShopClosed());
+        if (restored) {
+            for (int i = 0; i < 6000; ++i) { match->Tick(); restored->Tick(); }
+            CHECK(match->StateHash() == restored->StateHash() && match->Round() > 2);
+        }
+    }
+    {   // The board holds as many units as the player's level (10 at most); a level-up makes room.
+        GameConfig cfg;
+        cfg.match.shopClosedOpeningRounds = 0;
+        cfg.match.openingUnitCosts.clear();
+        cfg.player.startingGold = 100;
+        auto match = planningOf(cfg, 2);
+        match->Start();
+        PlayerState* me = match->PlayersMutable().Get(0);
+        CHECK(me->Level() == 1 && me->Roster().BoardCapacity() == 1);
+        for (int i = 0; i < 12; ++i) CHECK(me->AcquireUnit(db->Find(static_cast<ChampionId>(100 + i % 5))) == ActionResult::Ok);
+        std::vector<UnitId> benched;
+        for (int slot = 0; slot < kBenchSlots; ++slot) {
+            if (const UnitInstance* u = me->Roster().BenchAt(slot)) benched.push_back(u->id);
+        }
+        CHECK(benched.size() >= 5);
+        int x = 0;
+        CHECK(match->TryMoveUnit(0, benched[0], LocationType::Board, x++, 0) == ActionResult::Ok);
+        CHECK(match->TryMoveUnit(0, benched[1], LocationType::Board, x, 0) == ActionResult::BoardFull);   // level 1 = 1 unit
+        for (int level = 2; level <= kMaxPlayerLevel; ++level) {
+            while (me->Level() < level) me->AddXp(1);
+            CHECK(me->Roster().BoardCapacity() == level);
+        }
+        me->AddXp(1000);
+        CHECK(me->Level() == kMaxPlayerLevel && me->Roster().BoardCapacity() == 10);
+    }
+}
+
 static void TestBotEconomyAndPlacement() {
     auto db = sample::MakeCombatDatabase();
 
@@ -8267,7 +8420,19 @@ static void TestBotEconomyAndPlacement() {
         bot.Tick(*match);
         CHECK(me->Gold() == gold && me->Roster().Count() == units);
     }
-    {   // Exactly 50 is not "more than 50".
+    {   // Exactly 50 is not "more than 50" (nothing is bought with the surplus rule) ...
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        auto match = MatchManager::Create(cfg, *db, 1, nullptr);
+        match->Start();
+        while (match->Phase() != MatchPhase::Planning) match->Tick();
+        PlayerState* me = match->PlayersMutable().Get(0);
+        me->AddGold(50 - me->Gold());
+        AIBotController bot(0, 1, NoLevelProfile());
+        bot.Tick(*match);
+        CHECK(me->Level() == 1);
+    }
+    {   // ... but it does buy XP up to the level it wants for the stage (level 3 in stage 1): 2 XP a level, so one purchase.
         TestGameConfig cfg;
         cfg.match.playerCount = 2;
         auto match = MatchManager::Create(cfg, *db, 1, nullptr);
@@ -8277,7 +8442,7 @@ static void TestBotEconomyAndPlacement() {
         me->AddGold(50 - me->Gold());
         AIBotController bot(0, 1);
         bot.Tick(*match);
-        CHECK(me->Level() == 1);
+        CHECK(me->Level() == 3);
     }
     {   // Only acts during Planning, and only while alive.
         TestGameConfig cfg;
@@ -8329,6 +8494,135 @@ static void TestBotEconomyAndPlacement() {
         AIBotController bot(0, 1);
         bot.Tick(*match);
         CHECK(me->Level() == 2 && me->Roster().BoardCount() == 2 && me->Roster().BenchCount() == 3);
+    }
+}
+
+static void TestBotFieldsTheBestUnits() {
+    auto db = sample::MakeCombatDatabase();
+    auto traits = sample::LoadProductionTraits();
+    CHECK(db != nullptr && traits != nullptr);
+    if (!db || !traits) return;
+    const auto planning = [&](int level) {
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.player.limitBoardToLevel = true;
+        auto match = MatchManager::Create(cfg, *db, 1, nullptr);
+        match->Start();
+        while (match->Phase() != MatchPhase::Planning) match->Tick();
+        PlayerState* me = match->PlayersMutable().Get(0);
+        me->TrySpendGold(me->Gold());
+        while (me->Level() < level) me->AddXp(1);
+        return match;
+    };
+    const auto onBoard = [](const PlayerState& p, ChampionId id) {
+        for (const UnitInstance& u : p.Roster().Units()) {
+            if (u.champion->id == id && u.location == LocationType::Board) return true;
+        }
+        return false;
+    };
+
+    {   // The board holds `level` units and the bot fields the strongest ones (cost x star): the cheap one stays on the bench...
+        auto match = planning(2);
+        PlayerState* me = match->PlayersMutable().Get(0);
+        for (ChampionId id : {101u, 201u, 301u}) CHECK(me->AcquireUnit(db->Find(id)) == ActionResult::Ok);
+        AIBotController bot(0, 1, NoLevelProfile());
+        bot.Tick(*match);
+        CHECK(me->Roster().BoardCount() == 2 && onBoard(*me, 301) && onBoard(*me, 201) && !onBoard(*me, 101));
+        // ...and when a stronger unit arrives it replaces the weakest fielded one, whatever cell that was.
+        CHECK(me->AcquireUnit(db->Find(401)) == ActionResult::Ok);
+        AIBotController again(0, 1, NoLevelProfile());
+        again.Tick(*match);
+        CHECK(me->Roster().BoardCount() == 2 && onBoard(*me, 401) && onBoard(*me, 301) && !onBoard(*me, 201));
+        CHECK(me->Roster().CheckInvariants());
+        // A star-2 unit beats a pricier 1-star (it is worth three copies).
+        auto starMatch = planning(1);
+        PlayerState* p = starMatch->PlayersMutable().Get(0);
+        for (int i = 0; i < 3; ++i) CHECK(p->AcquireUnit(db->Find(101)) == ActionResult::Ok);   // merges into one 2-star 1-cost
+        CHECK(p->AcquireUnit(db->Find(301)) == ActionResult::Ok);                                  // 12 points against the 2-star's 12: a tie, lowest id wins
+        AIBotController star(0, 1, NoLevelProfile());
+        star.Tick(*starMatch);
+        CHECK(p->Roster().BoardCount() == 1);
+    }
+    {   // It counts synergies: two Assassins (Vex 1-cost, Lunis 2-cost) beat two plain 2-cost units for the last places on the board;
+        // a bot that knows no trait data fields the plain ones.
+        for (int aware = 0; aware < 2; ++aware) {
+            auto match = planning(2);
+            PlayerState* me = match->PlayersMutable().Get(0);
+            for (ChampionId id : {ChampionId{202}, ChampionId{203}, ChampionId{9015}, sample::kChampionLunis}) CHECK(me->AcquireUnit(db->Find(id)) == ActionResult::Ok);
+            AIBotController bot(0, 1, NoLevelProfile(), aware ? traits.get() : nullptr);
+            bot.Tick(*match);
+            CHECK(me->Roster().BoardCount() == 2);
+            if (aware) CHECK(onBoard(*me, ChampionId{9015}) && onBoard(*me, sample::kChampionLunis));
+            else CHECK(onBoard(*me, 202) && onBoard(*me, 203));
+        }
+    }
+}
+
+static void TestBotEconomyRerollsAndLevels() {
+    auto db = sample::MakeCombatDatabase();
+    CHECK(db != nullptr);
+    if (!db) return;
+    const auto atRound = [&](int round, int gold) {
+        TestGameConfig cfg;
+        cfg.match.playerCount = 2;
+        cfg.player.limitBoardToLevel = true;
+        auto match = MatchManager::Create(cfg, *db, 3, nullptr);
+        match->Start();
+        while (!(match->Round() == round && match->Phase() == MatchPhase::Planning)) match->Tick();
+        PlayerState* me = match->PlayersMutable().Get(0);
+        me->TrySpendGold(me->Gold());
+        me->AddGold(gold);
+        return match;
+    };
+
+    {   // Stage 1 (rounds 1-3): nothing to save for and no rerolls -- it buys from the one shop it has and levels to 3.
+        auto match = atRound(2, 40);
+        const PlayerState* me = match->Players().Get(0);
+        std::vector<const ChampionDefinition*> shop = me->Shop().Slots();
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Level() == 3 && me->Roster().Count() <= shop.size());
+        for (const ChampionDefinition* slot : me->Shop().Slots()) CHECK(slot == nullptr || std::find(shop.begin(), shop.end(), slot) != shop.end());   // no reroll
+    }
+    {   // Stage 2 (round 4 on): it saves 10 gold for interest, levels to 5, and rerolls with the rest looking for units.
+        auto match = atRound(4, 60);
+        const PlayerState* me = match->Players().Get(0);
+        CHECK(match->CurrentStageRound().stage == 2);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Level() >= 5);
+        CHECK(me->Gold() >= 10 && me->Gold() < 30);   // the savings survive; the rest was spent
+        CHECK(me->Roster().Count() > me->Shop().Slots().size());   // more units than one shop holds: it rerolled
+        CHECK(match->VerifyPoolIntegrity());
+    }
+    {   // Low on health it stops saving: the same 14 gold in stage 2 stays at 10 for a healthy bot and is spent by a hurt one.
+        auto healthy = atRound(4, 14);
+        auto hurt = atRound(4, 14);
+        hurt->PlayersMutable().Get(0)->ApplyDamage(60);
+        AIBotController a(0, 1);
+        AIBotController b(0, 1);
+        a.Tick(*healthy);
+        b.Tick(*hurt);
+        CHECK(healthy->Players().Get(0)->Gold() >= 10);
+        CHECK(hurt->Players().Get(0)->Gold() < 10);
+    }
+    {   // Later stages save more (stage 3 = 20; at most 50).
+        auto match = atRound(11, 45);
+        const PlayerState* me = match->Players().Get(0);
+        CHECK(match->CurrentStageRound().stage == 3);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Gold() >= 20);
+    }
+    {   // The shop is closed in the opening round: the bot places the unit it was dealt and does nothing else with gold it cannot spend.
+        GameConfig cfg;
+        cfg.match.playerCount = 2;
+        auto match = MatchManager::Create(cfg, *db, 9, nullptr);
+        match->Start();
+        const PlayerState* me = match->Players().Get(0);
+        AIBotController bot(0, 1);
+        bot.Tick(*match);
+        CHECK(me->Roster().Count() == 1 && me->Roster().BoardCount() == 1 && match->VerifyPoolIntegrity());
     }
 }
 
@@ -8502,7 +8796,7 @@ static void TestBotSellsUnits() {
         auto match = fullRoster({101, 102, 103, 104, 105, 106, 107, 108, 109, 110}, offersCostAtLeast(2), &tally);
         const PlayerState* me = match->Players().Get(0);
         CHECK(me->Roster().Count() == 10);
-        AIBotController bot(0, 1);
+        AIBotController bot(0, 1, NoLevelProfile());
         bot.Tick(*match);
         CHECK(tally.sold >= 1 && tally.bought >= 1);
         CHECK(countCost(*me, 2) + countCost(*me, 3) >= 1 && me->Roster().Count() <= 10 && me->Roster().CheckInvariants());
@@ -8516,7 +8810,7 @@ static void TestBotSellsUnits() {
     {   // Two copies of one champion are about to merge: neither is sold, however many purchases follow.
         auto match = fullRoster({101, 101, 102, 103, 104, 105, 106, 107, 108, 109}, offersCostAtLeast(2), nullptr);
         const PlayerState* me = match->Players().Get(0);
-        AIBotController bot(0, 1);
+        AIBotController bot(0, 1, NoLevelProfile());
         bot.Tick(*match);
         CHECK(me->Roster().CountOf(db->Find(101), 1) == 2);
     }
@@ -8524,7 +8818,7 @@ static void TestBotSellsUnits() {
         auto match = fullRoster({101, 101, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110}, offersCostAtLeast(2), nullptr);   // three 101s merge: ten units
         const PlayerState* me = match->Players().Get(0);
         CHECK(me->Roster().CountOf(db->Find(101), 2) == 1 && me->Roster().Count() == 10);
-        AIBotController bot(0, 1);
+        AIBotController bot(0, 1, NoLevelProfile());
         bot.Tick(*match);
         CHECK(me->Roster().CountOf(db->Find(101), 2) == 1);
     }
@@ -8532,7 +8826,7 @@ static void TestBotSellsUnits() {
         SaleTally tally;
         auto match = fullRoster({301, 302, 303, 304, 305, 306, 307, 308, 309, 310}, offersNothingAtLeast(3), &tally);
         const PlayerState* me = match->Players().Get(0);
-        AIBotController bot(0, 1);
+        AIBotController bot(0, 1, NoLevelProfile());
         bot.Tick(*match);
         CHECK(tally.sold == 0 && tally.bought == 0 && me->Gold() == 20 && me->Roster().Count() == 10);
         CHECK(countCost(*me, 3) == 10);
@@ -8549,7 +8843,7 @@ static void TestBotSellsUnits() {
         me->AddGold(2);   // one purchase: 2 gold, +1 from the sale, -2 for the unit
         const UnitId carrier = me->Roster().BenchAt(0)->id;   // lowest id: the first unit the bot would sell, were it not carrying anything
         CHECK(me->AddItemToBag(3) && match->TryEquipItem(0, carrier, 3) == ActionResult::Ok);
-        AIBotController bot(0, 1);
+        AIBotController bot(0, 1, NoLevelProfile());
         bot.Tick(*match);
         CHECK(tally.sold == 1 && me->Roster().Find(carrier) != nullptr);
     }
@@ -10394,7 +10688,10 @@ int main() {
         {"Coregons-style synergy from data", TestCoregonsStyleSynergyFromData},
         {"Recipe items through a full match", TestRecipeItemsThroughAFullMatch},
         {"Per-mille formula terms (Gunfire)", TestPermilleTermsAndGunfire},
+        {"Opening round (free unit, no shop) + board = level", TestOpeningRoundAndBoardLimit},
         {"AI bot: economy + placement", TestBotEconomyAndPlacement},
+        {"AI bot: fields the best units, counts synergies", TestBotFieldsTheBestUnits},
+        {"AI bot: interest savings, rerolls, level targets", TestBotEconomyRerollsAndLevels},
         {"AI bot: equips items", TestBotEquipsItems},
         {"AI bot: sells units to make room", TestBotSellsUnits},
         {"Full bench still buys a merge (match API)", TestFullBenchMergeViaMatchApi},

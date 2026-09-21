@@ -3,7 +3,7 @@
 // Top-level authority for one match: owns the pool and all players, and drives the phase
 // state machine. Fully headless -- advanced only by Tick() at kTicksPerSecond.
 //
-//   Start -> [MotherNature] -> Planning -> Combat -> Resolution -+-> next round (income, back to top)
+//   Start (deals the opening units) -> [MotherNature] -> Planning -> Combat -> Resolution -+-> next round (income, back to top)
 //            (every 3rd round: a free gift        (no shop in      +-> MatchOver (<= 1 player alive)
 //             instead of a shop)                   those rounds)
 //
@@ -121,6 +121,9 @@ public:
     // Is this round one of Mother Nature's (a gift phase, and no shop)? False when no Mother Nature data is loaded.
     bool IsMotherNatureRound() const { return IsMotherNatureRound(round_); }
     bool IsMotherNatureRound(int round) const { return motherNature_ != nullptr && config_.match.IsMotherNatureRound(round); }
+    // Is the shop closed this round? True in the opening round(s) (the free unit is the reward) and in Mother Nature's rounds (the gift is).
+    bool IsShopClosed() const { return IsShopClosed(round_); }
+    bool IsShopClosed(int round) const { return config_.match.IsOpeningRound(round) || IsMotherNatureRound(round); }
     const MotherNatureDatabase* MotherNature() const { return motherNature_; }
     // The item data this match validates against (nullptr when the match runs without items). Read-only: lets a client of the match (a bot,
     // a UI) look up what an item is.
@@ -197,6 +200,7 @@ private:
     void FinishGiftPhase();
     bool AllGiftsSettled() const;
     void ReleaseOffers(PlayerId player);
+    void DealOpeningUnits();
     void EndMatch();
     ActionResult ResolveActor(PlayerId id, PlayerState*& outPlayer);
 

@@ -11,6 +11,12 @@ so 1-1, 1-2, 1-3, 2-7, 3-7 ... (`pveRoundInLaterStages = 0` means none after sta
 
 Each round runs [MotherNature] -> Planning -> Combat -> Resolution, where MotherNature only exists on Mother Nature's rounds (below). Income is paid at the start of the round (see Streaks).
 
+## The opening and the board size (TFT rules)
+* **Round 1 is the opening**: `MatchConfig::shopClosedOpeningRounds` (1) rounds have **no shop** (`TryBuyShopUnit` / `TryRerollShop` answer `ShopClosed`, exactly as in a Mother Nature round), and in `MatchManager::Start()` every player is
+  dealt one random unit of each cost in `openingUnitCosts` ({1}, **ASSUMED**: the designer said "a random unit") from the shared pool, free (`OnUnitBought` with 0 gold). It lands on the bench; the player puts it on the board. The shop opens in round 2.
+  The deal has its own RNG stream (`kRngStreamOpening`), so it is part of the match seed. `MatchManager::IsShopClosed()` covers both the opening and Mother Nature's rounds.
+* **The board holds as many units as the player's level** (`PlayerConfig::limitBoardToLevel`, now on by default): level 1 = 1 unit ... level 10 = 10 (`kMaxPlayerLevel`). Moving a bench unit onto an empty cell at capacity answers `BoardFull`; swaps are always allowed.
+
 ## Mother Nature (replaces the carousel and augments)
 Every `MatchConfig::motherNatureEveryRounds` rounds (**3**: rounds 3, 6, 9 ... whatever their stage) the round opens with a **MotherNature phase** (`motherNatureTicks`, 20 s) *instead of a shop*.
 Every living player is privately offered **2 random gifts** (`options` in `data/mother_nature.json`) and may take exactly **one**, for free (`TryPickGift`). The **shop stays closed for the whole round**: `TryBuyShopUnit` / `TryRerollShop` answer

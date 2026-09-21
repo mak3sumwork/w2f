@@ -22,9 +22,9 @@ struct StreakBonus {
 struct PlayerConfig {
     int startingHealth = 100;
     int startingGold = 0;
-    // TFT rule: you may field at most `level` units on the board. Off by default (any of the
-    // 28 cells may be used) until the design decision is made.
-    bool limitBoardToLevel = false;
+    // TFT rule (the designer's): you may field at most `level` units on the board (level 1 = 1 unit ... level 10 = 10). Off = any of the
+    // 28 cells may be used (only tests and experiments turn it off).
+    bool limitBoardToLevel = true;
 
     // Leveling: spend gold for XP.
     int buyXpCost = 4;
@@ -92,7 +92,13 @@ struct MatchConfig {
     int firstStagePveRounds = 3;
     int pveRoundInLaterStages = 7;
 
+    // The opening (TFT's first PvE round): the shop is closed for rounds 1..shopClosedOpeningRounds, and before round 1 every player is dealt one
+    // random unit of each cost in openingUnitCosts (from the shared pool; free). The shop opens with the next round. 0 / empty = no opening.
+    int shopClosedOpeningRounds = 1;
+    std::vector<int> openingUnitCosts = {1};   // ASSUMED: one 1-cost unit (the designer said "a random unit")
+
     bool IsMotherNatureRound(int round) const { return motherNatureEveryRounds > 0 && round >= 1 && round % motherNatureEveryRounds == 0; }
+    bool IsOpeningRound(int round) const { return round >= 1 && round <= shopClosedOpeningRounds; }
 
     StageRound StageOf(int round) const {
         const int r = round < 1 ? 1 : round;

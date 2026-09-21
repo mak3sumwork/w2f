@@ -28,5 +28,6 @@ picks the most literal reading and marks it `ASSUMED` in a comment. These are th
   * Enemies with no mana bar (Baira) are not affected by "+15 mana to cast".
 * **Omnilium** — the doc gives it no synergy of its own; it stays a plain tag (Protector is Les / Lum's).
 * **Assassin (2/4)** — the Assassins are Vex, Lunis and Raa (the three champions the doc calls "Assassin"); the 4 breakpoint needs the Assassin Emblem. The synergy makes abilities able to crit, adds +20% / +50% crit damage **and +15% / +30% crit chance** (no champion has a base crit chance, so the chance comes from the synergy).
+* **The opening (round 1)** — everyone is dealt one random **1-cost** unit and the shop is closed for round 1 (`openingUnitCosts`, `shopClosedOpeningRounds` in `GameConfig`; the designer said "a random unit", the cost is ASSUMED). The board holds `level` units (level 1 = 1 ... level 10 = 10).
 * **Mother Nature** — the doc names Tier 1 (early game) and Tier 3 (late game); Tier 3 starts at stage 4 (round 18) and there is no Tier 2 (ASSUMED; add one with a `fromStage` in between). All gift weights are ASSUMED. The shop is closed for the whole of a Mother Nature round, buying XP is still allowed, and a timeout auto-picks the first offer.
   The carousel (the old placeholder Draft phase) and augments are gone: the phase that used to be Draft is now MotherNature.

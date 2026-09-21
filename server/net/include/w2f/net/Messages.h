@@ -35,7 +35,8 @@ std::string Pong(bool hasId, long long id);
 // `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never). `botSeats` = the AI players' seats.
 std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {});
 // `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
-std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound);
+// `shopClosed`: no shop this round (Mother Nature's, or the opening round: the free unit was dealt at the start).
+std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed);
 
 // One player's full private state (gold, xp, shop, bench, board, bag ...).
 std::string PrivateState(const MatchManager& match, PlayerId player);
