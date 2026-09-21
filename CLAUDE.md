@@ -56,6 +56,24 @@ Run from `server/`.
 ## Auto-Memory Clause
 Whenever we lock down a major engine mechanic, rule or convention (a new primitive, a phase rule, a data-format decision, a determinism finding), **update the "Locked Engine Mechanics" section below in the same change**, keeping each entry to one or two lines. Also correct any entry that a change makes wrong. Do not wait to be asked.
 
+## Status & Honest Assessment (as of Phase 13; re-check before trusting)
+**Verdict:** the engine is a strong foundation for UE5, but the game is NOT playable yet and balance is unproven.
+* **UE5 fit:** good. Server-authoritative + replayable event log = UE only renders. The engine is C++17 with no exceptions/RTTI/floats/platform calls (CI builds it that way), so it can be embedded as a UE module or used through the WebSocket server. Engine speed is not a problem (12 full 8-bot matches ≈ 1 s).
+  The hard part is everything visual, ~80% of the remaining work: art/animation for 30 champions, 60+ effect/status VFX, UI (shop, bench, board, gifts, item combining, traits), sound. The log has NO animation data (hits are instant: no windup, no projectile flight; the 0.5 s cast lock is a guess) and every DoT shows as the same `Burn` status.
+* **Not playable vs 7 AI:** (1) no client exists, only raw JSON over WebSocket; (2) `w2f_server` has no AI seats (bots exist only in tests/demo); (3) bots are weak: they never equip items, never sell, never reroll, never chase synergies; (4) PvE is no threat (bots won 99.8% of 595 PvE fights).
+* **Balance facts** (12 bot-only matches, random comps, no items: a smoke test, low confidence): median 36 rounds (≈40–45 min at default timers); no seat bias; **16.7% of PvP fights hit the 40 s timeout** (avg fight 28.7 s) = stalling/low damage; outliers Mortis 75% and Coregons-3 74%; Baira weak (32% over 265 fights).
+  Higher breakpoints are NEVER reached by bots (Coregons 6/8 and its zone, Helios 6, Hexagon 4, Assassin 4 are unmeasured). Bots took 0 Mother Nature heal gifts (ranked last) and 24/32 unit gifts were paid as gold (full rosters).
+* **CI:** Ubuntu clang+gcc, macOS, UE5-flags and the cross-platform determinism job passed. Windows/MSVC failed (ASan stack-use-after-scope in `StateHash`, range-for over a temporary's `.words`); fixed in commit `6a1f782` but the result was NOT seen (GitHub API rate limit). Check the Actions page first.
+* Unproven/assumed: all Mother Nature weights, Tier 3 start (stage 4), no Tier 2, cast lock 0.5 s, many `ASSUMED` numbers in the data (`server/docs/content-notes.md`).
+
+## Roadmap (next steps, in order)
+1. Confirm Windows CI is green (Actions page for the latest commit); fix what its annotations show.
+2. Server-side AI seats (`--bots 7`) + smarter bots (equip items, sell, reroll, aim for synergies).
+3. Minimal local browser test client (a local HTML file; Artifacts cannot reach `ws://localhost`) so the designer can play 1 human vs 7 AI.
+4. Real balance harness (win rate per champion and synergy tier, fight timeout rate, PvE difficulty, game length); a throwaway prototype was used for the numbers above. First tuning targets: fight timeouts and PvE difficulty.
+5. UE5 vertical slice: replay one recorded fight before any UI; decide WebSocket client vs embedding the engine as a module.
+6. Later: persistence/restore of autosaves, auth/matchmaking, Docker deploy, split `tests.cpp` and `CombatSimulator.cpp`, Android/iOS.
+
 ## Locked Engine Mechanics (living memory)
 * Roster = 30 champions (tiers 8/7/6/5/4) + 2 summons (Skeleton 9101, Lost Soul 9102); ids 9001–9031 real, 9101+ summons, 10001+ PvE monsters. Null is range 3 (designer override of the doc's 1).
 * Statuses `Blind`, `DamageTaken`, `BonusMaxMana` (permanent only), `ExecuteBelow`, `HpPerSecond` (negative = true damage credited to the source, not counted as "damage dealt"), `EmpoweredAttack` (charges spent by `requiresCharge` hooks). `Displace` = pull/knock-back, logged as a `Teleport` event with `subtype` 1.
