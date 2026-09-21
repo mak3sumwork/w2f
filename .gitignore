@@ -16,3 +16,7 @@ cmake-build-*/
 
 __pycache__/
 *.pyc
+
+# the designer's splash art copies (their own art: keep out of the public repo unless they decide otherwise)
+server/docs/icons/T_Splash_*.png
+splash_arts/

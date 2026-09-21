@@ -246,10 +246,25 @@ def portraits(out, champs, blockouts):
     return made
 
 
+def splash(out, champs, folder):
+    """The designer's splash art (<repo>/splash_arts/<ChampionName>.jpg) becomes T_Splash_<id>.png (480 px wide), used on the shop cards and the info panel. Needs macOS `sips`; skipped elsewhere."""
+    import shutil, subprocess
+    if not os.path.isdir(folder) or shutil.which("sips") is None: return 0
+    ids = {c["name"].lower(): c["id"] for c in champs}
+    made = 0
+    for f in sorted(os.listdir(folder)):
+        name, ext = os.path.splitext(f)
+        if ext.lower() not in (".jpg", ".jpeg", ".png") or name.lower() not in ids: continue
+        target = os.path.join(out, "T_Splash_%d.png" % ids[name.lower()])
+        subprocess.run(["sips", "-Z", "480", "-s", "format", "png", os.path.join(folder, f), "--out", target], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        made += 1
+    return made
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data")); ap.add_argument("--blockouts", default=os.path.join(HERE, "..", "docs", "blockouts"))
-    ap.add_argument("--out", default=os.path.join(HERE, "..", "docs", "icons"))
+    ap.add_argument("--out", default=os.path.join(HERE, "..", "docs", "icons")); ap.add_argument("--splash", default=os.path.join(HERE, "..", "..", "splash_arts"))
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     for f in os.listdir(a.out):
@@ -260,7 +275,8 @@ def main():
     ui_icons(a.out)
     champs = mb.load_json(os.path.join(a.data, "champions.json"))["champions"]
     n = portraits(a.out, champs, a.blockouts)
-    print("wrote %d item icons, %d portraits, 3 UI glyphs to %s" % (len(items), n, a.out))
+    sp = splash(a.out, champs, a.splash)
+    print("wrote %d item icons, %d portraits, %d splash arts, 3 UI glyphs to %s" % (len(items), n, sp, a.out))
 
 
 if __name__ == "__main__":
