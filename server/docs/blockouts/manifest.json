@@ -6,10 +6,10 @@
    "id": 9001,
    "name": "Alesk",
    "file": "SM_Champion_9001_Alesk.glb",
-   "triangles": 450,
-   "height_m": 2.399,
-   "width_m": 1.438,
-   "depth_m": 0.653,
+   "triangles": 480,
+   "height_m": 1.828,
+   "width_m": 1.728,
+   "depth_m": 0.962,
    "primary_colour": "#F28C28",
    "sockets_m": {
     "feet": {
@@ -17,24 +17,24 @@
      "up": 0.0
     },
     "chest": {
-     "forward": 0.165,
-     "up": 1.294
+     "forward": 0.133,
+     "up": 1.047
     },
     "cast_origin": {
-     "forward": 0.529,
-     "up": 1.352
+     "forward": 0.428,
+     "up": 1.095
     },
     "muzzle": {
-     "forward": 0.823,
-     "up": 1.411
+     "forward": 0.666,
+     "up": 1.142
     },
     "head_top": {
      "forward": 0.0,
-     "up": 2.058
+     "up": 1.904
     },
     "overhead": {
      "forward": 0.0,
-     "up": 2.47
+     "up": 2.237
     }
    }
   },
@@ -43,10 +43,10 @@
    "id": 9002,
    "name": "Baira",
    "file": "SM_Champion_9002_Baira.glb",
-   "triangles": 376,
-   "height_m": 1.926,
-   "width_m": 0.708,
-   "depth_m": 2.115,
+   "triangles": 600,
+   "height_m": 1.997,
+   "width_m": 1.191,
+   "depth_m": 1.27,
    "primary_colour": "#7B3FBF",
    "sockets_m": {
     "feet": {
@@ -54,24 +54,24 @@
      "up": 0.0
     },
     "chest": {
-     "forward": 0.15,
-     "up": 1.177
+     "forward": 0.127,
+     "up": 1.0
     },
     "cast_origin": {
-     "forward": 0.482,
-     "up": 1.23
+     "forward": 0.409,
+     "up": 1.046
     },
     "muzzle": {
-     "forward": 0.749,
-     "up": 1.284
+     "forward": 0.637,
+     "up": 1.091
     },
     "head_top": {
      "forward": 0.0,
-     "up": 1.873
+     "up": 1.91
     },
     "overhead": {
      "forward": 0.0,
-     "up": 2.247
+     "up": 2.228
     }
    }
   },
@@ -302,10 +302,10 @@
    "id": 9010,
    "name": "Soul",
    "file": "SM_Champion_9010_Soul.glb",
-   "triangles": 516,
-   "height_m": 1.647,
-   "width_m": 1.151,
-   "depth_m": 0.559,
+   "triangles": 564,
+   "height_m": 1.819,
+   "width_m": 1.812,
+   "depth_m": 2.311,
    "primary_colour": "#9DB59A",
    "sockets_m": {
     "feet": {
@@ -313,24 +313,24 @@
      "up": 0.0
     },
     "chest": {
-     "forward": 0.142,
-     "up": 1.118
+     "forward": 0.127,
+     "up": 1.0
     },
     "cast_origin": {
-     "forward": 0.457,
-     "up": 1.169
+     "forward": 0.409,
+     "up": 1.046
     },
     "muzzle": {
-     "forward": 0.712,
-     "up": 1.22
+     "forward": 0.637,
+     "up": 1.091
     },
     "head_top": {
      "forward": 0.0,
-     "up": 1.779
+     "up": 1.864
     },
     "overhead": {
      "forward": 0.0,
-     "up": 2.135
+     "up": 2.183
     }
    }
   },
@@ -450,10 +450,10 @@
    "id": 9014,
    "name": "Pyra",
    "file": "SM_Champion_9014_Pyra.glb",
-   "triangles": 288,
-   "height_m": 1.493,
-   "width_m": 0.61,
-   "depth_m": 0.81,
+   "triangles": 506,
+   "height_m": 1.822,
+   "width_m": 0.602,
+   "depth_m": 0.949,
    "primary_colour": "#F28C28",
    "sockets_m": {
     "feet": {
@@ -461,24 +461,24 @@
      "up": 0.0
     },
     "chest": {
-     "forward": 0.129,
-     "up": 1.014
+     "forward": 0.115,
+     "up": 0.907
     },
     "cast_origin": {
-     "forward": 0.415,
-     "up": 1.06
+     "forward": 0.371,
+     "up": 0.948
     },
     "muzzle": {
-     "forward": 0.645,
-     "up": 1.106
+     "forward": 0.577,
+     "up": 0.989
     },
     "head_top": {
      "forward": 0.0,
-     "up": 1.613
+     "up": 1.484
     },
     "overhead": {
      "forward": 0.0,
-     "up": 1.935
+     "up": 1.773
     }
    }
   },
@@ -487,10 +487,10 @@
    "id": 9015,
    "name": "Vex",
    "file": "SM_Champion_9015_Vex.glb",
-   "triangles": 312,
-   "height_m": 1.606,
-   "width_m": 0.564,
-   "depth_m": 0.697,
+   "triangles": 518,
+   "height_m": 1.484,
+   "width_m": 2.14,
+   "depth_m": 1.223,
    "primary_colour": "#7B3FBF",
    "sockets_m": {
     "feet": {
@@ -498,24 +498,24 @@
      "up": 0.0
     },
     "chest": {
-     "forward": 0.125,
-     "up": 0.982
+     "forward": 0.115,
+     "up": 0.907
     },
     "cast_origin": {
-     "forward": 0.402,
-     "up": 1.026
+     "forward": 0.371,
+     "up": 0.948
     },
     "muzzle": {
-     "forward": 0.625,
-     "up": 1.071
+     "forward": 0.577,
+     "up": 0.989
     },
     "head_top": {
      "forward": 0.0,
-     "up": 1.562
+     "up": 1.525
     },
     "overhead": {
      "forward": 0.0,
-     "up": 1.874
+     "up": 1.814
     }
    }
   },
@@ -598,10 +598,10 @@
    "id": 9018,
    "name": "Rot",
    "file": "SM_Champion_9018_Rot.glb",
-   "triangles": 472,
-   "height_m": 2.223,
-   "width_m": 0.696,
-   "depth_m": 0.863,
+   "triangles": 826,
+   "height_m": 1.642,
+   "width_m": 1.385,
+   "depth_m": 1.132,
    "primary_colour": "#9DB59A",
    "sockets_m": {
     "feet": {
@@ -609,24 +609,24 @@
      "up": 0.0
     },
     "chest": {
-     "forward": 0.129,
-     "up": 1.014
+     "forward": 0.115,
+     "up": 0.907
     },
     "cast_origin": {
-     "forward": 0.415,
-     "up": 1.06
+     "forward": 0.371,
+     "up": 0.948
     },
     "muzzle": {
-     "forward": 0.645,
-     "up": 1.106
+     "forward": 0.577,
+     "up": 0.989
     },
     "head_top": {
      "forward": 0.0,
-     "up": 1.613
+     "up": 1.608
     },
     "overhead": {
      "forward": 0.0,
-     "up": 1.935
+     "up": 1.896
     }
    }
   },

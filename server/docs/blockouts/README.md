@@ -59,3 +59,11 @@ the line: send it to me and I will fix the script.
 
 `UnrealEditor.app/Contents/MacOS/UnrealEditor <project>.uproject -game -windowed -ResX=1600 -ResY=900 -w2fshot=9` runs the viewer, takes a screenshot after 9 seconds
 (`Saved/Screenshots/`) and quits. The same import can run headless with the editor closed: `UnrealEditor-Cmd <project>.uproject -run=pythonscript -script=.../tools/unreal/setup_viewer.py`.
+
+## The six hero models and the arena
+
+* **Heroes with splash art** (Alesk, Baira, Pyra, Rot, Soul, Vex) are hand-modelled in `tools/make_blockouts.py` (`HEROES`) after the designer's splash arts: Alesk a dark-iron golem with teal runes and a tower shield,
+  Baira a sea sorceress with a coral trident staff and a tail, Pyra an archer with a burning bow, Rot a hunched swamp treant with antlers and dripping slime, Soul a rust-black knight with a huge greatsword and green runes,
+  Vex a hooded shadow assassin with two curved purple blades. Every other champion still comes from the generic recipes.
+* **Arena** (`SM_ArenaBase`): a floating island like an auto-battler's default stage: grass with a worn dirt plaza under the board, cobbled bench strips, a stone rim with steps, four towers with braziers, trees, bushes and boulders on layered cliffs.
+  The board hexes (`SM_HexTile_Home` / `_Away`) are thin glowing OUTLINES laid on the ground. `SM_Backdrop` is a cloud sea far below. In the viewer the braziers are flickering point lights and a post-process volume adds bloom and a vignette.

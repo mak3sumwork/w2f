@@ -295,6 +295,142 @@ def fallback_recipe(role, rng):
     if rng >= 3: return dict(hs=0.95, bw=0.85, robe=True, weapons=["staff"], extras=["hat"])
     return dict(hs=1.0, bw=1.0, weapons=["sword"], extras=["hood"])
 
+
+# ------------------------------------------------------------------------------------------------------------------------------ hand-made heroes, after the designer's splash arts
+
+def H(c): return srgb(c)
+
+def hero_sockets(m, top=1.75):
+    m.sockets = {"feet": (0, 0, 0), "chest": (0, 1.1, 0.14), "cast_origin": (0, 1.15, 0.45), "muzzle": (0, 1.2, 0.7), "head_top": (0, top, 0), "overhead": (0, top + 0.35, 0)}
+
+def hero_alesk(m):
+    """Protector of Helios: a dark-iron golem with glowing teal runes and a huge tower shield."""
+    iron, dark, teal, plate = H("3A414B"), H("22272E"), H("2EE6C5"), H("4C5561")
+    for sx in (-1, 1):
+        m.add(box(sx * 0.2, 0.36, 0, 0.3, 0.72, 0.34), dark); m.add(box(sx * 0.2, 0.5, 0.15, 0.32, 0.2, 0.08), plate)                # legs + knee plates
+        m.add(box(sx * 0.2, 0.05, 0.06, 0.34, 0.1, 0.46), iron)                                                                       # boots
+    m.add(box(0, 1.08, 0, 0.9, 0.62, 0.5), iron); m.add(box(0, 0.78, 0, 0.7, 0.12, 0.44), dark)                                       # torso, belt
+    m.add(sphere(0, 1.12, 0.27, 0.11, 0.11, 0.06), teal)                                                                              # the glowing chest gem
+    for sx in (-1, 1):
+        m.add(sphere(sx * 0.55, 1.36, 0, 0.26, 0.2, 0.26), plate); m.add(box(sx * 0.55, 1.4, 0.24, 0.16, 0.05, 0.02), teal)           # pauldrons with a rune
+    m.add(box(0, 1.62, 0, 0.34, 0.32, 0.34), iron); m.add(box(0, 1.62, 0.18, 0.26, 0.06, 0.02), dark)
+    for sx in (-1, 1): m.add(box(sx * 0.07, 1.62, 0.19, 0.06, 0.04, 0.02), teal)                                                      # eyes
+    m.add(box(0, 1.84, -0.02, 0.06, 0.16, 0.3), plate)                                                                                # crest
+    m.add(box(0.62, 1.0, 0.05, 0.24, 0.7, 0.26), iron); m.add(sphere(0.62, 0.6, 0.08, 0.17), plate)                                  # the fist arm
+    m.add(box(-0.66, 1.0, 0.12, 0.24, 0.6, 0.26), iron); m.add(sphere(-0.66, 0.68, 0.16, 0.16), plate)
+    shield = box(-0.9, 0.95, 0.35, 0.1, 1.25, 0.8)                                                                                    # the tower shield
+    m.add(shield, iron); m.add(box(-0.97, 0.95, 0.35, 0.03, 1.15, 0.7), dark); m.add(rotate(box(-0.99, 0.95, 0.35, 0.03, 0.42, 0.42), 0, 45, (-0.99, 0.95, 0.35)), teal)
+    hero_sockets(m, 2.0)
+
+def hero_baira(m):
+    """The Tidecaller: a sea sorceress with a mermaid's tail, a coral trident staff and a glow of waves."""
+    scale_a, scale_b, fin, skin, hair, gold = H("1B7FA6"), H("4B3F9E"), H("D24CB4"), H("8FB4C4"), H("14182E"), H("D8B04E")
+    for i, (y, r, dz) in enumerate(((0.05, 0.16, -0.5), (0.24, 0.2, -0.34), (0.44, 0.24, -0.16), (0.68, 0.27, -0.03))):        # the tail curls back and rises to the waist
+        m.add(cyl(0, y, dz, r * 0.8, r, 0.26, 8), scale_a if i % 2 == 0 else scale_b)
+    for sx in (-1, 1): m.add(rotate(box(sx * 0.16, 0.26, -0.72, 0.05, 0.5, 0.26), 2, sx * 30, (0, 0.1, -0.7)), fin)                     # tail fins
+    m.add(box(0, 0.98, 0, 0.42, 0.5, 0.26), H("2A6E8C")); m.add(box(0, 0.78, 0, 0.44, 0.06, 0.28), gold)                             # armoured torso
+    for sx in (-1, 1): m.add(rotate(cyl(sx * 0.27, 1.16, 0, 0.09, 0.0, 0.3, 5), 2, -sx * 40, (sx * 0.27, 1.16, 0)), H("3FE0F0"))     # spiky shoulder fins
+    m.add(sphere(0, 1.36, 0.02, 0.15), skin); m.add(box(0, 1.28, -0.16, 0.34, 0.9, 0.08), hair)                                       # head and long hair
+    for sx in (-1, 1): m.add(box(sx * 0.055, 1.38, 0.13, 0.04, 0.04, 0.02), H("8FF4FF"))
+    m.add(rotate(box(-0.34, 1.05, 0.05, 0.1, 0.5, 0.1), 2, 12, (-0.34, 1.28, 0.05)), skin)                                           # raised arm
+    m.add(cyl(-0.44, 0.2, 0.08, 0.03, 0.03, 1.7, 6), H("5A3A2E"))                                                                     # the staff
+    for k, (dy, ang) in enumerate(((1.55, 25), (1.7, -20), (1.85, 30), (1.95, -10))): m.add(rotate(cyl(-0.44, dy, 0.08, 0.03, 0.0, 0.3, 4), 2, ang, (-0.44, dy, 0.08)), H("E0505A"))   # coral branches
+    m.add(sphere(-0.44, 2.0, 0.08, 0.12), H("6FD0FF"))
+    m.add(rotate(box(0.36, 0.95, 0.12, 0.1, 0.42, 0.1), 0, -55, (0.36, 1.2, 0.12)), skin); m.add(sphere(0.4, 1.0, 0.42, 0.1), H("5FC8FF"))   # the open hand with a wave orb
+    for i in range(3):
+        a = 2 * math.pi * i / 3; m.add(sphere(0.55 * math.cos(a) + 0.1, 0.5 + 0.35 * i, 0.55 * math.sin(a), 0.07), H("6FD0FF"))         # floating water orbs
+    hero_sockets(m, 2.1)
+
+def hero_pyra(m):
+    """The archer with the burning bow: leather armour, a tan cape, a braid, flames along the bow."""
+    leather, dark, skin, cape, fire, core = H("8B5A32"), H("4A2E1E"), H("9B5F3A"), H("C8A878"), H("FF7A1A"), H("FFD54A")
+    for sx in (-1, 1):
+        m.add(box(sx * 0.11, 0.4, 0, 0.16, 0.8, 0.18), dark); m.add(box(sx * 0.11, 0.55, 0.1, 0.18, 0.16, 0.06), H("5C4033"))
+    for i in range(5): m.add(box(-0.2 + i * 0.1, 0.72, 0.02, 0.09, 0.3, 0.05), H("7A4A2A"))                                            # the leather skirt
+    m.add(box(0, 1.03, 0, 0.42, 0.5, 0.24), leather); m.add(box(0, 0.8, 0, 0.44, 0.06, 0.26), dark)
+    m.add(sphere(0.3, 1.28, 0, 0.14), H("6A6E78"))                                                                                    # one steel pauldron
+    m.add(sphere(0, 1.5, 0.0, 0.16), skin); m.add(box(0, 1.6, -0.06, 0.34, 0.1, 0.3), H("2A1A12"))
+    for i in range(6): m.add(box(-0.05, 1.42 - i * 0.12, -0.2 - i * 0.02, 0.07, 0.11, 0.07), H("2A1A12"))                            # the braid
+    for sx in (-1, 1): m.add(box(sx * 0.05, 1.52, 0.15, 0.05, 0.04, 0.02), H("FFB030"))
+    m.add(box(0, 0.95, -0.2, 0.55, 1.0, 0.04), cape)                                                                                  # the cape
+    m.add(box(0.14, 1.15, -0.2, 0.14, 0.5, 0.1), H("5C4033"))                                                                         # quiver
+    for i in range(3): m.add(cyl(0.14 + 0.03 * (i - 1), 1.4, -0.2, 0.012, 0.0, 0.14, 4), H("D8D8D8"))
+    m.add(rotate(box(0.23, 1.02, 0.0, 0.12, 0.55, 0.12), 0, -70, (0.23, 1.25, 0)), skin)                                              # drawing arms
+    m.add(rotate(box(-0.23, 1.02, 0.0, 0.12, 0.55, 0.12), 0, -75, (-0.23, 1.25, 0)), skin)
+    bow_c = (0.05, 1.18, 0.7)                                                                                                         # the bow of fire
+    m.add(rotate(box(bow_c[0], bow_c[1] + 0.35, bow_c[2], 0.07, 0.75, 0.07), 2, 12, bow_c), fire); m.add(rotate(box(bow_c[0], bow_c[1] - 0.35, bow_c[2], 0.07, 0.75, 0.07), 2, -12, bow_c), fire)
+    m.add(box(bow_c[0], bow_c[1], bow_c[2], 0.05, 1.5, 0.02), core)
+    for k, y in enumerate((-0.6, -0.35, 0.0, 0.35, 0.65)): m.add(cyl(bow_c[0], bow_c[1] + y, bow_c[2] + 0.05, 0.07, 0.0, 0.38 + 0.1 * (k % 2), 5), core if k % 2 else fire)   # flames
+    m.add(box(0.05, 1.18, 0.35, 0.02, 0.02, 0.7), H("FFE9A8"))                                                                        # the nocked arrow
+    hero_sockets(m, 1.8)
+
+def hero_rot(m):
+    """Rot: a hunched swamp treant of bark and vines, antlers, glowing green eyes, dripping slime."""
+    bark, dark, moss, glow, vine = H("5A5245"), H("2E2A24"), H("3D5A2E"), H("7CFF3A"), H("3F6B2A")
+    for sx in (-1, 1):
+        m.add(cyl(sx * 0.3, 0.0, -0.05, 0.2, 0.14, 0.75, 7), bark); m.add(cyl(sx * 0.3, 0.0, -0.05, 0.28, 0.3, 0.08, 7), dark)     # root legs
+    body = rotate(box(0, 1.0, 0.0, 0.95, 0.85, 0.6), 0, 22, (0, 0.7, 0)); m.add(body, bark)                                          # the hunched trunk
+    m.add(rotate(box(0, 1.3, -0.15, 0.7, 0.4, 0.5), 0, 22, (0, 0.7, 0)), dark)
+    for i, x in enumerate((-0.3, 0.05, 0.35)): m.add(rotate(cyl(x, 1.25, -0.3, 0.09, 0.0, 0.6 + 0.15 * (i % 2), 5), 0, -25, (x, 1.25, -0.3)), dark)   # back spikes
+    m.add(sphere(0, 1.38, 0.42, 0.24, 0.22, 0.24), bark)                                                                              # the head, low in front
+    for sx in (-1, 1):
+        m.add(box(sx * 0.09, 1.42, 0.62, 0.07, 0.05, 0.03), glow)                                                                    # glowing eyes
+        for k in range(3): m.add(rotate(cyl(sx * 0.16, 1.55 + 0.12 * k, 0.4, 0.035, 0.0, 0.3, 4), 2, -sx * (25 + 15 * k), (sx * 0.16, 1.55 + 0.12 * k, 0.4)), dark)   # antlers
+    m.add(box(0, 1.28, 0.63, 0.14, 0.06, 0.03), glow)                                                                                # the maw
+    for sx in (-1, 1):
+        m.add(rotate(box(sx * 0.62, 0.9, 0.2, 0.26, 0.9, 0.26), 0, -18, (sx * 0.62, 1.3, 0.2)), bark)                                # huge arms
+        for k in range(3): m.add(rotate(cyl(sx * 0.66 + (k - 1) * 0.09, 0.02, 0.5, 0.045, 0.0, 0.34, 4), 0, 100, (sx * 0.66, 0.1, 0.5)), dark)   # claws
+        m.add(sphere(sx * 0.66, 0.12, 0.42, 0.18, 0.14, 0.2), bark)
+        for k in range(3): m.add(sphere(sx * 0.66 + (k - 1) * 0.1, -0.02 if False else 0.0, 0.55, 0.03), glow)                          # slime drips
+    for i in range(6): m.add(rotate(box(-0.4 + i * 0.16, 0.95 + 0.06 * (i % 3), 0.3, 0.05, 0.5, 0.05), 2, 20 + 10 * i, (-0.4 + i * 0.16, 0.95, 0.3)), vine)   # vines
+    hero_sockets(m, 1.95)
+
+def hero_soul(m):
+    """The Lost Vessel: a rust-black armoured knight with a huge chunky greatsword, spikes, chains and green runes."""
+    steel, rust, dark, glow = H("3B3532"), H("7A4A2E"), H("221E1C"), H("5CFFA0")
+    for sx in (-1, 1):
+        m.add(box(sx * 0.2, 0.4, 0, 0.3, 0.8, 0.34), steel); m.add(box(sx * 0.2, 0.55, 0.16, 0.3, 0.22, 0.08), rust); m.add(box(sx * 0.2, 0.06, 0.06, 0.34, 0.12, 0.5), dark)
+    m.add(box(0, 1.1, 0, 0.8, 0.66, 0.46), steel); m.add(box(0, 0.78, 0, 0.62, 0.12, 0.4), dark)
+    m.add(box(0, 1.1, 0.24, 0.5, 0.5, 0.05), rust); m.add(box(0, 1.1, 0.27, 0.2, 0.2, 0.03), glow)                                     # breastplate rune
+    for sx in (-1, 1):
+        m.add(sphere(sx * 0.5, 1.4, 0, 0.26, 0.2, 0.26), rust)
+        for k in range(3): m.add(rotate(cyl(sx * (0.5 + 0.12 * k), 1.55, 0, 0.06, 0.0, 0.26, 4), 2, -sx * (40 + 20 * k), (sx * (0.5 + 0.12 * k), 1.55, 0)), dark)   # shoulder spikes
+    for i in range(6): m.add(rotate(box(-0.36 + i * 0.14, 1.1, 0.29, 0.05, 0.62, 0.03), 2, 25, (0, 1.1, 0.29)), rust)                   # the crossing chains
+    m.add(box(0, 1.68, 0, 0.36, 0.34, 0.36), steel); m.add(box(0, 1.68, 0.19, 0.3, 0.07, 0.02), dark)
+    for sx in (-1, 1): m.add(box(sx * 0.08, 1.68, 0.2, 0.07, 0.04, 0.02), glow)
+    m.add(box(0, 1.9, -0.02, 0.05, 0.2, 0.3), rust)
+    m.add(box(-0.62, 1.0, 0.05, 0.24, 0.7, 0.26), steel); m.add(sphere(-0.62, 0.62, 0.08, 0.17), rust)
+    m.add(box(0.62, 1.05, 0.15, 0.24, 0.6, 0.26), steel); m.add(sphere(0.62, 0.74, 0.3, 0.17), rust)                                  # the sword arm
+    hand = (0.62, 0.74, 0.34)
+    blade = box(hand[0], hand[1] + 0.95, hand[2], 0.3, 1.9, 0.07)                                                                     # a big rusty slab
+    m.add(rotate(blade, 0, 108, hand), rust)
+    m.add(rotate(box(hand[0], hand[1] + 1.95, hand[2], 0.46, 0.16, 0.07), 0, 108, hand), steel)                                       # the chopped tip
+    m.add(rotate(box(hand[0], hand[1] + 0.12, hand[2], 0.55, 0.09, 0.14), 0, 108, hand), dark)
+    m.add(rotate(box(hand[0], hand[1] + 1.0, hand[2] + 0.04, 0.06, 1.4, 0.02), 0, 108, hand), glow)                                  # a glowing rune down the blade
+    hero_sockets(m, 2.05)
+
+def hero_vex(m):
+    """Cull: a hooded shadow assassin, purple eyes, two curved purple-black daggers and swirls of dark cloth."""
+    black, wrap, purple, glow = H("1F1A26"), H("6B6B75"), H("6A2FA0"), H("C04BFF")
+    for sx in (-1, 1): m.add(box(sx * 0.1, 0.38, 0, 0.15, 0.76, 0.17), black); m.add(box(sx * 0.1, 0.06, 0.05, 0.17, 0.1, 0.3), H("14101A"))
+    m.add(box(0, 1.02, 0, 0.4, 0.5, 0.24), black); m.add(box(0, 0.78, 0, 0.42, 0.06, 0.26), wrap)
+    for i in range(3): m.add(rotate(box(0.18 + i * 0.05, 0.6, 0.1, 0.05, 0.4, 0.02), 0, 10 * (i + 1), (0.18, 0.75, 0.1)), wrap)         # hanging wraps
+    m.add(sphere(0, 1.48, 0, 0.16), H("2A2433")); m.add(cyl(0, 1.44, -0.02, 0.21, 0.0, 0.36, 7), black); m.add(box(0, 1.42, 0.14, 0.24, 0.1, 0.04), black)   # hood and mask
+    for sx in (-1, 1): m.add(box(sx * 0.06, 1.5, 0.16, 0.06, 0.03, 0.02), glow)                                                     # glowing eyes
+    m.add(rotate(box(0, 1.0, -0.2, 0.5, 0.95, 0.04), 0, 12, (0, 1.4, -0.2)), black)                                                  # the cloak
+    for i in range(3): m.add(rotate(box(-0.14 + i * 0.14, 0.4 - 0.04 * i, -0.4, 0.07, 0.5, 0.02), 0, 20 + 8 * i, (0, 0.85, -0.3)), wrap)   # ragged tails
+    for sx in (-1, 1):
+        arm = rotate(box(sx * 0.32, 1.12, 0.0, 0.42, 0.11, 0.11), 2, sx * 8, (sx * 0.15, 1.2, 0))
+        m.add(arm, black)
+        for k in range(3):                                                                                                            # a curved blade: three angled boxes
+            a = (20 + 22 * k) * (-sx)
+            m.add(rotate(box(sx * (0.62 + 0.2 * k), 1.14 + 0.09 * k, 0.05, 0.34, 0.1, 0.05), 2, a, (sx * (0.55 + 0.2 * k), 1.1, 0.05)), purple)
+        m.add(box(sx * 0.6, 1.12, 0.02, 0.06, 0.13, 0.06), H("C9B0E8"))
+    m.add(ring(0, 1.0, 0, 0.62, 0.05, 12, 12), glow)                                                                                  # a swirl of purple
+    hero_sockets(m, 1.85)
+
+HEROES = {9001: hero_alesk, 9002: hero_baira, 9014: hero_pyra, 9018: hero_rot, 9010: hero_soul, 9015: hero_vex}
+
 # ------------------------------------------------------------------------------------------------------------------------------ non-humanoids
 
 def build_skeleton(m):
@@ -444,48 +580,90 @@ def write_png(path, w, h, px):
 # All symmetric about their own origin (so an importer that mirrors an axis cannot misplace them); the viewer positions them. Metres, +Y up, +Z = the "forward" (rows), +X = sideways (columns).
 
 def coloured(tris, hexcolour):
-    return [(t, srgb(hexcolour)) for t in tris]
+    c = srgb(hexcolour) if isinstance(hexcolour, str) else hexcolour
+    return [(t, c) for t in tris]
 
 def hex_tile(fill, outline, R=1.0 / math.sqrt(3)):
-    """A pointy-top hex tile like an auto-battler board: a coloured outline ring around an inset fill, 12 cm thick, top face at y = 0."""
+    """An auto-battler board hex: only a thin glowing OUTLINE lying on the ground (the ground shows through, like the default arena), top at y = 0.02."""
     pts = lambda r: [(r * math.sin(math.radians(60 * i)), r * math.cos(math.radians(60 * i))) for i in range(6)]
-    outer, inner = pts(R), pts(R * 0.90)
-    mid = (0.0, -0.06, 0.0)
-    ring_t, fill_t, side_t = [], [], []
+    outer, inner = pts(R * 0.985), pts(R * 0.9)
+    mid = (0.0, -0.5, 0.0)
+    ring_t = []
     for i in range(6):
         j = (i + 1) % 6
         (ax, az), (bx, bz), (cx_, cz), (dx, dz) = outer[i], outer[j], inner[j], inner[i]
-        ring_t += _tri((ax, 0, az), (bx, 0, bz), (cx_, 0, cz), mid) + _tri((ax, 0, az), (cx_, 0, cz), (dx, 0, dz), mid)
-        fill_t += _tri((0, -0.008, 0), (cx_, -0.008, cz), (dx, -0.008, dz), mid)
-        side_t += _tri((ax, -0.12, az), (bx, -0.12, bz), (bx, 0, bz), mid) + _tri((ax, -0.12, az), (bx, 0, bz), (ax, 0, az), mid)
-        side_t += _tri((0, -0.12, 0), (ax, -0.12, az), (bx, -0.12, bz), mid)
-        side_t += _tri((dx, -0.008, dz), (cx_, -0.008, cz), (cx_, 0, cz), mid) + _tri((dx, -0.008, dz), (cx_, 0, cz), (dx, 0, dz), mid)   # the step down into the fill
-    return coloured(fill_t, fill) + coloured(ring_t, outline) + coloured(side_t, outline)
+        ring_t += _tri((ax, 0.02, az), (bx, 0.02, bz), (cx_, 0.02, cz), mid) + _tri((ax, 0.02, az), (cx_, 0.02, cz), (dx, 0.02, dz), mid)
+    return coloured(ring_t, outline)
 
 def bench_slot():
     """One bench slot: a stone slab with a lighter raised plate, 80 cm square, top at y = 0."""
     return coloured(box(0, -0.0625, 0, 0.80, 0.125, 0.80), "8E897D") + coloured(box(0, 0.0, 0, 0.66, 0.012, 0.66), "B5B0A0")
 
+def _noise(ix, iz, salt=0):
+    return ((ix * 73856093) ^ (iz * 19349663) ^ (salt * 83492791)) % 1000 / 1000.0
+
+def _shade(hexc, f):
+    c = srgb(hexc); return tuple(min(1.0, v * f) for v in c)
+
 def arena_base():
-    """The floating island the board sits on (11.6 m along Z, 9 m along X, grass top at y = 0): room for both benches. A stone rim, four brazier pillars and a few pines."""
-    L = 11.6
+    """The floating island of an auto-battler stage, symmetric about its origin (11.6 m along Z, 10.6 m along X, top at y = 0): grass with a worn dirt plaza under the board,
+    cobbled strips for both benches, a stone rim with steps and towers (braziers), boulders, bushes and round and pine trees, on layered cliffs."""
+    L, W = 11.6, 10.6
     t = []
-    t += coloured(box(0, -0.25, 0, 9.0, 0.5, L), "5E8C4A")                                       # grass
-    t += coloured(box(0, -1.2, 0, 8.4, 1.4, L - 0.6), "6B5B4A") + coloured(box(0, -2.4, 0, 6.0, 1.0, L - 3.0), "574A3C")   # rock underneath
-    for sz in (-1, 1): t += coloured(box(0, 0.09, sz * (L / 2 - 0.15), 9.0, 0.18, 0.30), "9C978A")   # rim
-    for sx in (-1, 1): t += coloured(box(sx * 4.35, 0.09, 0, 0.30, 0.18, L), "9C978A")
+    cell = 0.5
+    nx, nz = int(W / cell), int(L / cell)
+    for ix in range(nx):
+        for iz in range(nz):
+            x0, z0 = -W / 2 + ix * cell, -L / 2 + iz * cell
+            cx, cz = x0 + cell / 2, z0 + cell / 2
+            e = (cx / 3.95) ** 2 + (cz / 3.75) ** 2                                   # the board plaza
+            n = _noise(ix, iz)
+            if abs(cz) > 4.0 and abs(cx) < 4.05: base = "9A958A" if (ix + iz) % 2 else "A8A398"   # cobbled bench strips
+            elif e < 0.86 + 0.1 * _noise(ix, iz, 3): base = "B39A68" if n > 0.5 else "A98F5E"      # worn dirt
+            elif e < 1.08: base = "8AA35A" if n > 0.5 else "7E9A50"                                 # the grassy edge of the plaza
+            else: base = "5F9A45" if n > 0.5 else ("6AAA4F" if n > 0.2 else "558F3E")              # grass
+            colr = _shade(base, 0.92 + 0.14 * _noise(ix, iz, 7))
+            q = [(x0, 0, z0), (x0, 0, z0 + cell), (x0 + cell, 0, z0 + cell), (x0 + cell, 0, z0)]
+            t += [(tri, colr) for tri in _tri(q[0], q[1], q[2], (cx, -1, cz)) + _tri(q[0], q[2], q[3], (cx, -1, cz))]
+    t += coloured(box(0, -0.33, 0, W, 0.6, L), "4E7F3A")                                                                # the soil under the grass
+    for k, (dy, sw, sl, colr) in enumerate(((-0.9, W - 0.5, L - 0.6, "6E5D4B"), (-1.6, W - 1.6, L - 1.8, "5F5041"), (-2.3, W - 3.2, L - 3.6, "50443A"), (-2.9, W - 5.0, L - 6.0, "43382F"))):
+        for kk in range(3):                                                                                              # jagged layers: a few rotated slabs each
+            t += coloured(rotate(box(0, dy, 0, sw - 0.3 * kk, 0.75, sl - 0.3 * kk), 1, 4 * (kk - 1), (0, dy, 0)), _shade(colr, 0.9 + 0.08 * kk))
+    stone_a, stone_b = "A39E92", "8C877C"
+    for sz in (-1, 1):                                                                                                   # the rim: blocks of two greys
+        for i in range(int(W / 0.6)):
+            t += coloured(box(-W / 2 + 0.3 + i * 0.6, 0.14, sz * (L / 2 - 0.15), 0.56, 0.3, 0.3), stone_a if i % 2 else stone_b)
     for sx in (-1, 1):
-        for sz in (-1, 1):
-            px, pz = sx * 4.1, sz * (L / 2 - 0.4)
-            t += coloured(box(px, 0.55, pz, 0.5, 1.1, 0.5), "9C978A") + coloured(cyl(px, 1.1, pz, 0.30, 0.22, 0.14, 8), "3A3A42") + coloured(cyl(px, 1.24, pz, 0.16, 0.0, 0.42, 6), "FFA733")
-    for sx in (-1, 1):                                                                             # pines down both long sides
-        for pz in (-4.0, -2.0, 0.0, 2.0, 4.0):
-            px = sx * 4.15
-            t += coloured(cyl(px, 0.0, pz, 0.09, 0.09, 0.4, 5), "6B4A2B") + coloured(cyl(px, 0.3, pz, 0.5, 0.0, 1.3, 7), "3F7A3A") + coloured(cyl(px, 0.9, pz, 0.38, 0.0, 1.0, 7), "4C8E45")
+        for i in range(int(L / 0.6)):
+            t += coloured(box(sx * (W / 2 - 0.15), 0.14, -L / 2 + 0.3 + i * 0.6, 0.3, 0.3, 0.56), stone_a if i % 2 else stone_b)
+        for k in range(4): t += coloured(box(sx * (W / 2 - 0.85 - 0.3 * k), 0.06 + 0.12 * (3 - k) * 0 + 0.09 * (3 - k) * 0, 0, 0.3, 0.12 + 0.12 * (3 - k), 1.6), stone_a if k % 2 else stone_b)   # the steps down the sides
+    for sx in (-1, 1):
+        for sz in (-1, 1):                                                                                               # four towers with braziers
+            px, pz = sx * (W / 2 - 0.55), sz * (L / 2 - 0.55)
+            t += coloured(box(px, 0.45, pz, 0.85, 0.9, 0.85), stone_b) + coloured(box(px, 0.95, pz, 1.0, 0.16, 1.0), stone_a) + coloured(box(px, 1.35, pz, 0.6, 0.65, 0.6), stone_a)
+            t += coloured(cyl(px, 1.66, pz, 0.34, 0.26, 0.2, 10), "3A3A42") + coloured(cyl(px, 1.86, pz, 0.24, 0.02, 0.62, 7), "FF9A2E") + coloured(cyl(px, 1.86, pz, 0.14, 0.0, 0.78, 7), "FFE066")
+    for sx in (-1, 1):                                                                                                   # trees outside the rim
+        for k, pz in enumerate((-4.2, -2.1, 0.0, 2.1, 4.2)):
+            px = sx * (W / 2 - 0.55) * 0.985
+            if k % 2 == 0:
+                t += coloured(cyl(px, 0.0, pz, 0.14, 0.11, 0.7, 6), "6B4A2B") + coloured(sphere(px, 1.15, pz, 0.62, 0.55, 0.62, 4, 8), "3F8A3A") + coloured(sphere(px + 0.2, 1.5, pz + 0.1, 0.42, 0.38, 0.42, 4, 8), "58A64A")
+            else:
+                t += coloured(cyl(px, 0.0, pz, 0.1, 0.1, 0.5, 5), "6B4A2B") + coloured(cyl(px, 0.4, pz, 0.6, 0.0, 1.5, 7), "2F7A3A") + coloured(cyl(px, 1.1, pz, 0.44, 0.0, 1.2, 7), "3E8E46")
+    for (bx, bz, r) in ((-3.9, -1.0, 0.3), (3.9, 1.2, 0.35), (-3.7, 3.4, 0.28), (3.7, -3.2, 0.3)):                     # bushes and boulders
+        t += coloured(sphere(bx, r * 0.7, bz, r, r * 0.8, r, 3, 7), "4C9A45")
+    for (bx, bz, r) in ((-4.5, 2.4, 0.34), (4.4, -1.6, 0.4), (-4.4, -3.6, 0.3), (4.5, 3.6, 0.32)):
+        t += coloured(sphere(bx, r * 0.6, bz, r, r * 0.7, r * 1.2, 3, 6), "8C8A86")
     return t
 
 def backdrop():
-    return coloured(box(0, -0.05, 0, 80.0, 0.1, 80.0), "A9CBEA")
+    """A sea of cloud far below the island: a pale blue plane with soft white cloud blobs."""
+    t = coloured(box(0, -0.05, 0, 90.0, 0.1, 90.0), "5C93C8")
+    for i in range(70):
+        a = 2 * math.pi * _noise(i, 1) ; d = 8 + 36 * _noise(i, 2)
+        cx, cz = d * math.cos(a), d * math.sin(a)
+        for k in range(4):
+            t += coloured(sphere(cx + (k - 1.5) * 2.6 * _noise(i, 3 + k), 0.4 + 0.5 * _noise(i, 9 + k), cz + 1.6 * (_noise(i, 13 + k) - 0.5), 1.3 + 1.2 * _noise(i, 17 + k), 0.5 + 0.35 * _noise(i, 21 + k), 1.1 + 0.8 * _noise(i, 25 + k), 3, 7), "CFDDEB")
+    return t
 
 def safe(name): return "".join(ch for ch in name if ch.isalnum())
 
@@ -510,8 +688,9 @@ def main():
             continue
         rec = dict(RECIPES.get(cid) or fallback_recipe(c.get("role", ""), c["stats"].get("range", 1)))
         m = Model(palette(traits, rec.get("undead", False)))
-        build_humanoid(m, rec)
-        jobs.append(("Champion", cid, c["name"], m, 1.0, rec.get("hs", 1.0) * (0.92 + 0.05 * c["cost"])))
+        if cid in HEROES: HEROES[cid](m)                                              # hand-made after the splash art
+        else: build_humanoid(m, rec)
+        jobs.append(("Champion", cid, c["name"], m, 1.0, (0.85 if cid in HEROES else rec.get("hs", 1.0)) * (0.92 + 0.05 * c["cost"])))
     monster_builders = {10001: (build_blob, ["Coregons"]), 10002: (build_spitter, ["Selini"]), 10003: (build_boulder, []), 10004: (build_wraith, ["Phaisa"])}
     for mo in monsters:
         fn, tr = monster_builders.get(mo["id"], (build_blob, ["Hexagon"]))
@@ -525,7 +704,7 @@ def main():
         lo, hi = write_glb(os.path.join(args.out, fname), fname[:-4], tris, m.pal["P"], alpha)
         n, rlo, rhi, pos, nor, col = read_glb(os.path.join(args.out, fname))
         height = rhi[1] - rlo[1]
-        assert rlo[1] > -0.01 and 0.5 < rhi[1] < 3.5 and n > 20, "%s: implausible size %s %s" % (name, rlo, rhi)
+        assert rlo[1] > -0.06 and 0.5 < rhi[1] < 3.5 and n > 20, "%s: implausible size %s %s" % (name, rlo, rhi)
         manifest["models"].append({"kind": kind.lower(), "id": mid, "name": name, "file": fname, "triangles": n, "height_m": round(height, 3),
                                    "width_m": round(rhi[0] - rlo[0], 3), "depth_m": round(rhi[2] - rlo[2], 3),
                                    "primary_colour": "#" + "".join("%02X" % round(v * 255) for v in m.pal["P"]),
@@ -542,8 +721,8 @@ def main():
         tile += _tri((a[0], -0.12, a[1]), (b[0], -0.12, b[1]), (b[0], 0, b[1]), mid) + _tri((a[0], -0.12, a[1]), (b[0], 0, b[1]), (a[0], 0, a[1]), mid)
     tile = [(t, srgb("6C7A89")) for t in tile]
     extras = [("SM_HexTile", tile, (0.42, 0.48, 0.54), 1.0),
-              ("SM_HexTile_Home", hex_tile("B7B26B", "3FB6B0"), srgb("B7B26B"), 1.0),      # warm field, teal outline: your half
-              ("SM_HexTile_Away", hex_tile("B98F6A", "D6664F"), srgb("B98F6A"), 1.0),      # clay field, red outline: the enemy half
+              ("SM_HexTile_Home", hex_tile("B7B26B", "3FE0D0"), srgb("B7B26B"), 1.0),      # warm field, teal outline: your half
+              ("SM_HexTile_Away", hex_tile("B98F6A", "FF6A45"), srgb("B98F6A"), 1.0),      # clay field, red outline: the enemy half
               ("SM_BenchSlot", bench_slot(), srgb("8E897D"), 1.0),
               ("SM_ArenaBase", arena_base(), srgb("5E8C4A"), 1.0),
               ("SM_Backdrop", backdrop(), srgb("A9CBEA"), 1.0),
