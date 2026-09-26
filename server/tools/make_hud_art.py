@@ -232,6 +232,13 @@ def main():
     clip = np.maximum(np.abs(x) - 0.3, np.abs(y - 0.76) - 0.14)
     lines = U(*[seg(x, y, (-0.36, yy), (0.36, yy), 0.055) for yy in (0.28, -0.05, -0.38)])
     mask("T_UI_Planner", U(cut(board, np.maximum(np.abs(x) - 0.36, np.abs(y - 0.72) - 0.2)), clip, lines))
+    # the settings gear (demo 1.4)
+    teeth = np.full(x.shape, 9.0, np.float32)
+    for k in range(8):
+        a = k * 2 * math.pi / 8
+        ca, sa = math.cos(a), math.sin(a)
+        teeth = np.minimum(teeth, poly(x, y, [(0.6 * ca - 0.17 * sa, 0.6 * sa + 0.17 * ca), (0.93 * ca - 0.12 * sa, 0.93 * sa + 0.12 * ca), (0.93 * ca + 0.12 * sa, 0.93 * sa - 0.12 * ca), (0.6 * ca + 0.17 * sa, 0.6 * sa - 0.17 * ca)]))
+    mask("T_UI_Gear", cut(U(circ(x, y, 0, 0, 0.68), teeth), circ(x, y, 0, 0, 0.3)))
     # a diagonal highlight (hovered cards), a soft vignette (panel shading), a glassy orb (item orbs), a 9-slice gold frame
     n = S * SS
     xs, ys = grid(n)

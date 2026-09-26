@@ -174,6 +174,9 @@ def import_meshes():
     for p in found:   # the effects never cast shadows and never collide
         mesh = assets.load_asset(p)
         mesh.set_editor_property("light_map_resolution", 4)
+        nanite = mesh.get_editor_property("nanite_settings")   # demo 1.4: Nanite does not draw translucent / additive materials (it logged a warning per sprite component)
+        nanite.set_editor_property("enabled", False)
+        mesh.set_editor_property("nanite_settings", nanite)
         assets.save_loaded_asset(mesh, only_if_is_dirty=False)
     log("W2F: %d FX meshes: %s" % (len(found), ", ".join(p.rsplit(".", 1)[-1] for p in found)))
 
