@@ -4,6 +4,9 @@
 //
 // Clients connect with a WebSocket (ws://host:port/), are given a seat, and when the last human seat fills the match starts by itself.
 // `--bots 7` makes 7 of the seats AI players: one person can then play a whole match alone (the last N seats are the bots).
+// `--queue` makes it a matchmaking server instead: it runs many matches at once and players queue for them from the client's home screen
+// ({"action":"queue","mode":"bots"} = you + AI players at once; "normal" = wait for other players, AI players fill the empty seats after
+// --fill-seconds). See net/include/w2f/net/QueueServer.h.
 // The protocol is documented in docs/network-protocol.md.
 
 #include <atomic>
@@ -18,6 +21,7 @@
 
 #include "w2f/ChampionLoader.h"
 #include "w2f/net/GameServer.h"
+#include "w2f/net/QueueServer.h"
 #include "w2f/net/ResumeFile.h"
 #include "w2f/net/TcpServer.h"
 
@@ -45,6 +49,8 @@ struct Options {
     std::string joinCode;   // a private server: connections must bring ?code=...
     bool giveItems = false;   // development: seat 0 gets four item components (Sword, Bow, Vest, Sword) once the match runs, to try equipping and combining
     bool fast = false;   // development: much shorter phases, so a client can be tried against a whole match in minutes
+    bool queue = false;  // matchmaking: many matches at once, players queue from the client (QueueServer)
+    int fillSeconds = 30;   // --queue: a normal queue starts with AI players in the empty seats after this long
 };
 
 bool ParseArgs(int argc, char** argv, Options& o) {
@@ -62,16 +68,20 @@ bool ParseArgs(int argc, char** argv, Options& o) {
         else if (a == "--data") { if (!(v = value("--data"))) return false; o.dataDir = v; }
         else if (a == "--seed") { if (!(v = value("--seed"))) return false; o.seed = std::strtoull(v, nullptr, 10); }
         else if (a == "--fast") { o.fast = true; }
+        else if (a == "--queue") { o.queue = true; }
+        else if (a == "--fill-seconds") { if (!(v = value("--fill-seconds"))) return false; o.fillSeconds = std::atoi(v); }
         else if (a == "--give-items") { o.giveItems = true; }
         else if (a == "--resume") { if (!(v = value("--resume"))) return false; o.resume = v; }
         else if (a == "--join-code") { if (!(v = value("--join-code"))) return false; o.joinCode = v; }
         else if (a == "--autosave") { if (!(v = value("--autosave"))) return false; o.autosave = v; }
         else {
-            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items]\n", a.c_str());
+            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items] [--queue [--fill-seconds N]]\n", a.c_str());
             return false;
         }
     }
     if (o.players < 2 || o.players > kMaxPlayers) { std::fprintf(stderr, "--players must be between 2 and %d\n", kMaxPlayers); return false; }
+    if (o.queue && (o.bots != 0 || !o.resume.empty() || !o.autosave.empty())) { std::fprintf(stderr, "--queue decides the bots itself and has no autosave / resume\n"); return false; }
+    if (o.fillSeconds < 0) { std::fprintf(stderr, "--fill-seconds must be 0 or more\n"); return false; }
     if (o.bots < 0 || o.bots > o.players - 1) { std::fprintf(stderr, "--bots must be between 0 and %d (at least one seat has to be a human)\n", o.players - 1); return false; }
     return true;
 }
@@ -108,6 +118,25 @@ private:
         return "?";
     }
     GameServer& game_;
+};
+
+// The queue server's connection log (never the tokens).
+class QueueLogging : public IServerHandler {
+public:
+    explicit QueueLogging(QueueServer& hub) : hub_(hub) {}
+    void OnConnect(ConnectionId id, std::string_view token, std::uint64_t now) override {
+        hub_.OnConnect(id, token, now);
+        std::printf("[conn %llu] connected%s  (%d online)\n", static_cast<unsigned long long>(id), hub_.MatchOf(id) != nullptr ? ", back into its match" : "", hub_.online());
+        std::fflush(stdout);
+    }
+    void OnMessage(ConnectionId id, std::string_view text, std::uint64_t now) override { hub_.OnMessage(id, text, now); }
+    void OnDisconnect(ConnectionId id) override {
+        hub_.OnDisconnect(id);
+        std::printf("[conn %llu] disconnected  (%d online)\n", static_cast<unsigned long long>(id), hub_.online());
+        std::fflush(stdout);
+    }
+private:
+    QueueServer& hub_;
 };
 
 // Write-then-rename, so a crash mid-write never leaves a torn file.
@@ -173,6 +202,37 @@ int main(int argc, char** argv) {
     tcfg.bindAddress = opt.bind;
     tcfg.port = opt.port;
     TcpServer tcp(tcfg);
+#ifndef _WIN32
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
+    std::signal(SIGINT, OnSignal);
+    std::signal(SIGTERM, OnSignal);
+
+    if (opt.queue) {
+        QueueServerConfig qc;
+        qc.match = gsc;
+        qc.match.bots = 0;
+        qc.fillMs = static_cast<long long>(opt.fillSeconds) * 1000;
+        QueueServer hub(qc, data, tcp);
+        QueueLogging logging(hub);
+        tcp.SetHandler(&logging);
+        if (!tcp.Listen(&error)) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
+        std::printf("W2F queue server listening on %s:%u  (%d seats per match, normal queue fills with bots after %d s, %zu champions, %zu items)\n", opt.bind.c_str(),
+                    static_cast<unsigned>(tcp.port()), gsc.seats, opt.fillSeconds, champions->All().size(), items->All().size());
+        std::fflush(stdout);
+        int lastMatches = 0;
+        RunServerLoop(tcp, [&](std::uint64_t nowMs) {
+            hub.Tick(nowMs);
+            if (hub.matches() != lastMatches) {
+                lastMatches = hub.matches();
+                std::printf("[queue] %d match(es) running, %d online\n", lastMatches, hub.online());
+                std::fflush(stdout);
+            }
+        }, g_stop);
+        std::printf("W2F server stopped\n");
+        return 0;
+    }
+
     GameServer game(gsc, data, tcp);
     if (!opt.resume.empty() && opt.autosave.empty()) opt.autosave = opt.resume;   // (a resumed server keeps saving where it was resumed from)
     if (!opt.autosave.empty()) {
@@ -201,12 +261,6 @@ int main(int argc, char** argv) {
     logging.giveItems = opt.giveItems;
     tcp.SetHandler(&logging);
     if (!tcp.Listen(&error)) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
-
-#ifndef _WIN32
-    std::signal(SIGPIPE, SIG_IGN);
-#endif
-    std::signal(SIGINT, OnSignal);
-    std::signal(SIGTERM, OnSignal);
 
     std::printf("W2F server listening on %s:%u  (%d players per match, %d of them bots, %zu champions, %zu items, %zu encounters)\n", opt.bind.c_str(),
                 static_cast<unsigned>(tcp.port()), opt.players, opt.bots, champions->All().size(), items->All().size(), encounters->All().size());

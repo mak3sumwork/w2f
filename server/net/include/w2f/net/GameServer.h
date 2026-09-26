@@ -106,6 +106,8 @@ public:
     // Read-only view of the running match (nullptr in the lobby). For tests, logging and admin tooling.
     const MatchManager* match() const;
     std::uint64_t tickCount() const;
+    // True if one of this server's seats belongs to `token` (a QueueServer routes a reconnect to the match that knows it).
+    bool HoldsToken(std::string_view token) const;
 
     // Every command that reached the engine FROM A CLIENT, with the tick it ran on and its result (tests use it to replay a networked match
     // against a bare engine and prove the network changed nothing). The bots' actions are not reported: with bots the replay would need them too.

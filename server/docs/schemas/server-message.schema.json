@@ -72,6 +72,12 @@
   },
   {
    "$ref": "#/$defs/champion_unlocked"
+  },
+  {
+   "$ref": "#/$defs/queue_status"
+  },
+  {
+   "$ref": "#/$defs/match_found"
   }
  ],
  "$defs": {
@@ -2219,6 +2225,104 @@
    "required": [
     "champion",
     "type"
+   ],
+   "additionalProperties": false
+  },
+  "queue_status": {
+   "type": "object",
+   "description": "Revision 7, queue server only (w2f_server --queue): the client's home-screen state. Sent on connect, after queue / leave_queue / leave_match, every second while searching, and when a match is over (the socket stays open).",
+   "properties": {
+    "type": {
+     "const": "queue_status"
+    },
+    "state": {
+     "enum": [
+      "idle",
+      "searching"
+     ]
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal"
+     ],
+     "description": "searching only"
+    },
+    "in_queue": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "searching only: players searching in this mode, you included"
+    },
+    "waited_ms": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "searching only"
+    },
+    "fill_ms": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "searching only: a normal queue starts with AI players in the empty seats after this long (0 = no wait)"
+    },
+    "reason": {
+     "enum": [
+      "match_over",
+      "left_match",
+      "cancelled"
+     ],
+     "description": "idle only, when it follows an event"
+    },
+    "seats": {
+     "type": "integer",
+     "minimum": 2,
+     "maximum": 8
+    },
+    "online": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "matches": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "type",
+    "state",
+    "seats",
+    "online",
+    "matches"
+   ],
+   "additionalProperties": false
+  },
+  "match_found": {
+   "type": "object",
+   "description": "Revision 7, queue server only: a match was made for you. The match's own messages follow at once (welcome, lobby, match_started, ...).",
+   "properties": {
+    "type": {
+     "const": "match_found"
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal"
+     ]
+    },
+    "humans": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 8
+    },
+    "bots": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 7
+    }
+   },
+   "required": [
+    "type",
+    "mode",
+    "humans",
+    "bots"
    ],
    "additionalProperties": false
   }

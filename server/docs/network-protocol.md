@@ -183,6 +183,25 @@ at most 64 sockets are open at once. Protocol violations are answered with the R
 | 1013 | try again later: match in progress |
 | 4001 | replaced by a newer connection with the same token |
 
+## Matchmaking: the queue server (revision 7, demo 1.2)
+`w2f_server --queue [--fill-seconds N] [--players 8] [--fast]` runs MANY matches in one process and puts players into them from a queue
+(`net/include/w2f/net/QueueServer.h`). A connection starts **idle** (the client's home screen) and gets `queue_status`:
+
+    {"type":"queue_status","state":"idle","seats":8,"online":3,"matches":1}
+
+| Command | Fields | Meaning |
+|---|---|---|
+| `queue` | `mode` `"bots"` \| `"normal"` | look for a match. `bots`: starts at once, you + (seats - 1) AI players. `normal`: waits for other players; the match starts when `seats` players search, or once the longest waiter has waited `--fill-seconds` (default 30), with AI players in the empty seats |
+| `leave_queue` | | stop searching (`queue_status` idle, `reason` `cancelled`; `error` `not_searching` if you were not) |
+| `leave_match` | | back to the home screen from a match (e.g. once you are eliminated). Your seat stays reserved for your token and the match goes on without you |
+
+While searching the server sends `queue_status` every second (`state` `searching`, `mode`, `in_queue`, `waited_ms`, `fill_ms`). When a match is made you get
+`match_found` (`mode`, `humans`, `bots`) and then exactly what a single-lobby server sends (`welcome`, `lobby`, `match_started`, ...): each match is an unchanged
+`GameServer`. When the match ends (after the post-match wait) or you `leave_match`, the socket is **not** closed: you get `queue_status` idle with `reason`
+`match_over` / `left_match` and can queue again. A reconnect with a match's token (`?token=...`) goes straight back into that match. In a match, `queue` /
+`leave_queue` are answered with `error` `in_match`; idle, a match command is answered with `error` `not_in_match`. A single-lobby server answers all three with
+`error` `no_queue`. A match nobody is connected to is closed after 2 minutes; at most 64 matches run at once (more players wait in the queue).
+
 ## Crash recovery and private servers
 `--autosave FILE` writes ONE file at the start of every Planning phase: the engine snapshot plus a small JSON "seats" record (each human seat's reconnect token, which seats are bots, the bots' state). `--resume FILE` restores
 a match from it; the players reconnect with their tokens and are resynced exactly as after a dropped connection. A finished match deletes the file. `--join-code CODE` makes every connection bring `?code=CODE`.
@@ -191,9 +210,9 @@ Details, Docker and TLS: `docs/deploy.md`.
 ## Not built yet (deliberately)
 * **TLS.** Terminate it in a proxy (`docs/deploy.md` has a Caddy setup).
 * **Windows.** The socket layer has a Winsock branch that has never been compiled or run; Linux and macOS are tested.
-* **Several matches in one process.** One process hosts one lobby / match; run several on different ports (`scripts/run_matches.sh`, `docker-compose.yml`) behind a proxy that routes by path.
+* **Accounts, names, ranks.** Players are anonymous connections; the queue server has no persistence (roadmap phase F). `--queue` has no `--autosave` / `--resume` yet.
 
 ## Testing
 `make test-net` (`net/tests/net_tests.cpp`): the encoders against RFC vectors; the handshake and frame parser against the RFC's own examples and ~30 malformed cases each, plus fuzzing;
 command validation with ~90 cases and 20,000 mutated messages; the lobby, reconnect, routing, privacy and rate limiting over a fake transport; a whole 3-player match audited message by message;
-the networked-match-equals-bare-engine replay; every message kind checked against the JSON Schemas (and every command the parser accepts against the command schema); crash recovery (a resumed server plays on identically); the join code; an eight-client soak test over real sockets with reconnects; and real loopback sockets for handshakes, close codes, fragmentation, abrupt disconnects, timeouts, the connection cap, slow readers and the production loop on a thread.
+the networked-match-equals-bare-engine replay; every message kind checked against the JSON Schemas (and every command the parser accepts against the command schema); crash recovery (a resumed server plays on identically); the join code; the queue server (bots / normal queues, fill with bots, several matches, back home after a match, reconnect into a match, leave_match, abandoned matches); an eight-client soak test over real sockets with reconnects; and real loopback sockets for handshakes, close codes, fragmentation, abrupt disconnects, timeouts, the connection cap, slow readers and the production loop on a thread.

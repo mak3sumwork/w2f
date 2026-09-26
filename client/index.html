@@ -142,6 +142,7 @@
     <input id="url" type="text" value="ws://localhost:7777/" aria-label="server address">
     <button id="btnConnect" class="primary">Connect</button>
     <button id="btnDisconnect">Disconnect</button>
+    <button id="btnQueue" title="w2f_server --queue only: find a match against AI players">Find match (vs AI)</button>
     <span id="status" class="dim">not connected</span>
     <span class="dim" style="margin-left:auto">Shortcuts: <kbd>D</kbd> reroll &middot; <kbd>F</kbd> buy XP &middot; <kbd>E</kbd> sell selected &middot; <kbd>Esc</kbd> deselect</span>
   </div>
@@ -320,6 +321,13 @@ function send(obj) {
 // ---- message handling -----------------------------------------------------------------------------
 function handle(m) {
   switch (m.type) {
+    case 'queue_status':   // w2f_server --queue (revision 7): the home screen between matches
+      setStatus(m.state === 'searching' ? 'searching (' + Math.floor(m.waited_ms / 1000) + ' s)' : 'idle: press Find match', m.state === 'searching' ? 'gold' : 'good');
+      if (m.reason) logLine(m.reason === 'match_over' ? 'The match is over: back to the queue screen.' : m.reason === 'left_match' ? 'You left the match.' : 'You left the queue.', 'sys');
+      break;
+    case 'match_found':
+      logLine('Match found: ' + m.humans + ' player(s) + ' + m.bots + ' AI.', 'sys');
+      break;
     case 'welcome':
       G.seat = m.player_id; G.token = m.token; G.seats = m.seats; G.bots = m.bots; storeToken();
       setStatus('seat ' + m.player_id + (m.reconnected ? ' (reconnected)' : ''), 'good');
@@ -1017,6 +1025,7 @@ function renderAll() {
 
 // ---- wiring ----------------------------------------------------------------------------------------
 $('btnConnect').onclick = () => connect(false);
+$('btnQueue').onclick = () => send({ action: 'queue', mode: 'bots' });
 $('btnDisconnect').onclick = () => { G.manualClose = true; if (G.ws) G.ws.close(); };
 $('btnReroll').onclick = reroll;
 makeDropTarget($('shopPanel'), (payload) => { if (payload.type === 'unit') { send({ action: 'sell_unit', unit_id: payload.id }); G.sel = null; } });   // drag a champion onto the shop to sell it

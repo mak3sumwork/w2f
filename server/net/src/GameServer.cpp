@@ -161,6 +161,9 @@ public:
 
         if (cmd.type == CommandType::Ping) return SendTo(id, msg::Pong(cmd.hasId, cmd.id));
         if (cmd.type == CommandType::GetCatalog) return SendTo(id, Catalog());
+        if (cmd.type == CommandType::JoinQueue || cmd.type == CommandType::LeaveQueue || cmd.type == CommandType::LeaveMatch) {   // (a QueueServer handles these before they get here)
+            return SendTo(id, msg::Error("no_queue", "this server hosts a single lobby: there is no queue (start it with --queue)", cmd.hasId, cmd.id));
+        }
         if (!match_ || conn.seat < 0) return Violation(id, "not_in_match", "no match is running yet", cmd.hasId, cmd.id);
         const PlayerId player = static_cast<PlayerId>(conn.seat);
 
@@ -193,6 +196,9 @@ public:
             case CommandType::GetState:
             case CommandType::GetFight:
             case CommandType::GetCatalog:
+            case CommandType::JoinQueue:
+            case CommandType::LeaveQueue:
+            case CommandType::LeaveMatch:
             case CommandType::Ping: break;   // handled above
         }
         if (observer_) observer_(tick_, player, cmd, result);
@@ -609,6 +615,13 @@ int GameServer::connectedPlayers() const { return impl_->ConnectedCount(); }
 int GameServer::seats() const { return impl_->cfg_.seats; }
 int GameServer::bots() const { return impl_->cfg_.bots; }
 const MatchManager* GameServer::match() const { return impl_->match_.get(); }
+bool GameServer::HoldsToken(std::string_view token) const {
+    if (token.empty()) return false;
+    for (const Seat& s : impl_->seats_) {
+        if (!s.token.empty() && s.token == token) return true;
+    }
+    return false;
+}
 std::uint64_t GameServer::tickCount() const { return impl_->tick_; }
 void GameServer::SetCommandObserver(CommandObserver observer) { impl_->observer_ = std::move(observer); }
 void GameServer::SetSnapshotSink(SnapshotSink sink) { impl_->snapshotSink_ = std::move(sink); }

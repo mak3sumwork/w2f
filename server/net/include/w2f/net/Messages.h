@@ -34,6 +34,20 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
 std::string Error(std::string_view code, std::string_view detail, bool hasId = false, long long id = 0);
 std::string Result(const Command& command, ActionResult result);
 std::string Pong(bool hasId, long long id);
+// Matchmaking (revision 7, QueueServer only). `state` "idle" | "searching"; `reason` (idle only, may be empty): "match_over" | "left_match" | "cancelled".
+struct QueueInfo {
+    bool searching = false;
+    QueueMode mode = QueueMode::Bots;
+    int inQueue = 0;        // players searching in this mode, you included
+    long long waitedMs = 0;
+    long long fillMs = 0;   // after this long a normal queue starts with bots in the empty seats (0: never waits)
+    int seats = 0;
+    int online = 0;         // connections on the server
+    int matches = 0;        // matches running
+    std::string reason;
+};
+std::string QueueStatus(const QueueInfo& info);
+std::string MatchFound(QueueMode mode, int humans, int bots);
 
 // `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never). `botSeats` = the AI players' seats.
 std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {});

@@ -39,6 +39,7 @@
 #include "w2f/net/Messages.h"
 #include "w2f/net/ResumeFile.h"
 #include "w2f/net/GameServer.h"
+#include "w2f/net/QueueServer.h"
 #include "w2f/net/JsonWriter.h"
 #include "w2f/net/Protocol.h"
 #include "w2f/net/TcpServer.h"
@@ -1464,6 +1465,147 @@ static void TestMatchEndAndLobbyReset() {
     CHECK(r.CountType(n1, "match_started") == 1);
 }
 
+
+// A queue server's rig: the same data as Rig, a QueueServer in front of it.
+struct QueueRig {
+    Rig data;
+    FakeTransport net;
+    std::unique_ptr<QueueServer> hub;
+    std::uint64_t now = 1000;
+    ConnectionId nextConn = 100;
+    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120)
+        : data(seats, [](GameData& d, GameServerConfig& c) {
+              d.config.player.startingHealth = 20;
+              d.config.damage.baseDamageByStage = {8, 12};
+              c.postMatchTicks = 60;
+          }) {
+        QueueServerConfig qc;
+        qc.match = data.cfg;
+        qc.fillMs = fillMs;
+        qc.abandonTicks = abandonTicks;
+        hub = std::make_unique<QueueServer>(qc, data.data, net);
+    }
+    ConnectionId Connect(const std::string& token = "") { const ConnectionId id = ++nextConn; hub->OnConnect(id, token, now); return id; }
+    void Say(ConnectionId id, const std::string& text) { hub->OnMessage(id, text, now); }
+    void Tick(int n = 1) { for (int i = 0; i < n; ++i) { now += 33; hub->Tick(now); } }
+    json::Value Last(ConnectionId id, const std::string& type) {
+        json::Value found;
+        for (const std::string& s : net.sent[id]) { json::Value v = ParseJson(s); if (Str(v, "type") == type) found = v; }
+        return found;
+    }
+    int CountType(ConnectionId id, const std::string& type) {
+        int n = 0;
+        for (const std::string& s : net.sent[id]) n += Str(ParseJson(s), "type") == type ? 1 : 0;
+        return n;
+    }
+};
+
+static void TestQueueServer() {
+    // 1. Bots queue: a match at once, you + AI players; when it is over you are back on the home screen with the socket still open.
+    {
+        QueueRig q(2, 5000);
+        const ConnectionId a = q.Connect();
+        CHECK(Str(q.Last(a, "queue_status"), "state") == "idle" && Num(q.Last(a, "queue_status"), "seats") == 2);
+        q.Say(a, R"({"action": "buy_xp"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "not_in_match");
+        q.Say(a, R"({"action": "get_catalog"})");
+        CHECK(q.CountType(a, "catalog") == 1);
+        q.Say(a, R"({"action": "queue", "mode": "bots"})");
+        const json::Value found = q.Last(a, "match_found");
+        CHECK(Str(found, "mode") == "bots" && Num(found, "humans") == 1 && Num(found, "bots") == 1);
+        CHECK(q.CountType(a, "welcome") == 1 && q.CountType(a, "match_started") == 1 && q.hub->matches() == 1);
+        const GameServer* game = q.hub->MatchOf(a);
+        CHECK(game != nullptr && game->state() == GameServer::State::Running && game->bots() == 1);
+        q.Say(a, R"({"action": "queue", "mode": "normal", "id": 3})");
+        CHECK(Str(q.Last(a, "error"), "code") == "in_match" && Num(q.Last(a, "error"), "id") == 3);
+        q.Say(a, R"({"action": "get_state"})");   // match commands reach the match
+        CHECK(q.CountType(a, "state") >= 2);
+        for (int tick = 0; tick < 20000 && q.CountType(a, "match_over") == 0; ++tick) q.Tick();
+        CHECK(q.CountType(a, "match_over") == 1);
+        q.Tick(80);
+        CHECK(Str(q.Last(a, "queue_status"), "reason") == "match_over" && Str(q.Last(a, "queue_status"), "state") == "idle");
+        CHECK(!q.net.closed.count(a) && q.hub->matches() == 0 && q.hub->MatchOf(a) == nullptr);
+        q.Say(a, R"({"action": "queue", "mode": "bots"})");   // and play again on the same connection
+        CHECK(q.CountType(a, "match_found") == 2 && q.hub->matches() == 1);
+    }
+    // 1b. Eliminated before the match is over: still in the match (watching) until it ends or you leave.
+    {
+        QueueRig q(4, 5000);
+        const ConnectionId a = q.Connect();
+        q.Say(a, R"({"action": "queue", "mode": "bots"})");
+        int tick = 0;
+        for (; tick < 40000 && q.CountType(a, "match_over") == 0; ++tick) {
+            q.Tick();
+            if (q.CountType(a, "player_eliminated") > 0 && q.hub->MatchOf(a) == nullptr) break;
+        }
+        const bool eliminatedEarly = q.CountType(a, "match_over") == 0;
+        CHECK(q.CountType(a, "match_over") == 1);
+        CHECK(!eliminatedEarly && q.hub->MatchOf(a) != nullptr);   // after match_over: still in the match (reading the result) until the post-match wait ends
+        q.Tick(80);
+        CHECK(Str(q.Last(a, "queue_status"), "reason") == "match_over" && Num(q.Last(a, "queue_status"), "matches") == 0);
+    }
+    // 2. Normal queue: waits for players; a full queue starts at once, otherwise AI players fill the seats after fillMs.
+    {
+        QueueRig q(4, 3000);
+        const ConnectionId a = q.Connect(), b = q.Connect(), c = q.Connect();
+        for (ConnectionId id : {a, b, c}) q.Say(id, R"({"action": "queue", "mode": "normal"})");
+        CHECK(q.hub->searching(QueueMode::Normal) == 3 && q.hub->matches() == 0);
+        CHECK(Str(q.Last(c, "queue_status"), "state") == "searching" && Num(q.Last(c, "queue_status"), "in_queue") == 3 && Num(q.Last(c, "queue_status"), "fill_ms") == 3000);
+        q.Say(b, R"({"action": "leave_queue"})");
+        CHECK(Str(q.Last(b, "queue_status"), "reason") == "cancelled" && q.hub->searching(QueueMode::Normal) == 2);
+        q.Say(b, R"({"action": "leave_queue"})");
+        CHECK(Str(q.Last(b, "error"), "code") == "not_searching");
+        q.Tick(60);   // 2 s: still waiting, with status updates
+        CHECK(q.hub->matches() == 0 && q.CountType(a, "queue_status") >= 2 && Num(q.Last(a, "queue_status"), "waited_ms") >= 1000);
+        q.Tick(40);   // past 3 s: a and c play together, with 2 AI players
+        CHECK(q.hub->matches() == 1 && q.hub->MatchOf(a) != nullptr && q.hub->MatchOf(a) == q.hub->MatchOf(c) && q.hub->MatchOf(b) == nullptr);
+        CHECK(Num(q.Last(a, "match_found"), "humans") == 2 && Num(q.Last(a, "match_found"), "bots") == 2 && q.hub->MatchOf(a)->bots() == 2);
+        CHECK(Num(q.Last(a, "welcome"), "player_id") != Num(q.Last(c, "welcome"), "player_id"));
+        // Four players at once: no waiting.
+        const ConnectionId d = q.Connect(), e = q.Connect(), f = q.Connect();
+        for (ConnectionId id : {b, d, e, f}) q.Say(id, R"({"action": "queue", "mode": "normal"})");
+        CHECK(q.hub->matches() == 2 && q.hub->MatchOf(b) == q.hub->MatchOf(f) && q.hub->MatchOf(b)->bots() == 0 && q.hub->MatchOf(b)->state() == GameServer::State::Running);
+
+        // 3. Reconnect: a dropped player's token brings them straight back into their match.
+        const std::string token = Str(q.Last(a, "welcome"), "token");
+        const GameServer* match = q.hub->MatchOf(a);
+        q.hub->OnDisconnect(a);
+        const ConnectionId a2 = q.Connect(token);
+        CHECK(q.hub->MatchOf(a2) == match && q.CountType(a2, "welcome") == 1 && q.CountType(a2, "queue_status") == 0);
+        const ConnectionId stranger = q.Connect(std::string(32, 'f'));   // an unknown token: just the home screen
+        CHECK(q.hub->MatchOf(stranger) == nullptr && Str(q.Last(stranger, "queue_status"), "state") == "idle");
+
+        // 4. leave_match: back home, the match goes on; with nobody left it is closed after abandonTicks.
+        q.Say(a2, R"({"action": "leave_match"})");
+        q.Say(c, R"({"action": "leave_match"})");
+        CHECK(Str(q.Last(a2, "queue_status"), "reason") == "left_match" && q.hub->MatchOf(a2) == nullptr && q.hub->MatchOf(c) == nullptr);
+        q.Say(c, R"({"action": "leave_match"})");
+        CHECK(Str(q.Last(c, "error"), "code") == "not_in_match");
+    }
+    {
+        QueueRig q(2, 1000, 90);
+        const ConnectionId a = q.Connect();
+        q.Say(a, R"({"action": "queue", "mode": "bots"})");
+        q.Say(a, R"({"action": "leave_match"})");
+        CHECK(q.hub->matches() == 1);
+        q.Tick(95);
+        CHECK(q.hub->matches() == 0 && q.hub->online() == 1);
+    }
+    // 5. Bad messages from idle connections are protocol errors; a single-lobby GameServer refuses queue commands.
+    {
+        QueueRig q(2, 1000);
+        const ConnectionId a = q.Connect();
+        q.Say(a, R"({"action": "queue", "mode": "ranked"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "out_of_range" && q.hub->matches() == 0);
+        q.Say(a, R"({"action": "queue"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "missing_field");
+        Rig r(2);
+        const ConnectionId s = r.Connect();
+        r.Say(s, R"({"action": "queue", "mode": "bots"})");
+        CHECK(Str(r.Last(s, "error"), "code") == "no_queue");
+    }
+}
+
 static void TestGameServerFuzz() {
     // Connections come, go, shout garbage, send plausible commands, reconnect with tokens; time passes. Nothing may crash, the
     // engine's invariants must hold at the end, and the server must still be answering.
@@ -2332,6 +2474,22 @@ static void TestJsonSchemas() {
         checkMessage(msg::Error("invalid_json", "detail"));
         checkMessage(msg::Pong(true, 4));
         checkMessage(msg::Pong(false, 0));
+        {
+            msg::QueueInfo info;
+            info.seats = 8;
+            info.online = 3;
+            checkMessage(msg::QueueStatus(info));
+            info.reason = "match_over";
+            checkMessage(msg::QueueStatus(info));
+            info.searching = true;
+            info.mode = QueueMode::Normal;
+            info.inQueue = 2;
+            info.waitedMs = 1500;
+            info.fillMs = 30000;
+            checkMessage(msg::QueueStatus(info));
+            checkMessage(msg::MatchFound(QueueMode::Bots, 1, 7));
+            checkMessage(msg::MatchFound(QueueMode::Normal, 3, 5));
+        }
         Command command;
         command.type = CommandType::EquipItem;
         command.hasId = true;
@@ -2449,7 +2607,8 @@ static void TestJsonSchemas() {
                                R"({"action": "pick_gift", "gift_index": 3})", R"({"action": "sell_unit", "unit_id": 16777217})", R"({"action": "move_unit", "unit_id": 5, "location": "bench", "x": 8})",
                                R"({"action": "move_unit", "unit_id": 5, "location": "board", "x": 6, "y": 3})", R"({"action": "equip_item", "unit_id": 5, "item_id": 3})",
                                R"({"action": "unequip_item", "unit_id": 5, "slot": 2})", R"({"action": "get_state"})", R"({"action": "get_fight", "fight_index": 7})", R"({"action": "get_catalog"})",
-                               R"({"action": "ping", "id": 9007199254740991})"};
+                               R"({"action": "ping", "id": 9007199254740991})", R"({"action": "queue", "mode": "bots"})", R"({"action": "queue", "mode": "normal", "id": 2})",
+                               R"({"action": "leave_queue"})", R"({"action": "leave_match"})"};
         for (const char* text : valid) {
             const json::Value v = ParseJson(text);
             const std::string why = client.Check(clientSchema, v);
@@ -2459,7 +2618,8 @@ static void TestJsonSchemas() {
         const char* invalid[] = {R"({"action": "buy_unit"})", R"({"action": "buy_unit", "shop_index": -1})", R"({"action": "buy_unit", "shop_index": 64})", R"({"action": "buy_unit", "shop_index": 1.5})",
                                  R"({"action": "buy_unit", "shop_index": 1, "extra": 1})", R"({"action": "fly"})", R"({"action": "sell_unit", "unit_id": "1"})", R"({"action": "pick_gift", "gift_index": 4})",
                                  R"({"action": "move_unit", "unit_id": 5, "location": "moon", "x": 1})", R"({"action": "equip_item", "unit_id": 5, "item_id": 0})", R"({"action": "unequip_item", "unit_id": 5, "slot": 3})",
-                                 R"({"action": "get_fight", "fight_index": 8})", R"({"action": "ping", "id": -1})", R"({"action": 5})", R"({})", R"([])"};
+                                 R"({"action": "get_fight", "fight_index": 8})", R"({"action": "ping", "id": -1})", R"({"action": 5})", R"({})", R"([])",
+                                 R"({"action": "queue"})", R"({"action": "queue", "mode": "ranked"})", R"({"action": "leave_queue", "mode": "bots"})"};
         for (const char* text : invalid) {
             json::Value v;
             std::string e;
@@ -2986,6 +3146,7 @@ int main() {
         {"Join code keeps strangers out", TestJoinCodeKeepsStrangersOut},
         {"Soak: 8 real clients, a whole match, 3 reconnects", TestEightClientSoak},
         {"Catalog message", TestCatalog},
+        {"Queue server: bots / normal queues, many matches, back to the home screen", TestQueueServer},
     };
     int failedTests = 0;
     for (const Test& t : tests) {

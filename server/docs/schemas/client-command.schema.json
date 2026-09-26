@@ -365,6 +365,70 @@
     "index"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 7, queue server only: look for a match. bots = you + AI players at once; normal = wait for other players (AI players fill the empty seats after the server's fill time).",
+   "properties": {
+    "action": {
+     "const": "queue"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal"
+     ]
+    }
+   },
+   "required": [
+    "action",
+    "mode"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 7, queue server only: stop searching.",
+   "properties": {
+    "action": {
+     "const": "leave_queue"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 7, queue server only: back to the home screen from a match (your seat stays reserved for your token).",
+   "properties": {
+    "action": {
+     "const": "leave_match"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
   }
  ]
 }

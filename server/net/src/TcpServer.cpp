@@ -396,6 +396,10 @@ void TcpServer::Send(ConnectionId id, std::string_view text) { impl_->Send(id, t
 void TcpServer::Close(ConnectionId id, std::uint16_t code, std::string_view reason) { impl_->Close(id, code, reason); }
 
 void RunServerLoop(TcpServer& tcp, GameServer& game, const std::atomic<bool>& stop) {
+    RunServerLoop(tcp, [&game](std::uint64_t nowMs) { game.Tick(nowMs); }, stop);
+}
+
+void RunServerLoop(TcpServer& tcp, const std::function<void(std::uint64_t)>& tick, const std::atomic<bool>& stop) {
     using Clock = std::chrono::steady_clock;
     const auto start = Clock::now();
     const auto elapsedNs = [&]() { return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count()); };
@@ -405,7 +409,7 @@ void RunServerLoop(TcpServer& tcp, GameServer& game, const std::atomic<bool>& st
         std::uint64_t now = elapsedNs();
         int ran = 0;
         while (now >= nextTick && ran < 5) {   // catch up a few ticks after a stall...
-            game.Tick(now / 1'000'000);
+            tick(now / 1'000'000);
             nextTick += tickNs;
             ++ran;
             now = elapsedNs();

@@ -340,6 +340,31 @@ std::string Pong(bool hasId, long long id) {
     return Finish(w);
 }
 
+std::string QueueStatus(const QueueInfo& info) {
+    JsonWriter w = Start("queue_status");
+    w.Field("state", info.searching ? "searching" : "idle");
+    if (info.searching) {
+        w.Field("mode", ToString(info.mode));
+        w.Field("in_queue", info.inQueue);
+        w.Field("waited_ms", info.waitedMs);
+        w.Field("fill_ms", info.fillMs);
+    } else if (!info.reason.empty()) {
+        w.Field("reason", info.reason);
+    }
+    w.Field("seats", info.seats);
+    w.Field("online", info.online);
+    w.Field("matches", info.matches);
+    return Finish(w);
+}
+
+std::string MatchFound(QueueMode mode, int humans, int bots) {
+    JsonWriter w = Start("match_found");
+    w.Field("mode", ToString(mode));
+    w.Field("humans", humans);
+    w.Field("bots", bots);
+    return Finish(w);
+}
+
 std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats) {
     JsonWriter w = Start("match_started");
     w.Field("player_id", static_cast<int>(you));

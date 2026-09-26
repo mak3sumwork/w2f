@@ -86,7 +86,8 @@ ParseResult ParseCommand(std::string_view text) {
     static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp}, {"set_shop_lock", CommandType::SetShopLock},
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
                                    {"unequip_item", CommandType::UnequipItem}, {"combine_items", CommandType::CombineItems}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
-                                   {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}, {"pick_trait_choice", CommandType::PickTraitChoice}};
+                                   {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}, {"pick_trait_choice", CommandType::PickTraitChoice},
+                                   {"queue", CommandType::JoinQueue}, {"leave_queue", CommandType::LeaveQueue}, {"leave_match", CommandType::LeaveMatch}};
     bool found = false;
     for (const Known& k : kKnown) {
         if (name == k.name) { c.type = k.type; found = true; }
@@ -106,6 +107,9 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::SetShopLock: allowed = {"id", "action", "locked"}; break;
         case CommandType::GetFight: allowed = {"id", "action", "fight_index"}; break;
         case CommandType::PickTraitChoice: allowed = {"id", "action", "index"}; break;
+        case CommandType::JoinQueue: allowed = {"id", "action", "mode"}; break;
+        case CommandType::LeaveQueue:
+        case CommandType::LeaveMatch:
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:
@@ -189,6 +193,17 @@ ParseResult ParseCommand(std::string_view text) {
             ok = in.Required("index", -1, 7, v);
             c.choiceIndex = static_cast<int>(v);
             break;
+        case CommandType::JoinQueue: {
+            const json::Value* mode = in.Take("mode");
+            if (mode == nullptr) { ok = in.Fail("missing_field", "\"mode\" is required"); break; }
+            if (!mode->IsString()) { ok = in.Fail("wrong_type", "\"mode\" must be \"bots\" or \"normal\""); break; }
+            if (mode->AsString() == "bots") c.queueMode = QueueMode::Bots;
+            else if (mode->AsString() == "normal") c.queueMode = QueueMode::Normal;
+            else ok = in.Fail("out_of_range", "\"mode\" must be \"bots\" or \"normal\"");
+            break;
+        }
+        case CommandType::LeaveQueue:
+        case CommandType::LeaveMatch:
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:

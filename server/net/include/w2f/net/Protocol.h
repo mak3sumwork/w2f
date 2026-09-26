@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 6;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 7;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -40,7 +40,14 @@ enum class CommandType : std::uint8_t {
     Ping,         // answered with "pong" even before a match exists
     GetCatalog,   // answered with "catalog" (what every champion / item / trait id means), also before a match exists
     PickTraitChoice,  // index (revision 5): answer the pending trait choice (a Hexagon module, a Najmi prototype); -1 declines a prototype
+    // Revision 7: matchmaking. Only a queue server (w2f_server --queue, QueueServer) acts on these; a single-lobby server answers `error` "no_queue".
+    JoinQueue,    // mode ("bots" | "normal"): look for a match
+    LeaveQueue,   // stop looking
+    LeaveMatch,   // go back to the client from a match (the seat stays reserved for its token, the match goes on without you)
 };
+
+enum class QueueMode : std::uint8_t { Bots, Normal };
+constexpr const char* ToString(QueueMode m) { return m == QueueMode::Bots ? "bots" : "normal"; }
 
 constexpr const char* ToString(CommandType t) {
     switch (t) {
@@ -59,6 +66,9 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::Ping: return "ping";
         case CommandType::GetCatalog: return "get_catalog";
         case CommandType::PickTraitChoice: return "pick_trait_choice";
+        case CommandType::JoinQueue: return "queue";
+        case CommandType::LeaveQueue: return "leave_queue";
+        case CommandType::LeaveMatch: return "leave_match";
     }
     return "?";
 }
@@ -79,6 +89,7 @@ struct Command {
     int fightIndex = 0;
     bool locked = false;   // set_shop_lock
     int choiceIndex = 0;   // pick_trait_choice: -1..7
+    QueueMode queueMode = QueueMode::Bots;   // queue
 };
 
 struct ProtocolError {

@@ -349,7 +349,7 @@ data yet; names are. Fights are instant on the server: the log is produced in on
   numeric meanings do not change and are not removed. New fields, new message types, new appended enum values (event types, status types, area shapes, action results) may appear: a client must
   **ignore unknown fields and unknown message types**, and treat an unknown enum index as "no special effect".
 * A breaking change would bump `protocol` to 2 and be announced in this file. The schema files are versioned with the protocol and updated in the same commit as any addition.
-* **Revision history** (additive only): **1** the frozen protocol; **5** (trait system v2, Sept. 2026) command `pick_trait_choice`; messages `trait_choice` and `trait_rewards`;
+* **Revision history** (additive only): **1** the frozen protocol; **7** (demo 1.2) matchmaking, queue server only: commands `queue` / `leave_queue` / `leave_match`, messages `queue_status` / `match_found` (docs/network-protocol.md, "Matchmaking"); **6** see below; **5** (trait system v2, Sept. 2026) command `pick_trait_choice`; messages `trait_choice` and `trait_rewards`;
   `state.traits` + `state.trait_choice`; `public_state.trait_paths` (the path the match picked for each trait with paths: Selini); catalog champions carry `plant`, `special`, `price`,
   `team_slots`, `stationary`, `pilot`, catalog traits `paths`, `modules`, `mutations`; status types `ManaCost`, `HealingAmp`, `Omnivamp`, `Awakened`, `Piloting` appended (snapshot format 6); **4** (Phase 22) the catalog champions also carry `armor[3]`, `magic_resist[3]`, `ability_damage[3]`, `start_mana`, `mana_regen_milli`; **3** (Phase 21) `set_shop_lock` + `state.shop_locked` (the lock rule; snapshot format 5); **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
   scouted player's arena), `combat.unit_items` (unit id -> item ids of the fighters).
@@ -361,3 +361,9 @@ data yet; names are. Fights are instant on the server: the log is produced in on
 * Guaranteed PvE loot: several `pve_drop` messages per PvE round.
 * Rule changes a client should know: the shop is open in every Planning phase (only Mother Nature's gift phase closes it); `equip_item` works on board units during
   Combat / Resolution (the item counts from the next fight).
+
+## Revision 7 (demo 1.2): the game client and the queue
+* `w2f_server --queue` hosts many matches; a connection starts on the client's home screen (`queue_status` idle), sends `queue` (`bots` / `normal`), gets `match_found`
+  and then the usual match messages; after the match (or `leave_match`) it is idle again on the SAME socket. Details: docs/network-protocol.md, "Matchmaking".
+* The UE client (`W2FClient.cpp`) shows a League-style front end around the match: home, play (mode cards, FIND MATCH, queue timer + cancel), "match found",
+  "return to client". Against a single-lobby server it goes straight into the match (the first message is `welcome`, not `queue_status`).

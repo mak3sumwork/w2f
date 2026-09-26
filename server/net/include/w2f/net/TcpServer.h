@@ -14,6 +14,7 @@
 // POSIX (Linux, macOS) is tested locally; the Winsock branch (Windows) is built and run by the windows-latest job of CI (.github/workflows/build.yml).
 
 #include <atomic>
+#include <functional>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -68,5 +69,7 @@ private:
 // Runs the server until `stop` becomes true: network I/O plus GameServer::Tick at kTicksPerSecond (wall-clock paced here and
 // ONLY here: the engine itself never reads a clock). If the process falls behind it skips ahead rather than spiralling.
 void RunServerLoop(TcpServer& tcp, GameServer& game, const std::atomic<bool>& stop);
+// The same loop for anything that ticks (a QueueServer): `tick(nowMs)` runs kTicksPerSecond times a second.
+void RunServerLoop(TcpServer& tcp, const std::function<void(std::uint64_t)>& tick, const std::atomic<bool>& stop);
 
 }  // namespace w2f::net
