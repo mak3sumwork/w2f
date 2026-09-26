@@ -1,4 +1,5 @@
-// W2F items, from W2F_GameDesignDocument.md section 4: 8 base components, the Omnilium Seed, 28 legendary items and 8 emblems.
+// W2F items, from W2F_GameDesignDocument.md section 4: 8 base components, the Omnilium Seed and the Omnilium Orb, 28 legendary items and 16 emblems
+// (origin emblems = Seed + a component; class emblems = Orb + a component).
 // Loaded next to champions.json / traits.json; every trait an item grants must be declared in traits.json. Format: docs/champions-json.md.
 //
 // A "components" recipe turns two BASE items into a finished one (either order; the same component twice is fine); a finished item never combines
@@ -19,6 +20,8 @@
     { "id": 7, "name": "Selinis Gloves",    "stats": { "critChance": 15 } },
     { "id": 8, "name": "Omnilium Heart",    "stats": { "hp": 180 } },
     { "id": 9, "name": "Omnilium Seed" },
+    // The Omnilium Orb (September 2026): like the Seed it does nothing by itself; it turns a component into a CLASS emblem.
+    { "id": 51, "name": "Omnilium Orb" },
 
     // ---- Omnilium Helmet combinations ----
     { "id": 10, "name": "Sayona's Casket", "components": [1, 2],
@@ -144,11 +147,21 @@
     { "id": 40, "name": "Coregons Emblem", "components": [9, 3], "grantsTraits": ["Coregons"] },
     { "id": 41, "name": "Helios Emblem",   "components": [9, 1], "grantsTraits": ["Helios"] },
     { "id": 42, "name": "Najmi Emblem",    "components": [9, 2], "grantsTraits": ["Najmi"] },
-    { "id": 43, "name": "Omnilium Emblem", "components": [9, 4], "grantsTraits": ["Omnilium"] },
+    { "id": 43, "name": "Selini Emblem",   "components": [9, 4], "grantsTraits": ["Selini"] },   // was the Omnilium Emblem (Omnilium has no synergy of its own)
     { "id": 44, "name": "Phaisa Emblem",   "components": [9, 5], "grantsTraits": ["Phaisa"] },
     { "id": 45, "name": "Hexagon Emblem",  "components": [9, 6], "grantsTraits": ["Hexagon"] },
     { "id": 46, "name": "Assassin Emblem", "components": [9, 7], "grantsTraits": ["Assassin"] },
     { "id": 47, "name": "Protector Emblem", "components": [9, 8], "grantsTraits": ["Protector"] },
+    { "id": 48, "name": "Nature Emblem",   "components": [9, 9], "grantsTraits": ["Nature"] },     // September 2026
+
+    // ---- Class emblems (Omnilium Orb + a component): +1 to the class (Assassin and Protector keep their Seed recipes) ----
+    { "id": 52, "name": "Bastion Emblem",    "components": [51, 4], "grantsTraits": ["Bastion"] },
+    { "id": 53, "name": "Bruiser Emblem",    "components": [51, 8], "grantsTraits": ["Bruiser"] },
+    { "id": 54, "name": "Sorcerer Emblem",   "components": [51, 6], "grantsTraits": ["Sorcerer"] },
+    { "id": 55, "name": "Marksman Emblem",   "components": [51, 5], "grantsTraits": ["Marksman"] },
+    { "id": 56, "name": "Mystic Emblem",     "components": [51, 2], "grantsTraits": ["Mystic"] },
+    { "id": 57, "name": "Duelist Emblem",    "components": [51, 3], "grantsTraits": ["Duelist"] },
+    { "id": 58, "name": "Gunslinger Emblem", "components": [51, 7], "grantsTraits": ["Gunslinger"] },
 
     // ---------------------------------------------------------------- CONSUMABLES
     // Item Remover: equipping it on a unit does not use an item slot. It takes EVERY item off that unit (they go back to the item bag) and is

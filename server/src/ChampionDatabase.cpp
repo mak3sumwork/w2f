@@ -21,6 +21,27 @@ void ForEachSummonReference(const ChampionDefinition& def, const std::function<v
     for (const AbilityDefinition& t : def.triggers) scan(t);
 }
 
+namespace {
+bool ValidatePilot(const ChampionDefinition& def, std::string* why) {
+    const PilotDefinition& p = def.pilot;
+    if (!p.enabled) return true;
+    if (p.hpPercent < 0 || p.hpPercent > 500) { *why = "pilot hpPercent must be 0..500"; return false; }
+    for (const PilotBonus& bonus : p.bonuses) {
+        if (bonus.traits.empty() || bonus.effects.empty()) { *why = "a pilot bonus needs traits and effects"; return false; }
+        AbilityDefinition wrapper;   // validated as a passive of the unit
+        wrapper.id = 1;
+        wrapper.name = def.name + " pilot bonus";
+        wrapper.trigger = CastTrigger::StartOfCombat;
+        wrapper.effects = bonus.effects;
+        if (!ValidateAbility(wrapper, def.stats.maxMana, why)) return false;
+        for (const AbilityEffect& e : bonus.effects) {
+            if (e.target.mode != TargetMode::Self) { *why = "pilot bonus effects target Self"; return false; }
+        }
+    }
+    return true;
+}
+}  // namespace
+
 std::unique_ptr<ChampionDatabase> ChampionDatabase::Create(std::vector<ChampionDefinition> definitions,
                                                            std::string* error) {
     auto fail = [error](const std::string& message) -> std::unique_ptr<ChampionDatabase> {
@@ -91,6 +112,15 @@ std::unique_ptr<ChampionDatabase> ChampionDatabase::Create(std::vector<ChampionD
         }
         if (def.summon && !def.traits.empty()) return fail("summon '" + def.name + "' has traits: summons take part in no synergy");
         if (def.summon && !def.stats.IsCombatCapable()) return fail("summon '" + def.name + "' has no combat stats");
+        if ((def.summon ? 1 : 0) + (def.plant ? 1 : 0) + (def.special ? 1 : 0) > 1) return fail("champion '" + def.name + "' can only be one of summon / plant / special");
+        if (def.teamSlots < 0 || def.teamSlots > 2) return fail("champion '" + def.name + "': teamSlots must be 0..2");
+        if (def.plant && def.teamSlots != 0) return fail("plant '" + def.name + "' must take no board slot (teamSlots 0)");
+        if (!def.plant && !def.summon && def.teamSlots == 0) return fail("champion '" + def.name + "': only plants take no board slot");
+        if (def.price < 0 || def.price > 20 || (def.price != 0 && !def.special)) return fail("champion '" + def.name + "': a price (1..20) is only for special units");
+        {
+            std::string pilotError;
+            if (!ValidatePilot(def, &pilotError)) return fail("champion '" + def.name + "': " + pilotError);
+        }
         for (std::size_t t = 0; t < def.traits.size(); ++t) {
             if (def.traits[t].empty()) return fail("champion '" + def.name + "' has an empty trait name");
             for (std::size_t u = 0; u < t; ++u) {
@@ -149,6 +179,17 @@ std::uint64_t ChampionDatabase::ContentHash() const {
             h.AddInt(v);
         }
         if (s.attackType != DamageType::Physical) h.Add(0xA77AC0ull + static_cast<std::uint64_t>(s.attackType));   // (only when set: old data hashes as before)
+        if (d.plant) h.Add(0x9A47ull);
+        if (d.special) h.Add(0x59EC1A1ull + static_cast<std::uint64_t>(d.price));
+        if (d.teamSlots != 1) h.AddInt(0x5107ll + d.teamSlots);
+        if (d.stationary) h.Add(0x57A7ull);
+        if (d.pilot.enabled) {
+            h.AddInt(d.pilot.hpPercent);
+            for (const PilotBonus& b : d.pilot.bonuses) {
+                for (const std::string& t : b.traits) h.AddString(t);
+                h.AddInt(static_cast<std::int64_t>(b.effects.size()));
+            }
+        }
         HashAbility(h, d.ability);
         HashAbility(h, d.passive);
         HashAbility(h, d.onAttack);

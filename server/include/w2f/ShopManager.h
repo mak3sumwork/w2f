@@ -31,8 +31,11 @@ public:
     // Free refresh (start-of-round). Same pool behaviour as a reroll, no gold involved.
     void Refresh();
 
-    // Buy the champion in `slot`: pays its cost and moves it into the owner's roster.
+    // Buy the champion in `slot`: pays its cost (a special unit's price) and moves it into the owner's roster.
     ActionResult TryBuy(std::size_t slot);
+
+    // Puts a special unit (never in the pool: the Phaisa Queen) in the first slot; whatever was there goes back to the pool. False if it is already offered.
+    bool OfferSpecial(const ChampionDefinition* champion);
 
     // Return every unbought champion to the pool and empty the shop (used on elimination).
     void ReturnShopToPool();

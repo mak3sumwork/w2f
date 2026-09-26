@@ -11,26 +11,30 @@ namespace w2f {
 std::unique_ptr<MatchManager> MatchManager::Create(const GameConfig& config, const ChampionDatabase& database,
                                                    std::uint64_t seed, std::unique_ptr<ICombatSimulator> simulator,
                                                    std::string* error, const ItemDatabase* items, const EncounterDatabase* encounters,
-                                                   const MotherNatureDatabase* motherNature) {
+                                                   const MotherNatureDatabase* motherNature, const TraitDatabase* traits) {
     if (!config.Validate(error)) return nullptr;
     // Private ctor: can't use make_unique.
-    return std::unique_ptr<MatchManager>(new MatchManager(config, database, seed, std::move(simulator), items, encounters, motherNature));
+    return std::unique_ptr<MatchManager>(new MatchManager(config, database, seed, std::move(simulator), items, encounters, motherNature, traits));
 }
 
 MatchManager::MatchManager(const GameConfig& config, const ChampionDatabase& database, std::uint64_t seed,
                            std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters,
-                           const MotherNatureDatabase* motherNature)
+                           const MotherNatureDatabase* motherNature, const TraitDatabase* traits)
     : config_(config),
       database_(database),
       items_(items),
       encounters_(encounters),
       motherNature_(motherNature),
+      traits_(traits),
       seed_(seed),
       rng_(seed, kRngStreamMatch),
       pool_(database, config.pool),
       players_(config.match.playerCount, config.player, config.shop, pool_, seed, static_cast<IPlayerListener*>(this), items),
       simulator_(std::move(simulator)),
-      gifts_(static_cast<std::size_t>(config.match.playerCount)) {}
+      gifts_(static_cast<std::size_t>(config.match.playerCount)),
+      choices_(static_cast<std::size_t>(config.match.playerCount)) {
+    ChooseTraitPaths();
+}
 
 // ---- Listeners ---------------------------------------------------------------------------
 
@@ -136,9 +140,11 @@ void MatchManager::EnterPhase(MatchPhase next) {
             // No shop in the opening round (the free unit was the reward) nor in a Mother Nature round (the gift is).
             if (IsShopClosed()) players_.CloseAllShops();
             else players_.RefreshAllShops();
+            for (PlayerId id : players_.AlivePlayerIds()) AfterRosterChange(id);   // plants, module offers, the Queen
             if (config_.snapshot.atPlanningStart) TakeAutoSnapshot();
             break;
         case MatchPhase::Combat:
+            SettleTraitChoices();
             BuildMatchups();
             RunCombat();
             break;
@@ -201,7 +207,7 @@ void MatchManager::RunCombat() {
     outcomes_.clear();
     if (simulator_) {
         const CombatContext context{round_, Rng(seed_, kRngStreamCombatBase + static_cast<std::uint64_t>(round_)).Next64(),
-                                    players_, matchups_, config_.match.combatTicks, encounters_, &database_};
+                                    players_, matchups_, config_.match.combatTicks, encounters_, &database_, traitPaths_};
         outcomes_ = simulator_->Simulate(context);
     } else {
         for (const Matchup& m : matchups_) {
@@ -232,6 +238,7 @@ void MatchManager::ApplyCombatOutcomes() {
                     for (IMatchListener* listener : listeners_) listener->OnPveDrop(outcome.matchup.home, outcome.drop);
                 }
             }
+            GrantTraitRewards(*home, outcome, true, false);
             continue;
         }
 
@@ -265,6 +272,8 @@ void MatchManager::ApplyCombatOutcomes() {
                 if (!ghost) away->RecordRoundResult(RoundResult::Draw);
                 break;
         }
+        GrantTraitRewards(*home, outcome, true, outcome.winner == CombatWinner::Away);
+        if (!ghost) GrantTraitRewards(*away, outcome, false, outcome.winner == CombatWinner::Home);
     }
 
     // Eliminate everyone who hit 0 this round. If several fall at once, the one who took the
@@ -565,7 +574,10 @@ ActionResult MatchManager::TryRerollShop(PlayerId player) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
     if (check != ActionResult::Ok) return check;
-    return IsShopClosed() ? ActionResult::ShopClosed : p->Shop().TryReroll();
+    if (IsShopClosed()) return ActionResult::ShopClosed;
+    const ActionResult result = p->Shop().TryReroll();
+    if (result == ActionResult::Ok) OfferQueen(*p);   // the Queen stays on offer while the player qualifies
+    return result;
 }
 
 ActionResult MatchManager::TryBuyShopUnit(PlayerId player, std::size_t shopSlot) {
@@ -576,6 +588,7 @@ ActionResult MatchManager::TryBuyShopUnit(PlayerId player, std::size_t shopSlot)
     p->SetBenchOnlyPurchases(phase_ != MatchPhase::Planning);   // a champion bought while the board is locked goes to the bench
     const ActionResult result = p->Shop().TryBuy(shopSlot);
     p->SetBenchOnlyPurchases(false);
+    if (result == ActionResult::Ok) AfterRosterChange(player);
     return result;
 }
 
@@ -598,7 +611,9 @@ ActionResult MatchManager::TrySellUnit(PlayerId player, UnitId unit) {
     const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
     if (check != ActionResult::Ok) return check;
     if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
-    return p->SellUnit(unit);
+    const ActionResult result = p->SellUnit(unit);
+    if (result == ActionResult::Ok) AfterRosterChange(player);
+    return result;
 }
 
 ActionResult MatchManager::TryMoveUnit(PlayerId player, UnitId unit, LocationType location, int x, int y) {
@@ -607,7 +622,9 @@ ActionResult MatchManager::TryMoveUnit(PlayerId player, UnitId unit, LocationTyp
     if (check != ActionResult::Ok) return check;
     // While the board is locked only bench <-> bench moves are allowed (a swap with a board unit would move a fighter).
     if (phase_ != MatchPhase::Planning && (location == LocationType::Board || BoardUnitLocked(*p, unit))) return ActionResult::UnitInCombat;
-    return p->TryMoveUnit(unit, location, x, y);
+    const ActionResult result = p->TryMoveUnit(unit, location, x, y);
+    if (result == ActionResult::Ok) AfterRosterChange(player);
+    return result;
 }
 
 ActionResult MatchManager::TryEquipItem(PlayerId player, UnitId unit, ItemId item) {
@@ -615,7 +632,9 @@ ActionResult MatchManager::TryEquipItem(PlayerId player, UnitId unit, ItemId ite
     const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
     if (check != ActionResult::Ok) return check;
     if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
-    return p->TryEquipItem(unit, item);
+    const ActionResult result = p->TryEquipItem(unit, item);
+    if (result == ActionResult::Ok) AfterRosterChange(player);   // an emblem can change a trait count
+    return result;
 }
 
 ActionResult MatchManager::TryCombineItems(PlayerId player, ItemId first, ItemId second) {
@@ -630,7 +649,9 @@ ActionResult MatchManager::TryUnequipItem(PlayerId player, UnitId unit, int slot
     const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
     if (check != ActionResult::Ok) return check;
     if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
-    return p->TryUnequipItem(unit, slot);
+    const ActionResult result = p->TryUnequipItem(unit, slot);
+    if (result == ActionResult::Ok) AfterRosterChange(player);
+    return result;
 }
 
 // ---- Player event fan-out ----------------------------------------------------------------
@@ -676,9 +697,10 @@ bool MatchManager::VerifyPoolIntegrity() const {
     for (int i = 0; i < players_.PlayerCount(); ++i) {
         const PlayerState* p = players_.Get(static_cast<PlayerId>(i));
         for (const ChampionDefinition* slot : p->Shop().Slots()) {
-            if (slot != nullptr) outstanding[database_.IndexOf(slot->id)] += 1;
+            if (slot != nullptr && slot->IsPooled()) outstanding[database_.IndexOf(slot->id)] += 1;
         }
         for (const UnitInstance& unit : p->Roster().Units()) {
+            if (!unit.champion->IsPooled()) continue;   // plants and special units never came from the pool
             outstanding[database_.IndexOf(unit.champion->id)] += SharedChampionPool::CopiesForStarLevel(unit.starLevel);
         }
         for (const GiftOffer& offer : gifts_[static_cast<std::size_t>(i)].offers) {   // a unit on offer is checked out of the pool
@@ -747,6 +769,19 @@ std::uint64_t MatchManager::StateHash() const {
         h.Add(p->Roster().NextSerial());
         const RngState shopRng = p->Shop().GetRngState();
         for (std::uint64_t word : shopRng.words) h.Add(word);
+        // Trait system v2 (only hashed when it holds anything, so a match without trait data hashes as before).
+        const TraitProgress& tp = p->Traits();
+        const TraitChoice& choice = choices_[static_cast<std::size_t>(i)];
+        if (!(tp == TraitProgress{}) || choice.Pending()) {
+            h.Add(0x7EA17ull);
+            for (int v : {tp.traitGold, tp.takedownCounter, tp.starDust, tp.grantCombats, tp.unitGranted ? 1 : 0, tp.moduleTiersOffered}) h.AddInt(v);
+            for (std::uint32_t m : tp.modules) h.Add(m);
+            h.Add(static_cast<std::uint64_t>(choice.kind));
+            h.Add(choice.trait);
+            h.AddInt(choice.tier);
+            h.AddInt(choice.bonusGold);
+            for (std::uint32_t o : choice.options) h.Add(o);
+        }
     }
     for (const ChampionDefinition& def : database_.All()) h.AddInt(pool_.Remaining(def.id));
     for (const Matchup& m : matchups_) {

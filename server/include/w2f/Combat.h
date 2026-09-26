@@ -147,6 +147,9 @@ struct CombatLog {
     int survivors[2] = {0, 0};       // living units at the end: [home, away]
     int pathSearches = 0;            // how many path searches the fight needed (perf diagnostic)
     std::uint64_t checksum = 0;      // hash of `events`; lets a client verify it received the stream intact
+    // Takedowns per unit (a kill, or damage to the victim in the 3 s before it died), for the traits that pay for them (Selini's Prosperity,
+    // Najmi's star dust). Only units that scored at least one, summons excluded; ascending UnitId. Not part of the checksum.
+    std::vector<std::pair<UnitId, int>> takedowns;
 
     std::uint64_t ComputeChecksum() const;
 };
@@ -182,6 +185,7 @@ struct CombatContext {
     int maxTicks = 0;        // Length of the Combat phase; a fight must finish (or time out) within this
     const EncounterDatabase* encounters = nullptr;   // monster boards for PvE matchups (may be null when there are none)
     const ChampionDatabase* champions = nullptr;     // where SummonEffects find their (summon-only) champion definitions
+    std::vector<std::pair<std::uint32_t, int>> traitPaths{};   // trait system v2: the path the match picked for each trait that has paths
 };
 
 class ICombatSimulator {

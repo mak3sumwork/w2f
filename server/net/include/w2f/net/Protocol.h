@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 4;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 5;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -39,6 +39,7 @@ enum class CommandType : std::uint8_t {
     GetFight,     // fight_index: the combat log of one of this round's fights (any player's: fights are public)
     Ping,         // answered with "pong" even before a match exists
     GetCatalog,   // answered with "catalog" (what every champion / item / trait id means), also before a match exists
+    PickTraitChoice,  // index (revision 5): answer the pending trait choice (a Hexagon module, a Najmi prototype); -1 declines a prototype
 };
 
 constexpr const char* ToString(CommandType t) {
@@ -57,6 +58,7 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::GetFight: return "get_fight";
         case CommandType::Ping: return "ping";
         case CommandType::GetCatalog: return "get_catalog";
+        case CommandType::PickTraitChoice: return "pick_trait_choice";
     }
     return "?";
 }
@@ -76,6 +78,7 @@ struct Command {
     int slot = 0;
     int fightIndex = 0;
     bool locked = false;   // set_shop_lock
+    int choiceIndex = 0;   // pick_trait_choice: -1..7
 };
 
 struct ProtocolError {

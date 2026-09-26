@@ -1,0 +1,41 @@
+// Baira as she was designed until September 2026 (Phaisa marksman: Wound passive, a burn on every 5th attack). She moved to Selini as a mage;
+// the mechanics she used (EveryNthAttack with resetOnTargetChange, InflictsWound, stacking AP-scaled burns) are still in the engine, and these tests keep them honest.
+{
+  "version": 1,
+  "champions": [
+    {
+      "id": 9002, "name": "Baira", "cost": 3, "role": "Damage",
+      "traits": ["Phaisa"],
+      "stats": {
+        "hp": [100, 150, 200], "armor": [10, 15, 20], "magicResist": [5, 9, 13], "attackDamage": [20, 25, 29],
+        "abilityDamage": [15, 21, 40],            // the sheet's "AP"
+        "attackSpeed": 0.5, "range": 4            // range ASSUMED (marksman)
+        // no maxMana: Baira does not use mana
+      },
+      // Every 5th attack (the count restarts when she changes target or her target dies):
+      //   * burns everything within 3 hexes of her target for 15/21/36 TOTAL over 2.5/2.0/1.75 s. The total scales with her
+      //     AP (abilityDamage 15/21/40, x abilityPowerPercent): 100% / 100% / 90% of it = 15 / 21 / 36. Stacks:
+      //     a burn landing on a running one deals more (+25/35/45% -- ASSUMED, carried over from the earlier design);
+      //   * grants her +20/25/35% attack speed for 5 s.
+      "ability": {
+        "id": 2, "name": "Ardeat's Destiny", "trigger": "EveryNthAttack", "attackCount": 5, "resetOnTargetChange": true,
+        "effects": [
+          {
+            "type": "DoT", "target": { "mode": "AreaAroundTarget", "radius": 3, "includeCenter": true },
+            "damageType": "Magic",
+            "amount": { "terms": [ { "source": "SelfAbilityDamage", "percent": [100, 100, 90] } ] }, "amountIsTotal": true,
+            "durationSeconds": [2.5, 2.0, 1.75], "intervalSeconds": 0.5,   // interval ASSUMED: a hit every 0.5 s
+            "stackBonusPercent": [25, 35, 45]
+          },
+          { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": [20, 25, 35], "durationSeconds": 5 }
+        ]
+      },
+      // Passive "Wound": her burns also reduce their victims' healing by 30% for as long as they burn.
+      // (There is no healing in the game yet; the status is applied and shown, and will bite once healing exists.)
+      "passive": {
+        "id": 102, "name": "Wound",
+        "effects": [ { "type": "Status", "target": "Self", "status": "InflictsWound", "percent": 30, "permanent": true } ]
+      }
+    }
+  ]
+}

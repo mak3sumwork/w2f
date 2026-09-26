@@ -179,18 +179,22 @@ ActionResult PlayerState::TryMoveUnit(UnitId unit, LocationType location, int x,
 ActionResult PlayerState::SellUnit(UnitId unit) {
     if (!IsAlive()) return ActionResult::PlayerEliminated;
 
+    const UnitInstance* found = roster_.Find(unit);
+    if (found == nullptr || found->champion->plant) return ActionResult::InvalidUnit;   // plants belong to the Nature trait: they cannot be sold
     UnitInstance sold;
     if (!roster_.Remove(unit, &sold)) return ActionResult::InvalidUnit;
 
-    // A merged unit stands for 3^(star-1) copies; all of them go back.
-    const bool returned = pool_.Return(sold.champion, SharedChampionPool::CopiesForStarLevel(sold.starLevel));
-    assert(returned && "sold more copies than were ever in the pool");
-    (void)returned;
+    // A merged unit stands for 3^(star-1) copies; all of them go back. (Special units never came from the pool.)
+    if (sold.champion->IsPooled()) {
+        const bool returned = pool_.Return(sold.champion, SharedChampionPool::CopiesForStarLevel(sold.starLevel));
+        assert(returned && "sold more copies than were ever in the pool");
+        (void)returned;
+    }
 
     for (ItemId item : sold.items) {
         if (item != 0) itemBag_.push_back(item);   // a sold unit's items are not lost
     }
-    const int value = SellValue(sold.champion->cost, sold.starLevel);
+    const int value = SellValue(sold.champion->Price(), sold.starLevel);
     gold_ += value;
     if (listener_) listener_->OnUnitSold(id_, sold, value);
     return ActionResult::Ok;
@@ -216,6 +220,7 @@ ActionResult PlayerState::TryEquipItem(UnitId unit, ItemId item) {
     if (item == 0 || inBag == itemBag_.end()) return ActionResult::InvalidItem;
     const ItemDefinition* def = items_ != nullptr ? items_->Find(item) : nullptr;
     if (items_ != nullptr && def == nullptr) return ActionResult::InvalidItem;
+    if (const UnitInstance* holder = roster_.Find(unit); holder != nullptr && holder->champion->plant) return ActionResult::InvalidUnit;   // plants carry nothing
     if (def != nullptr && def->use == ItemUse::RemoveAllItems) {
         const UnitInstance* target = roster_.Find(unit);
         if (target == nullptr) return ActionResult::InvalidUnit;
@@ -304,6 +309,11 @@ bool PlayerState::RestoreState(const PlayerRestoreData& data, std::string* error
     for (ItemId item : data.itemBag) {
         if (!knownItem(item)) return fail("item bag holds an unknown item");
     }
+    const TraitProgress& tp = data.traits;
+    if (tp.traitGold < 0 || tp.takedownCounter < 0 || tp.starDust < 0 || tp.grantCombats < 0 || tp.moduleTiersOffered < 0 || tp.moduleTiersOffered > 3 ||
+        tp.modules.size() > 3) {
+        return fail("trait progress out of range");
+    }
     for (const UnitInstance& unit : data.units) {
         if (unit.champion == nullptr || unit.starLevel < 1 || unit.starLevel > kMaxStarLevel) return fail("invalid unit");
         for (ItemId item : unit.items) {
@@ -319,11 +329,31 @@ bool PlayerState::RestoreState(const PlayerRestoreData& data, std::string* error
     shopLocked_ = data.shopLocked;
     eliminated_ = data.eliminated;
     placement_ = data.placement;
+    traits_ = data.traits;
     itemBag_ = data.itemBag;
     SyncBoardCapacity();
     if (!roster_.Restore(data.units, data.nextUnitSerial)) return fail("roster layout is inconsistent");
     if (roster_.BoardCount() > roster_.BoardCapacity()) return fail("more units on the board than the level allows");
     if (!shop_->RestoreState(data.shopSlots, data.shopRng)) return fail("shop state does not fit the configuration");
+    return true;
+}
+
+// ---- Plants (the Nature trait) --------------------------------------------------------------
+
+bool PlayerState::GrantPlant(const ChampionDefinition* plant, int starLevel, int x, int y) {
+    if (!IsAlive() || plant == nullptr || !plant->plant) return false;
+    const UnitInstance added = roster_.AddPlaced(plant, starLevel, x, y);
+    if (added.id == kInvalidUnitId) return false;
+    if (listener_) listener_->OnUnitBought(id_, added, 0);
+    return true;
+}
+
+bool PlayerState::RemovePlant(UnitId unit) {
+    const UnitInstance* found = roster_.Find(unit);
+    if (found == nullptr || !found->champion->plant) return false;
+    UnitInstance removed;
+    roster_.Remove(unit, &removed);
+    if (listener_) listener_->OnUnitSold(id_, removed, 0);
     return true;
 }
 
@@ -334,6 +364,7 @@ void PlayerState::Eliminate(int placement) {
     shopLocked_ = false;
     shop_->ReturnShopToPool();
     for (const UnitInstance& unit : roster_.Units()) {
+        if (!unit.champion->IsPooled()) continue;   // plants and special units simply go
         const bool returned = pool_.Return(unit.champion, SharedChampionPool::CopiesForStarLevel(unit.starLevel));
         assert(returned && "eliminated player owned more copies than were ever in the pool");
         (void)returned;

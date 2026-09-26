@@ -21,6 +21,8 @@ constexpr long long kMaxValue = 1'000'000'000;
 constexpr int kMaxSummonsPerFight = 48;   // a hard cap: a runaway summon loop cannot grow the fight without bound
 constexpr int kMaxHookRounds = 8;         // hook reactions to hook damage settle within this many rounds per tick
 constexpr int kMaxAurasPerUnit = 31;
+constexpr int kTakedownWindowTicks = 90;  // damage within 3 s of a death is an assist ("takedown")
+constexpr int kMaxEchoes = 8;             // Echo Engine: how many times the Invention repeats its modules at most
 
 struct ShieldInst {
     int amount;
@@ -44,6 +46,7 @@ struct TriggerSlot {
     int counter = 0;      // occurrences since it last fired (for "every Nth")
     int fired = 0;        // firings so far this fight (for maxTriggers)
     bool armed = true;    // OnHpDropBelowPercent: false after it fired, until HP climbs back above the threshold
+    bool teamOnce = false; // a synergy trigger with scope Team: each event fires it once for the whole team (the first living holder)
 };
 
 struct DotInst {
@@ -166,6 +169,14 @@ struct FightUnit {
     AbilityId channelAbility = kNoAbility;
     int killer = -1;                          // whoever's hit brought this unit to 0 HP, if that hit had on-kill statuses
     const DamageEffect* killEffect = nullptr;
+    // ---- trait system v2 ----
+    int castCount = 0;          // casts so far (TargetCastCount)
+    long long totalDealt = 0;   // damage dealt this fight (TopDamageEnemies)
+    int totalAttacks = 0;       // basic attacks this fight (afterAttacks)
+    int baseMaxMana = 0;        // the bar before ManaCost statuses (thousandths; BonusMaxMana moves it)
+    int pilot = -1;             // Hexa: the unit piloting it
+    int mech = -1;              // a pilot: the unit it sits in
+    int takedowns = 0;
 };
 
 int Clamp32(long long v) { return static_cast<int>(std::clamp<long long>(v, -kMaxValue, kMaxValue)); }
@@ -173,9 +184,10 @@ int Clamp32(long long v) { return static_cast<int>(std::clamp<long long>(v, -kMa
 class Fight {
 public:
     Fight(const CombatConfig& config, const TraitDatabase* traits, const std::vector<FightUnitSpec>& specs, int maxTicks,
-          std::uint64_t seed, const ChampionDatabase* summons, const ChampionDatabase* summons2)
+          std::uint64_t seed, const ChampionDatabase* summons, const ChampionDatabase* summons2, const FightSetup& setup = FightSetup{})
         : config_(config),
           traits_(traits),
+          setup_(setup),
           summons_(summons),
           summons2_(summons2),
           maxTicks_(maxTicks),
@@ -231,6 +243,7 @@ public:
         u.range = stats.attackRange;
         u.attackInterval = stats.AttackIntervalTicks();
         u.maxMana = stats.maxMana * 1000;
+        u.baseMaxMana = u.maxMana;
         u.regenMilli = stats.manaRegenMilli;
         if (champion->ability.HasAbility()) u.ability = &champion->ability;
         if (champion->passive.HasAbility()) u.passive = &champion->passive;
@@ -277,7 +290,11 @@ public:
         ApplyItems();     // equipment first (it can grant trait tags and start mana), then synergies, then passives
         EmitInitialMana();
         ApplyTraits();    // (so a passive can build on the synergy's stats)
+        ApplyPilots();    // Hexa takes its pilot in (after the synergies: the pilot's own bonuses are in its max HP)
         ApplyPassives();
+        for (const FightUnit& u : units_) {   // the teams' total max HP, for OnTeamHpLoss (summons and plants excluded)
+            if (!u.isSummon && !u.champion->plant) teamMaxHp_[u.team] += u.maxHp;
+        }
 
         int tick = 0;
         bool timedOut = true;
@@ -306,6 +323,9 @@ public:
         log_.survivors[0] = alive_[0];
         log_.survivors[1] = alive_[1];
         log_.pathSearches = pathSearches_;
+        for (const FightUnit& u : units_) {   // (units_ is in ascending UnitId order up to the summons, which never score)
+            if (!u.isSummon && u.takedowns > 0) log_.takedowns.emplace_back(u.id, u.takedowns);
+        }
         result.winner = timedOut ? DecideAtLimit() : Decide();   // (a fight only reaches its safety limit if it can never end)
         log_.checksum = log_.ComputeChecksum();
         result.log = std::move(log_);
@@ -349,6 +369,14 @@ private:
         u.maxHp = newMax;
     }
 
+    // The mana bar follows the ManaCost statuses (Rally: -10% each), never below 30% of the bar they shorten. Mana above the new bar stays: the
+    // unit casts as soon as it can act.
+    static void RecomputeMaxMana(FightUnit& u) {
+        if (u.baseMaxMana <= 0) return;
+        const long long scaled = static_cast<long long>(u.baseMaxMana) * std::max(30, 100 + StatusPercent(u, StatusType::ManaCost)) / 100;
+        u.maxMana = static_cast<int>(std::max<long long>(1000, scaled));
+    }
+
     // Returns false if the status was refused: crowd control from another unit bounces off CcImmunity.
     // (A unit's own self-applied Root, e.g. Les in wall mode, is not blocked by its own immunity.)
     static bool AddStatus(FightUnit& holder, bool selfApplied, StatusType type, int percent, int expiresTick, bool refresh = false,
@@ -378,7 +406,11 @@ private:
     }
     static bool IsCcStatus(StatusType t) { return t == StatusType::Stun || t == StatusType::Root || t == StatusType::Knockup; }
     // Cannot move, attack or cast.
-    static bool IsDisabled(const FightUnit& u) { return HasStatus(u, StatusType::Stun) || HasStatus(u, StatusType::Knockup); }
+    static bool IsDisabled(const FightUnit& u) {
+        return HasStatus(u, StatusType::Stun) || HasStatus(u, StatusType::Knockup) || HasStatus(u, StatusType::Piloting);
+    }
+    // A plant that has not come to life: it never walks and never attacks.
+    static bool IsStationary(const FightUnit& u) { return u.champion->stationary && !HasStatus(u, StatusType::Awakened); }
     static bool IsRooted(const FightUnit& u) { return HasStatus(u, StatusType::Root); }
     static int WoundPercent(const FightUnit& u) {  // the strongest wound applies
         int best = 0;
@@ -401,9 +433,11 @@ private:
                                                   StatusPercent(u, StatusType::BonusMagicResist)));
     }
     // Enemies' automatic targeting (attacks, "closest enemy") skips units that dropped aggro or are untargetable...
-    static bool CanAutoTarget(const FightUnit& u) { return !HasStatus(u, StatusType::Untargetable) && !HasStatus(u, StatusType::AggroDrop); }
+    static bool CanAutoTarget(const FightUnit& u) {
+        return !HasStatus(u, StatusType::Untargetable) && !HasStatus(u, StatusType::AggroDrop) && !HasStatus(u, StatusType::Piloting);
+    }
     // ...and NO enemy effect of any kind can reach an untargetable unit.
-    static bool CanBeAffectedByEnemies(const FightUnit& u) { return !HasStatus(u, StatusType::Untargetable); }
+    static bool CanBeAffectedByEnemies(const FightUnit& u) { return !HasStatus(u, StatusType::Untargetable) && !HasStatus(u, StatusType::Piloting); }
     static bool HasTrait(const FightUnit& u, const std::string& trait) {
         return std::find(u.champion->traits.begin(), u.champion->traits.end(), trait) != u.champion->traits.end() ||
                std::find(u.extraTraits.begin(), u.extraTraits.end(), trait) != u.extraTraits.end();
@@ -548,15 +582,17 @@ private:
         }
         const FightUnit& target = units_[static_cast<std::size_t>(u.target)];
 
-        if (InRange(u, target)) {
-            // A full mana bar pre-empts the next attack.
+        const bool stationary = IsStationary(u);
+        if (InRange(u, target) || (stationary && u.ability != nullptr)) {
+            // A full mana bar pre-empts the next attack. (A stationary unit casts at whatever it would target, from where it stands.)
             if (u.ability && u.ability->trigger == CastTrigger::Mana && u.maxMana > 0 && u.mana >= u.maxMana) {
                 DeclareCast(index, u.target, tick, false);
                 if (u.ability->castLockTicks > 0) return;  // locked in the animation; otherwise keep attacking
             }
-            if (tick >= u.nextAttackTick && !HasStatus(u, StatusType::Blind)) DeclareAttack(index, tick);
+            if (!stationary && tick >= u.nextAttackTick && !HasStatus(u, StatusType::Blind)) DeclareAttack(index, tick);
             return;
         }
+        if (stationary) return;   // a plant that has not come to life never walks
 
         // --- Otherwise walk toward it, one hex per ticksPerHexMove. ---
         if (IsRooted(u)) return;  // rooted units can still attack and cast, but not walk
@@ -651,8 +687,10 @@ private:
         }
 
         ++u.attacksSinceCast;
+        ++u.totalAttacks;
         for (TriggerSlot& slot : u.triggers) {   // item / synergy riders and counted attack hooks
             if (slot.ability->trigger != EventTrigger::OnBasicAttack && slot.ability->trigger != EventTrigger::EveryNthAttack) continue;
+            if (u.totalAttacks <= slot.ability->afterAttacks[static_cast<std::size_t>(u.star - 1)]) continue;   // "after attacking N times"
             FireHook(index, slot, index, u.target, 0, true, tick);
         }
         if (u.onAttack != nullptr) {  // a rider on every basic attack: no SpellCast, no mana, no lock
@@ -685,6 +723,7 @@ private:
         if (u.maxMana > 0 && u.mana != 0) u.manaDirty = true;
         u.mana = 0;  // drained by every cast, whatever triggered it
         u.attacksSinceCast = 0;
+        ++u.castCount;
 
         int lock = 0;
         if (!onDeath && ability.channelTicks > 0) {
@@ -722,6 +761,10 @@ private:
         e.from = u.pos;
         const bool aroundTarget = area.shape == AreaShape::Circle || area.shape == AreaShape::Line || area.shape == AreaShape::Cone || area.shape == AreaShape::Single;
         e.to = aroundTarget && targetIndex >= 0 ? units_[static_cast<std::size_t>(targetIndex)].pos : u.pos;
+        for (const AbilityEffect& effect : ability.effects) {   // a "largest cluster" spell: `to` is that cluster's centre as it stands now (the effects re-resolve when they land)
+            HexCoord cluster;
+            if (effect.target.mode == TargetMode::AreaAroundDensestEnemy && DensestEnemyCenter(index, effect.target.radius, cluster)) { e.to = cluster; break; }
+        }
         log_.events.push_back(e);
     }
 
@@ -751,6 +794,7 @@ private:
         ApplyStatusSweeps(tick);
         ProcessHooks(tick);
         ApplyManaFromDamage(tick);
+        CheckTeamHp(tick);
         ReapDeathsAndDeathCasts(tick);
         EmitManaEvents(tick);
     }
@@ -770,12 +814,49 @@ private:
         }
     }
 
+    // OnTeamHpLoss hooks: the team's total HP (its real units: summons and plants excluded; the dead count 0) against its total max HP at the
+    // start. Every `thresholdPercent` lost fires the hook once (a slot remembers how many steps it has seen). Scope-Team slots count per team:
+    // the first living holder fires for everybody.
+    void CheckTeamHp(int tick) {
+        for (int team = 0; team < 2; ++team) {
+            if (teamMaxHp_[team] <= 0) continue;
+            long long current = 0;
+            for (const FightUnit& u : units_) {
+                if (u.team == team && u.alive && !u.isSummon && !u.champion->plant) current += u.hp;
+            }
+            const long long lost = std::max<long long>(0, teamMaxHp_[team] - current);
+            for (std::size_t i = 0; i < units_.size(); ++i) {
+                FightUnit& u = units_[i];
+                if (u.team != team || !u.alive || u.hp <= 0) continue;
+                for (TriggerSlot& slot : u.triggers) {
+                    if (slot.ability->trigger != EventTrigger::OnTeamHpLoss) continue;
+                    const int steps = static_cast<int>(lost * 100 / (teamMaxHp_[team] * slot.ability->thresholdPercent));
+                    int* seen = &slot.counter;
+                    if (slot.teamOnce) {
+                        seen = nullptr;
+                        for (auto& entry : teamOnce_[team]) {
+                            if (entry.first == slot.ability) seen = &entry.second;
+                        }
+                        if (seen == nullptr) {
+                            teamOnce_[team].emplace_back(slot.ability, 0);
+                            seen = &teamOnce_[team].back().second;
+                        }
+                    }
+                    while (*seen < steps && (slot.ability->maxTriggers == 0 || slot.fired < slot.ability->maxTriggers)) {
+                        ++*seen;
+                        FireHook(static_cast<int>(i), slot, -1, -1, 0, true, tick);
+                    }
+                }
+            }
+        }
+    }
+
     // Statuses that act on their own: HpPerSecond (a heal, or true damage, once a second) and ExecuteBelow (dies below the threshold).
     void ApplyStatusSweeps(int tick) {
         const bool secondBoundary = tick > 0 && tick % kTicksPerSecond == 0;
         for (std::size_t i = 0; i < units_.size(); ++i) {
             FightUnit& u = units_[i];
-            if (!u.alive || u.hp <= 0 || u.statuses.empty()) continue;
+            if (!u.alive || u.hp <= 0 || u.statuses.empty() || HasStatus(u, StatusType::Piloting)) continue;
             const int self = static_cast<int>(i);
             if (secondBoundary) {
                 const std::vector<StatusInst> snapshot = u.statuses;   // damage / heals below never change the list, but stay safe
@@ -828,6 +909,7 @@ private:
     // The champion's passive, then the StartOfCombat abilities that items / triggers carry.
     void RunPassives(int index) {
         FightUnit& u = units_[static_cast<std::size_t>(index)];
+        if (HasStatus(u, StatusType::Piloting)) return;   // inside Hexa: its passive runs when it ejects
         const auto run = [&](const AbilityDefinition* ability) {
             CastRecord cast;
             cast.caster = index;
@@ -871,9 +953,9 @@ private:
     }
 
     // Runs an effect now, or schedules it: `repeatCount` runs, the first `delayTicks` from `tick`, then every interval.
-    void RunOrSchedule(const CastRecord& cast, const AbilityEffect& effect, int tick) {
+    void RunOrSchedule(const CastRecord& cast, const AbilityEffect& effect, int tick, int extraDelay = 0) {
         for (int i = 0; i < effect.repeatCount; ++i) {
-            const int due = effect.delayTicks + i * effect.repeatIntervalTicks;
+            const int due = extraDelay + effect.delayTicks + i * effect.repeatIntervalTicks;
             if (due <= 0) {
                 ExecuteEffect(cast, effect, tick);
             } else {
@@ -901,6 +983,7 @@ private:
             }
         }
         for (const Scheduled& s : due) {
+            if (s.cast.ability != nullptr && s.cast.ability->stopsOnDeath && !units_[static_cast<std::size_t>(s.cast.caster)].alive) continue;
             if (s.cast.channeled) {  // a channel's pulses / finale only happen while it is unbroken and its caster lives
                 const FightUnit& caster = units_[static_cast<std::size_t>(s.cast.caster)];
                 if (!caster.alive || caster.activeChannelSerial != s.cast.serial) continue;
@@ -932,7 +1015,28 @@ private:
         return false;
     }
 
+    // The targeting rule, then the v2 extras: a per-star count, the trait / champion filters, and pilots (inside Hexa) are never reachable.
     void ResolveTargets(const CastRecord& cast, const TargetSpec& spec, int tick, std::vector<int>& out) {
+        const FightUnit& caster = units_[static_cast<std::size_t>(cast.caster)];
+        const int starCount = spec.countPerStar[static_cast<std::size_t>(caster.star - 1)];
+        if (starCount > 0 && starCount != spec.count) {
+            TargetSpec copy = spec;
+            copy.count = starCount;
+            ResolveTargetsRaw(cast, copy, tick, out);
+        } else {
+            ResolveTargetsRaw(cast, spec, tick, out);
+        }
+        if (spec.trait.empty() && spec.champion == 0 && !anyPilot_) return;
+        out.erase(std::remove_if(out.begin(), out.end(), [&](int i) {
+                      const FightUnit& u = units_[static_cast<std::size_t>(i)];
+                      if (u.mech >= 0 && HasStatus(u, StatusType::Piloting)) return true;
+                      if (!spec.trait.empty() && !HasTrait(u, spec.trait)) return true;
+                      return spec.champion != 0 && u.champion->id != spec.champion;
+                  }),
+                  out.end());
+    }
+
+    void ResolveTargetsRaw(const CastRecord& cast, const TargetSpec& spec, int tick, std::vector<int>& out) {
         out.clear();
         const FightUnit& caster = units_[static_cast<std::size_t>(cast.caster)];
         // An untargetable enemy cannot be reached by ANY selector.
@@ -1004,13 +1108,14 @@ private:
                 return;
             }
             case TargetMode::LowestHpAlly: {
-                int best = -1;
+                std::vector<std::pair<int, int>> ranked;   // (hp, index): index order == UnitId order breaks ties
                 for (std::size_t i = 0; i < units_.size(); ++i) {
                     const FightUnit& other = units_[i];
-                    if (!other.alive || other.team != caster.team) continue;
-                    if (best < 0 || other.hp < units_[static_cast<std::size_t>(best)].hp) best = static_cast<int>(i);
+                    if (other.alive && other.team == caster.team) ranked.emplace_back(other.hp, static_cast<int>(i));
                 }
-                if (best >= 0) out.push_back(best);
+                std::sort(ranked.begin(), ranked.end());
+                const int wanted = std::max(1, spec.count);
+                for (std::size_t i = 0; i < ranked.size() && static_cast<int>(i) < wanted; ++i) out.push_back(ranked[i].second);
                 return;
             }
             case TargetMode::HighestHpEnemyNearTarget: {
@@ -1050,6 +1155,15 @@ private:
                     if (reachableEnemy(units_[i])) out.push_back(static_cast<int>(i));
                 }
                 return;
+            case TargetMode::TopDamageEnemies: {
+                std::vector<std::pair<long long, int>> ranked;   // (-damage dealt, index): most damage first, ties lowest UnitId
+                for (std::size_t i = 0; i < units_.size(); ++i) {
+                    if (reachableEnemy(units_[i])) ranked.emplace_back(-units_[i].totalDealt, static_cast<int>(i));
+                }
+                std::sort(ranked.begin(), ranked.end());
+                for (std::size_t i = 0; i < ranked.size() && static_cast<int>(i) < spec.count; ++i) out.push_back(ranked[i].second);
+                return;
+            }
             case TargetMode::AllAllies:
                 for (std::size_t i = 0; i < units_.size(); ++i) {
                     if (units_[i].alive && units_[i].team == caster.team) out.push_back(static_cast<int>(i));
@@ -1062,8 +1176,11 @@ private:
                 return;
             }
             case TargetMode::AreaAroundTarget:
-            case TargetMode::AreaAroundSelf: {
-                const HexCoord center = spec.mode == TargetMode::AreaAroundSelf ? caster.pos : cast.center;
+            case TargetMode::AreaAroundSelf:
+            case TargetMode::AreaAroundDensestEnemy: {
+                HexCoord center = spec.mode == TargetMode::AreaAroundSelf ? caster.pos : cast.center;
+                if (spec.mode == TargetMode::AreaAroundDensestEnemy && !DensestEnemyCenter(cast.caster, spec.radius, center)) return;
+                areaCenter_ = center;
                 for (std::size_t i = 0; i < units_.size(); ++i) {  // ascending UnitId
                     const FightUnit& other = units_[i];
                     if (!reachable(other) || !SideMatches(spec.side, caster, other)) continue;
@@ -1080,6 +1197,25 @@ private:
                 return;
             }
         }
+    }
+
+    // "The largest cluster": the position of the living, targetable enemy (of `casterIndex`) that has the most such enemies within `radius` of it
+    // (itself included; ties: lowest UnitId). False when there is no enemy.
+    bool DensestEnemyCenter(int casterIndex, int radius, HexCoord& out) const {
+        const FightUnit& caster = units_[static_cast<std::size_t>(casterIndex)];
+        const auto enemy = [&](const FightUnit& o) { return o.alive && o.team != caster.team && CanBeAffectedByEnemies(o); };
+        int best = -1, bestCount = -1;
+        for (std::size_t i = 0; i < units_.size(); ++i) {
+            if (!enemy(units_[i])) continue;
+            int around = 0;
+            for (std::size_t j = 0; j < units_.size(); ++j) {
+                if (enemy(units_[j]) && hex::Distance(units_[j].pos, units_[i].pos) <= radius) ++around;
+            }
+            if (around > bestCount) { best = static_cast<int>(i); bestCount = around; }
+        }
+        if (best < 0) return false;
+        out = units_[static_cast<std::size_t>(best)].pos;
+        return true;
     }
 
     long long DamageToTargetInWindow(const FightUnit& u, int targetIndex, int tick, int window) const {
@@ -1135,6 +1271,14 @@ private:
                 case StatSource::TargetCurrentHp: source = victim >= 0 ? units_[static_cast<std::size_t>(victim)].hp : 0; break;
                 case StatSource::DamageDealtInWindow: source = DamageInWindow(caster, tick, term.windowTicks); break;
                 case StatSource::RawDamageDealtToTarget: source = cast.rawSnapshot; break;
+                case StatSource::PlayerLevel: source = setup_.teams[caster.team].playerLevel; break;
+                case StatSource::TraitGold: source = setup_.teams[caster.team].traitGold; break;
+                case StatSource::TraitStarLevel:
+                    for (const FightUnit& ally : units_) {
+                        if (ally.team == caster.team && !ally.isSummon && !ally.champion->plant && HasTrait(ally, term.trait)) source += ally.star;
+                    }
+                    break;
+                case StatSource::TargetCastCount: source = victim >= 0 ? units_[static_cast<std::size_t>(victim)].castCount : 0; break;
             }
             value += source * term.percent[si] / term.divisor;
         }
@@ -1161,6 +1305,47 @@ private:
                     flags |= kFlagCrit;
                 }
                 hits_.push_back(Hit{cast.caster, t, damage->type, raw, flags, damage, cast.fromHook});
+                if ((flags & kFlagCrit) != 0 && damage->bounceOnCritPercent > 0) {   // a critical hit bounces on to the victim's nearest other enemy-of-the-caster
+                    const HexCoord from = units_[static_cast<std::size_t>(t)].pos;
+                    int best = -1, bestDistance = 0;
+                    for (std::size_t i = 0; i < units_.size(); ++i) {
+                        const FightUnit& other = units_[i];
+                        if (static_cast<int>(i) == t || !other.alive || other.team == caster.team || !CanBeAffectedByEnemies(other)) continue;
+                        const int d = hex::Distance(other.pos, from);
+                        if (best < 0 || d < bestDistance) { best = static_cast<int>(i); bestDistance = d; }
+                    }
+                    const int bounced = static_cast<int>(static_cast<long long>(raw) * damage->bounceOnCritPercent / 100);
+                    if (best >= 0 && bounced > 0) hits_.push_back(Hit{cast.caster, best, damage->type, bounced, kFlagAbility, nullptr, cast.fromHook});
+                }
+            }
+        } else if (const auto* strike = std::get_if<AllyStrikeEffect>(&effect.payload)) {
+            int ally = -1;   // the living ally of that champion: highest star, then lowest UnitId
+            for (std::size_t i = 0; i < units_.size(); ++i) {
+                const FightUnit& other = units_[i];
+                if (!other.alive || other.team != caster.team || static_cast<int>(i) == cast.caster || other.champion == nullptr || other.champion->id != strike->ally) continue;
+                if (ally < 0 || other.star > units_[static_cast<std::size_t>(ally)].star) ally = static_cast<int>(i);
+            }
+            if (ally >= 0) {
+                FightUnit& helper = units_[static_cast<std::size_t>(ally)];
+                const int pct = strike->percentOfAllyAttackDamage[static_cast<std::size_t>(helper.star - 1)];
+                for (int t : targets_) {
+                    const FightUnit& victim = units_[static_cast<std::size_t>(t)];
+                    if (victim.team == helper.team) continue;
+                    int raw = static_cast<int>(static_cast<long long>(EffectiveAttackDamage(helper)) * pct / 100);
+                    if (raw <= 0) continue;
+                    std::uint8_t flags = kFlagAbility;
+                    if (strike->canCrit && RollCrit(helper)) {
+                        raw = CritRaw(raw, helper, victim);
+                        flags |= kFlagCrit;
+                    }
+                    CombatEvent e = MakeEvent(tick, CombatEventType::Teleport, helper.id);   // presentation: it blinks in, strikes, and is back on its own hex
+                    e.from = helper.pos;
+                    e.to = victim.pos;
+                    e.subtype = 2;
+                    e.other = victim.id;
+                    log_.events.push_back(e);
+                    hits_.push_back(Hit{ally, t, strike->type, raw, flags, nullptr, cast.fromHook});
+                }
             }
         } else if (const auto* shield = std::get_if<ShieldEffect>(&effect.payload)) {
             for (int t : targets_) {
@@ -1174,6 +1359,9 @@ private:
                     amount = static_cast<int>(std::min<long long>(amount, Evaluate(shield->cap, cast, t, tick) - total));
                     if (amount <= 0) continue;
                 }
+                const int amp = StatusPercent(holder, StatusType::HealingAmp);   // Tuned Oscillator: shields received are stronger too
+                if (amp != 0) amount = ApplyPercent(amount, amp);
+                if (amount <= 0) continue;
                 holder.shields.push_back(ShieldInst{amount, shield->permanent ? std::numeric_limits<int>::max() : tick + duration,
                                                     shield->damageReductionPercent[si], cast.ability != nullptr ? cast.ability->id : kNoAbility, 0});
                 CombatEvent e = MakeEvent(tick, CombatEventType::ShieldApplied, holder.id);
@@ -1192,7 +1380,7 @@ private:
                                           status->status == StatusType::Knockup || status->status == StatusType::CcImmunity ||
                                           status->status == StatusType::Untargetable || status->status == StatusType::AggroDrop ||
                                           status->status == StatusType::AbilityCrit || status->status == StatusType::SpellShield;
-                const int percent = flat ? Clamp32(Evaluate(status->value, cast, t, tick)) : durationOnly ? 0 : status->percent[si];
+                const int percent = (flat || status->percentFromValue) ? Clamp32(Evaluate(status->value, cast, t, tick)) : durationOnly ? 0 : status->percent[si];
                 if (flat && percent == 0) continue;   // e.g. stealing from a target with nothing to steal
                 FightUnit& holder = units_[static_cast<std::size_t>(t)];
                 if (!AddStatus(holder, t == cast.caster, status->status, percent,
@@ -1200,8 +1388,10 @@ private:
                     continue;  // bounced off CC immunity: no status, no event
                 }
                 if (status->status == StatusType::BonusMaxMana && holder.maxMana > 0) {   // a longer bar (permanent: validated); no bar, no effect
-                    holder.maxMana = static_cast<int>(std::max<long long>(1000, static_cast<long long>(holder.maxMana) + static_cast<long long>(percent) * 1000));
+                    holder.baseMaxMana = static_cast<int>(std::max<long long>(1000, static_cast<long long>(holder.baseMaxMana) + static_cast<long long>(percent) * 1000));
+                    RecomputeMaxMana(holder);
                 }
+                if (status->status == StatusType::ManaCost && holder.maxMana > 0) RecomputeMaxMana(holder);   // a shorter bar (Rally)
                 CombatEvent e = MakeEvent(tick, CombatEventType::StatusApplied, holder.id);
                 e.other = caster.id;
                 e.subtype = static_cast<std::uint8_t>(status->status);
@@ -1222,6 +1412,8 @@ private:
             }
         } else if (const auto* summon = std::get_if<SummonEffect>(&effect.payload)) {
             SummonUnits(cast, *summon, tick);
+        } else if (const auto* clone = std::get_if<CloneEffect>(&effect.payload)) {
+            CloneUnits(cast, *clone, tick);
         } else if (const auto* teleport = std::get_if<TeleportEffect>(&effect.payload)) {
             for (int t : targets_) TeleportUnit(t, teleport->destination, cast.target, tick);
         } else if (const auto* displace = std::get_if<DisplaceEffect>(&effect.payload)) {
@@ -1432,6 +1624,11 @@ private:
             }
         }
 
+        // Omnivamp: the attacker heals a share of what it dealt (not of a redirected share, not from a zone's per-second damage).
+        if (credit && damage > 0 && attacker.alive && attackerIndex != victimIndex) {
+            const int vamp = StatusPercent(attacker, StatusType::Omnivamp);
+            if (vamp > 0) HealUnit(attackerIndex, attackerIndex, Clamp32(static_cast<long long>(damage) * vamp / 100), tick);
+        }
         // Regeneration from damage taken (Les in wall mode): heals a share of every hit, after the damage event.
         const int regen = StatusPercent(victim, StatusType::DamageTakenRegen);
         if (regen > 0 && victim.hp > 0 && damage > 0) {
@@ -1447,6 +1644,7 @@ private:
         // Bookkeeping that later formulas / mana read.
         if (damage > 0) victim.lastDamagedTick = tick;
         if (credit) {   // (a zone's per-second damage is not "damage this unit dealt": formulas and ally ranking do not see it)
+            attacker.totalDealt += damage;
             attacker.dealt.push_back(DealtEntry{tick, damage, victimIndex});
             while (!attacker.dealt.empty() && attacker.dealt.front().tick <= tick - kDealtHistoryTicks) {
                 attacker.dealt.erase(attacker.dealt.begin());
@@ -1692,42 +1890,74 @@ private:
         const long long hp = Evaluate(effect.maxHp, cast, summonerIndex, tick);
         const long long attack = Evaluate(effect.attackDamage, cast, summonerIndex, tick);
         for (long long k = 0; k < count; ++k) {
-            if (summonsSpawned_ >= kMaxSummonsPerFight || units_.size() >= units_.capacity()) return;
             const FightUnit& summoner = units_[static_cast<std::size_t>(summonerIndex)];
             HexCoord where;
             if (!summoner.alive || !FreeHexNear(summoner.pos, where)) return;
-            const int team = summoner.team;
-            const UnitId summonerId = summoner.id;
-            FightUnit u = MakeUnit(def, star, team, where, kSummonUnitBase + static_cast<UnitId>(++summonsSpawned_), {});
-            u.isSummon = true;
-            u.summoner = summonerIndex;
-            u.startRow = where.y;
-            if (hp > 0) u.maxHp = u.hp = u.baseMaxHp = Clamp32(hp);
-            if (attack > 0) u.damage = Clamp32(attack);
-            units_.push_back(std::move(u));
-            const int index = static_cast<int>(units_.size()) - 1;
-            FightUnit& made = units_.back();
-            grid_.SetBlocked(made.pos, true);
-            ++summonAlive_[team];
+            if (SpawnSummon(def, star, summoner.team, where, summonerIndex, hp, attack, tick) < 0) return;
+        }
+    }
 
-            CombatEvent e = MakeEvent(tick, CombatEventType::Spawn, made.id);
-            e.team = static_cast<std::uint8_t>(team);
-            e.to = made.pos;
-            e.amount = made.maxHp;
-            e.hpAfter = made.hp;
-            e.champion = def->id;
-            e.star = static_cast<std::uint8_t>(made.star);
-            e.manaMax = made.maxMana;
-            e.manaRegen = made.regenMilli;
-            e.other = summonerId;
-            e.flags = kFlagSummon;
-            log_.events.push_back(e);
-            if (made.maxMana > 0 && made.mana > 0) {
-                CombatEvent m = MakeEvent(tick, CombatEventType::ManaChanged, made.id);
-                m.amount = made.mana;
-                log_.events.push_back(m);
+    // A summon appears on `where` (a free hex) for `team`: event, grid, its own passive. `hp` / `attack` > 0 replace its stats. -1 = the cap is reached.
+    int SpawnSummon(const ChampionDefinition* def, int star, int team, HexCoord where, int summonerIndex, long long hp, long long attack, int tick) {
+        if (summonsSpawned_ >= kMaxSummonsPerFight || units_.size() >= units_.capacity()) return -1;
+        const UnitId summonerId = units_[static_cast<std::size_t>(summonerIndex)].id;
+        FightUnit u = MakeUnit(def, star, team, where, kSummonUnitBase + static_cast<UnitId>(++summonsSpawned_), {});
+        u.isSummon = true;
+        u.summoner = summonerIndex;
+        u.startRow = where.y;
+        if (hp > 0) u.maxHp = u.hp = u.baseMaxHp = Clamp32(hp);
+        if (attack > 0) u.damage = Clamp32(attack);
+        units_.push_back(std::move(u));
+        const int index = static_cast<int>(units_.size()) - 1;
+        FightUnit& made = units_.back();
+        grid_.SetBlocked(made.pos, true);
+        ++summonAlive_[team];
+
+        CombatEvent e = MakeEvent(tick, CombatEventType::Spawn, made.id);
+        e.team = static_cast<std::uint8_t>(team);
+        e.to = made.pos;
+        e.amount = made.maxHp;
+        e.hpAfter = made.hp;
+        e.champion = def->id;
+        e.star = static_cast<std::uint8_t>(made.star);
+        e.manaMax = made.maxMana;
+        e.manaRegen = made.regenMilli;
+        e.other = summonerId;
+        e.flags = kFlagSummon;
+        log_.events.push_back(e);
+        if (made.maxMana > 0 && made.mana > 0) {
+            CombatEvent m = MakeEvent(tick, CombatEventType::ManaChanged, made.id);
+            m.amount = made.mana;
+            log_.events.push_back(m);
+        }
+        RunPassives(index);   // a summon's own passive (e.g. untargetable) applies the moment it appears
+        return index;
+    }
+
+    // Superior Lifeform: copies of the caster team's strongest units of a trait (cost, then star, then lowest UnitId), next to each original.
+    void CloneUnits(const CastRecord& cast, const CloneEffect& effect, int tick) {
+        const int team = units_[static_cast<std::size_t>(cast.caster)].team;
+        std::vector<int> ranked;
+        for (std::size_t i = 0; i < units_.size(); ++i) {
+            const FightUnit& u = units_[i];
+            if (u.alive && u.team == team && !u.isSummon && !u.champion->plant && HasTrait(u, effect.trait) && !HasStatus(u, StatusType::Piloting)) {
+                ranked.push_back(static_cast<int>(i));
             }
-            RunPassives(index);   // a summon's own passive (e.g. untargetable) applies the moment it appears
+        }
+        std::sort(ranked.begin(), ranked.end(), [&](int a, int b) {
+            const FightUnit& ua = units_[static_cast<std::size_t>(a)];
+            const FightUnit& ub = units_[static_cast<std::size_t>(b)];
+            if (ua.champion->cost != ub.champion->cost) return ua.champion->cost > ub.champion->cost;
+            if (ua.star != ub.star) return ua.star > ub.star;
+            return a < b;
+        });
+        for (std::size_t k = 0; k < ranked.size() && static_cast<int>(k) < effect.count; ++k) {
+            const FightUnit& original = units_[static_cast<std::size_t>(ranked[k])];
+            HexCoord where;
+            if (!FreeHexNear(original.pos, where)) continue;
+            const long long hp = static_cast<long long>(original.baseMaxHp) * effect.statPercent / 100;
+            const long long attack = std::max<long long>(1, static_cast<long long>(original.damage) * effect.statPercent / 100);
+            SpawnSummon(original.champion, original.star, team, where, cast.caster, hp, attack, tick);
         }
     }
 
@@ -1749,6 +1979,9 @@ private:
     void HealUnit(int sourceIndex, int targetIndex, int amount, int tick) {
         FightUnit& target = units_[static_cast<std::size_t>(targetIndex)];
         if (!target.alive || amount <= 0) return;
+        const int amp = StatusPercent(target, StatusType::HealingAmp);   // Tuned Oscillator
+        if (amp != 0) amount = ApplyPercent(amount, amp);
+        if (amount <= 0) return;
         const int wound = std::clamp(WoundPercent(target), 0, 100);
         const int effective = Clamp32(static_cast<long long>(amount) * (100 - wound) / 100);  // wound 30% -> x0.7
         const int restored = std::min(effective, target.maxHp - target.hp);
@@ -1882,8 +2115,10 @@ private:
         FightUnit& u = units_[static_cast<std::size_t>(targetIndex)];
         const FightUnit& caster = units_[static_cast<std::size_t>(casterIndex)];
         if (!u.alive || targetIndex == casterIndex) return;
-        const int direction = effect.direction == DisplaceDirection::TowardCaster ? hex::DirectionToward(u.pos, caster.pos)
-                                                                                   : hex::DirectionToward(caster.pos, u.pos);
+        if (effect.direction == DisplaceDirection::TowardAreaCenter && u.pos == areaCenter_) return;   // already at the centre
+        const int direction = effect.direction == DisplaceDirection::TowardCaster       ? hex::DirectionToward(u.pos, caster.pos)
+                              : effect.direction == DisplaceDirection::TowardAreaCenter ? hex::DirectionToward(u.pos, areaCenter_)
+                                                                                        : hex::DirectionToward(caster.pos, u.pos);
         HexCoord cursor = u.pos;
         for (int step = 0; step < effect.hexes; ++step) {
             const HexCoord next = hex::Neighbor(cursor, direction);
@@ -1903,14 +2138,24 @@ private:
         u.pathIndex = 0;
     }
 
+    int PathOf(TraitId id) const {
+        for (const auto& p : setup_.traitPaths) {
+            if (p.first == id) return p.second;
+        }
+        return 0;
+    }
+
     // Synergies. Per team: count the DIFFERENT champions (two copies of one count once) per trait, activate the
     // highest breakpoint reached, and apply its effects to each qualifying unit as a self-cast on tick 0.
+    // Trait system v2 on top: a trait with paths uses the match's path; Phaisa's mutations; scope-Team triggers; Hexagon's Invention.
     void ApplyTraits() {
         if (traits_ == nullptr) return;
+        const std::size_t fielded = units_.size();   // (the Invention and souls are appended below; they are no holders)
         for (int team = 0; team < 2; ++team) {
             std::vector<ChampionId> unique;   // different champions on this team (two copies of one count once)
-            for (const FightUnit& u : units_) {
-                if (u.team != team) continue;
+            for (std::size_t i = 0; i < fielded; ++i) {
+                const FightUnit& u = units_[i];
+                if (u.team != team || u.champion->plant) continue;   // plants take part in no count
                 if (std::find(unique.begin(), unique.end(), u.champion->id) == unique.end()) unique.push_back(u.champion->id);
             }
             for (const TraitDefinition& trait : traits_->All()) {  // ascending trait id
@@ -1918,18 +2163,16 @@ private:
                 for (ChampionId champion : unique) {
                     // A champion counts if ANY of its copies has the trait -- its own, or granted by an item (an emblem).
                     bool has = false;
-                    for (const FightUnit& u : units_) has = has || (u.team == team && u.champion->id == champion && HasTrait(u, trait.name));
+                    for (std::size_t i = 0; i < fielded; ++i) {
+                        const FightUnit& u = units_[i];
+                        has = has || (u.team == team && u.champion->id == champion && HasTrait(u, trait.name));
+                    }
                     if (has) ++count;
                 }
-                const TraitBreakpoint* active = nullptr;
-                int tier = 0;
-                for (std::size_t i = 0; i < trait.breakpoints.size(); ++i) {
-                    if (count >= trait.breakpoints[i].count) {
-                        active = &trait.breakpoints[i];
-                        tier = static_cast<int>(i) + 1;
-                    }
-                }
-                if (active == nullptr) continue;
+                const std::vector<TraitBreakpoint>& breakpoints = trait.Breakpoints(PathOf(trait.id));
+                const int tier = ActiveTier(breakpoints, count);
+                if (tier == 0) continue;
+                const TraitBreakpoint* active = &breakpoints[static_cast<std::size_t>(tier - 1)];
 
                 CombatEvent e = MakeEvent(0, CombatEventType::TraitActivated, kInvalidUnitId);
                 e.team = static_cast<std::uint8_t>(team);
@@ -1940,7 +2183,7 @@ private:
 
                 for (const TraitEffect& te : active->effects) {
                     if (te.scope == TraitScope::Team) {   // once for the whole team, cast by its first (lowest UnitId) holder
-                        for (std::size_t i = 0; i < units_.size(); ++i) {
+                        for (std::size_t i = 0; i < fielded; ++i) {
                             if (units_[i].team != team || !HasTrait(units_[i], trait.name)) continue;
                             CastRecord cast;
                             cast.caster = static_cast<int>(i);
@@ -1951,9 +2194,9 @@ private:
                         }
                         continue;
                     }
-                    for (std::size_t i = 0; i < units_.size(); ++i) {
+                    for (std::size_t i = 0; i < fielded; ++i) {
                         FightUnit& u = units_[i];
-                        if (u.team != team || u.isSummon) continue;   // synergies are for the team's real units
+                        if (u.team != team || u.isSummon || u.champion->plant) continue;   // synergies are for the team's real units
                         const bool holds = HasTrait(u, trait.name);
                         if (te.scope == TraitScope::TraitHolders && !holds) continue;
                         CastRecord cast;
@@ -1965,14 +2208,172 @@ private:
                     }
                 }
                 for (const TraitTrigger& tt : active->triggers) {   // hooks the synergy hands to every unit in scope
-                    for (FightUnit& u : units_) {
-                        if (u.team != team || u.isSummon) continue;
-                        if (tt.scope == TraitScope::TraitHolders && !HasTrait(u, trait.name)) continue;
-                        u.triggers.push_back(TriggerSlot{&tt.ability, 0, 0, true});
+                    for (std::size_t i = 0; i < fielded; ++i) {
+                        FightUnit& u = units_[i];
+                        if (u.team != team || u.isSummon || u.champion->plant) continue;
+                        if (tt.scope != TraitScope::AllAllies && !HasTrait(u, trait.name)) continue;
+                        TriggerSlot slot{&tt.ability, 0, 0, true};
+                        slot.teamOnce = tt.scope == TraitScope::Team;
+                        u.triggers.push_back(slot);
                     }
+                }
+                if (active->mutationSlots != 0) ApplyMutations(team, trait, *active, fielded);
+                if (trait.invention != 0) {
+                    int moduleTier = 0;
+                    for (int k = 0; k < tier; ++k) moduleTier = std::max(moduleTier, breakpoints[static_cast<std::size_t>(k)].moduleTier);
+                    if (moduleTier > 0) SpawnInvention(team, trait, moduleTier, fielded);
                 }
             }
         }
+    }
+
+    // Phaisa: the `mutationSlots` strongest holders (cost, then star, then lowest UnitId; -1 = all of them) each get the first mutation whose classes
+    // they carry (the class-less one otherwise), supercharged at the top breakpoint.
+    void ApplyMutations(int team, const TraitDefinition& trait, const TraitBreakpoint& bp, std::size_t fielded) {
+        std::vector<int> holders;
+        for (std::size_t i = 0; i < fielded; ++i) {
+            const FightUnit& u = units_[i];
+            if (u.team == team && !u.isSummon && !u.champion->plant && HasTrait(u, trait.name)) holders.push_back(static_cast<int>(i));
+        }
+        std::sort(holders.begin(), holders.end(), [&](int a, int b) {
+            const FightUnit& ua = units_[static_cast<std::size_t>(a)];
+            const FightUnit& ub = units_[static_cast<std::size_t>(b)];
+            if (ua.champion->cost != ub.champion->cost) return ua.champion->cost > ub.champion->cost;
+            if (ua.star != ub.star) return ua.star > ub.star;
+            return a < b;
+        });
+        const std::size_t slots = bp.mutationSlots < 0 ? holders.size() : std::min(holders.size(), static_cast<std::size_t>(bp.mutationSlots));
+        for (std::size_t k = 0; k < slots; ++k) {
+            const int index = holders[k];
+            FightUnit& u = units_[static_cast<std::size_t>(index)];
+            const TraitMutation* chosen = nullptr;
+            const TraitMutation* fallback = nullptr;
+            for (const TraitMutation& m : trait.mutations) {
+                if (m.classes.empty()) {
+                    if (fallback == nullptr) fallback = &m;
+                    continue;
+                }
+                for (const std::string& cls : m.classes) {
+                    if (HasTrait(u, cls)) { chosen = &m; break; }
+                }
+                if (chosen != nullptr) break;
+            }
+            if (chosen == nullptr) chosen = fallback;
+            if (chosen == nullptr) continue;
+            const bool super = bp.supercharge && (!chosen->superEffects.empty() || !chosen->superTriggers.empty());
+            CastRecord cast;
+            cast.caster = index;
+            cast.target = -1;
+            cast.center = u.pos;
+            for (const AbilityEffect& effect : super ? chosen->superEffects : chosen->effects) RunOrSchedule(cast, effect, 0);
+            for (const AbilityDefinition& hook : super ? chosen->superTriggers : chosen->triggers) u.triggers.push_back(TriggerSlot{&hook, 0, 0, true});
+        }
+    }
+
+    // Hexagon's Invention: a summon on the team's right-most back hex that fires the chosen modules (those of an unlocked tier) -- each module's
+    // effects carry their own delay (8 s). Echo Engine repeats them every `echoEveryTicks`.
+    void SpawnInvention(int team, const TraitDefinition& trait, int moduleTier, std::size_t fielded) {
+        const ChampionDefinition* def = FindSummon(trait.invention);
+        if (def == nullptr || !def->stats.IsCombatCapable()) return;
+        int holder = -1;
+        for (std::size_t i = 0; i < fielded && holder < 0; ++i) {
+            if (units_[i].team == team && HasTrait(units_[i], trait.name)) holder = static_cast<int>(i);
+        }
+        if (holder < 0) return;
+        HexCoord where = BoardToArena(kBoardColumns - 1, 0, team == 0 ? ArenaSide::Home : ArenaSide::Away);
+        if (grid_.IsBlocked(where) && !FreeHexNear(where, where)) return;
+        const int index = SpawnSummon(def, 1, team, where, holder, 0, 0, 0);
+        if (index < 0) return;
+        std::vector<const AbilityDefinition*> modules;
+        int echo = 0;
+        for (std::uint32_t id : setup_.teams[team].modules) {
+            const TraitModule* m = trait.FindModule(id);
+            if (m == nullptr || m->tier > moduleTier) continue;
+            if (m->echo) echo = m->echoEveryTicks;
+            if (m->ability.HasAbility()) modules.push_back(&m->ability);
+        }
+        for (const AbilityDefinition* ability : modules) {
+            CastRecord cast;
+            cast.caster = index;
+            cast.target = -1;
+            cast.center = where;
+            cast.ability = ability;
+            for (const AbilityEffect& effect : ability->effects) {
+                RunOrSchedule(cast, effect, 0);
+                for (int k = 1; echo > 0 && k <= kMaxEchoes; ++k) RunOrSchedule(cast, effect, 0, k * echo);
+            }
+        }
+    }
+
+    // Hexa: the ally on the hex directly behind it (toward its own back row) climbs in. The pilot leaves the fight (Piloting) and the mech gains a
+    // share of its max HP and the bonus of its class.
+    void ApplyPilots() {
+        const std::size_t fielded = units_.size();
+        for (std::size_t i = 0; i < fielded; ++i) {
+            if (!units_[i].champion->pilot.enabled || units_[i].isSummon) continue;
+            const HexCoord behind{units_[i].pos.x, units_[i].pos.y + (units_[i].team == 0 ? -1 : 1)};
+            int pilot = -1;
+            for (std::size_t j = 0; j < fielded && pilot < 0; ++j) {
+                const FightUnit& p = units_[j];
+                if (j != i && p.team == units_[i].team && p.alive && !p.isSummon && !p.champion->plant && !p.champion->pilot.enabled && p.mech < 0 &&
+                    p.pos == behind) {
+                    pilot = static_cast<int>(j);
+                }
+            }
+            if (pilot < 0) continue;
+            FightUnit& mech = units_[i];
+            FightUnit& p = units_[static_cast<std::size_t>(pilot)];
+            mech.pilot = pilot;
+            p.mech = static_cast<int>(i);
+            anyPilot_ = true;
+            AddStatus(p, true, StatusType::Piloting, 0, std::numeric_limits<int>::max(), false, static_cast<int>(i));
+            CombatEvent in = MakeEvent(0, CombatEventType::StatusApplied, p.id);
+            in.other = mech.id;
+            in.subtype = static_cast<std::uint8_t>(StatusType::Piloting);
+            in.hpAfter = p.hp;
+            log_.events.push_back(in);
+
+            CastRecord cast;
+            cast.caster = static_cast<int>(i);
+            cast.target = -1;
+            cast.center = mech.pos;
+            StatusEffect hp;
+            hp.status = StatusType::BonusMaxHp;
+            hp.permanent = true;
+            hp.value = FlatAmount(Same(Clamp32(static_cast<long long>(p.maxHp) * mech.champion->pilot.hpPercent / 100)));
+            AbilityEffect grant;
+            grant.target = TargetSpec::Self();
+            grant.payload = hp;
+            ExecuteEffect(cast, grant, 0);
+            for (const PilotBonus& bonus : mech.champion->pilot.bonuses) {
+                bool match = false;
+                for (const std::string& t : bonus.traits) match = match || HasTrait(p, t);
+                if (!match) continue;
+                for (const AbilityEffect& effect : bonus.effects) RunOrSchedule(cast, effect, 0);
+                break;
+            }
+        }
+    }
+
+    // Hexa died: its pilot is back in the fight, on its own hex, as it went in (and now runs its passive).
+    void EjectPilot(int mechIndex, int tick) {
+        FightUnit& mech = units_[static_cast<std::size_t>(mechIndex)];
+        if (mech.pilot < 0) return;
+        const int pilot = mech.pilot;
+        mech.pilot = -1;
+        FightUnit& p = units_[static_cast<std::size_t>(pilot)];
+        p.mech = -1;
+        if (!p.alive) return;
+        p.statuses.erase(std::remove_if(p.statuses.begin(), p.statuses.end(), [](const StatusInst& st) { return st.type == StatusType::Piloting; }),
+                         p.statuses.end());
+        CombatEvent out = MakeEvent(tick, CombatEventType::StatusEnded, p.id);
+        out.subtype = static_cast<std::uint8_t>(StatusType::Piloting);
+        out.hpAfter = p.hp;
+        log_.events.push_back(out);
+        SetTarget(p, -1);
+        p.nextAttackTick = std::max(p.nextAttackTick, tick + 1);
+        p.nextMoveTick = std::max(p.nextMoveTick, tick + 1);
+        RunPassives(pilot);
     }
 
     void ApplyManaFromDamage(int tick) {
@@ -2011,6 +2412,25 @@ private:
             }
             if (dead.empty()) return;
 
+            for (int i : dead) {
+                FightUnit& victim = units_[static_cast<std::size_t>(i)];
+                if (!victim.isSummon) {   // takedowns: every enemy that hurt it in the last 3 s (the killing blow included)
+                    for (FightUnit& other : units_) {
+                        if (other.team == victim.team || other.isSummon) continue;
+                        for (const DealtEntry& d : other.dealt) {
+                            if (d.target == i && d.tick > tick - kTakedownWindowTicks) {
+                                ++other.takedowns;
+                                break;
+                            }
+                        }
+                    }
+                }
+                for (TriggerSlot& slot : victim.triggers) {   // its own last act (the Stonebark Tree's stun)
+                    if (slot.ability->trigger == EventTrigger::OnDeath) FireHook(i, slot, -1, i, 0, true, tick);
+                }
+                EjectPilot(i, tick);
+            }
+
             // On-kill statuses: the killer gains them (e.g. Lunis drops aggro), evaluated with the victim as the cast target.
             for (int i : dead) {
                 FightUnit& victim = units_[static_cast<std::size_t>(i)];
@@ -2043,8 +2463,15 @@ private:
                 for (std::size_t j = 0; j < units_.size(); ++j) {
                     FightUnit& holder = units_[j];
                     if (!holder.alive) continue;
+                    const FightUnit& fallen = units_[static_cast<std::size_t>(i)];
                     for (TriggerSlot& slot : holder.triggers) {
-                        if (slot.ability->trigger == EventTrigger::OnAnyUnitDeath) FireHook(static_cast<int>(j), slot, -1, i, 0, true, tick);
+                        const EventTrigger t = slot.ability->trigger;
+                        const bool ally = fallen.team == holder.team && static_cast<int>(j) != i &&
+                                          (slot.ability->triggerTrait.empty() || HasTrait(fallen, slot.ability->triggerTrait));
+                        if (t == EventTrigger::OnAnyUnitDeath || (t == EventTrigger::OnEnemyDeath && fallen.team != holder.team) ||
+                            (t == EventTrigger::OnAllyDeath && ally)) {
+                            FireHook(static_cast<int>(j), slot, -1, i, 0, true, tick);
+                        }
                     }
                 }
             }
@@ -2057,6 +2484,7 @@ private:
 
     CombatConfig config_;
     const TraitDatabase* traits_;
+    FightSetup setup_;
     const ChampionDatabase* summons_;
     const ChampionDatabase* summons2_;
     int maxTicks_;
@@ -2072,17 +2500,21 @@ private:
     int summonsSpawned_ = 0;
     int summonAlive_[2] = {0, 0};
     std::vector<int> targets_;  // scratch
+    HexCoord areaCenter_{};     // the centre the last area target resolved to (Displace TowardAreaCenter follows it)
     int alive_[2] = {0, 0};
     int busiestRow_[2] = {-1, -1};
     int pathSearches_ = 0;
     int castSerial_ = 0;
+    long long teamMaxHp_[2] = {0, 0};   // OnTeamHpLoss: the teams' total max HP at the start
+    std::vector<std::pair<const AbilityDefinition*, int>> teamOnce_[2];   // scope-Team OnTeamHpLoss hooks: steps already fired, per team
+    bool anyPilot_ = false;
     CombatLog log_;
 };
 
 }  // namespace
 
-FightResult CombatSimulator::RunFight(const std::vector<FightUnitSpec>& units, int maxTicks, std::uint64_t seed) const {
-    return Fight(config_, traits_, units, maxTicks, seed, summons_, nullptr).Run();
+FightResult CombatSimulator::RunFight(const std::vector<FightUnitSpec>& units, int maxTicks, std::uint64_t seed, const FightSetup& setup) const {
+    return Fight(config_, traits_, units, maxTicks, seed, summons_, nullptr, setup).Run();
 }
 
 std::vector<CombatOutcome> CombatSimulator::Simulate(const CombatContext& context) {
@@ -2126,10 +2558,22 @@ std::vector<CombatOutcome> CombatSimulator::Simulate(const CombatContext& contex
             }
         }
 
+        // What the fight needs to know about the players (trait system v2).
+        FightSetup setup;
+        setup.traitPaths = context.traitPaths;
+        for (int team = 0; team < 2; ++team) {
+            if (team == 1 && matchup.awayIsMonsters) continue;
+            const PlayerState* player = context.players.Get(owners[team]);
+            if (player == nullptr) continue;
+            setup.teams[team].playerLevel = player->Level();
+            setup.teams[team].traitGold = player->Traits().traitGold;
+            setup.teams[team].modules = player->Traits().modules;
+        }
+
         // Each fight gets its own crit stream, derived from the round's seed.
         const std::uint64_t fightSeed = context.seed + 0x9E3779B97F4A7C15ull * (++matchupIndex);
         FightResult fight = Fight(config_, traits_, specs, context.maxTicks, fightSeed, context.champions != nullptr ? context.champions : summons_,
-                                  context.encounters != nullptr ? &context.encounters->Monsters() : nullptr).Run();
+                                  context.encounters != nullptr ? &context.encounters->Monsters() : nullptr, setup).Run();
         CombatOutcome outcome;
         outcome.matchup = matchup;
         outcome.winner = fight.winner;

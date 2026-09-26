@@ -41,7 +41,8 @@ constexpr EnumName<StatusType> kStatusTypes[] = {
     {"AbilityCrit", StatusType::AbilityCrit}, {"CritDamage", StatusType::CritDamage}, {"CritDamageTakenReduction", StatusType::CritDamageTakenReduction},
     {"BonusManaRegen", StatusType::BonusManaRegen}, {"AbilityPower", StatusType::AbilityPower}, {"SpellShield", StatusType::SpellShield},
     {"Blind", StatusType::Blind}, {"DamageTaken", StatusType::DamageTaken}, {"BonusMaxMana", StatusType::BonusMaxMana},
-    {"ExecuteBelow", StatusType::ExecuteBelow}, {"HpPerSecond", StatusType::HpPerSecond}, {"EmpoweredAttack", StatusType::EmpoweredAttack}};
+    {"ExecuteBelow", StatusType::ExecuteBelow}, {"HpPerSecond", StatusType::HpPerSecond}, {"EmpoweredAttack", StatusType::EmpoweredAttack},
+    {"ManaCost", StatusType::ManaCost}, {"HealingAmp", StatusType::HealingAmp}, {"Omnivamp", StatusType::Omnivamp}, {"Awakened", StatusType::Awakened}};
 constexpr EnumName<StatSource> kSources[] = {
     {"SelfMaxHp", StatSource::SelfMaxHp},
     {"SelfCurrentHp", StatSource::SelfCurrentHp},
@@ -57,7 +58,11 @@ constexpr EnumName<StatSource> kSources[] = {
     {"TargetMaxHp", StatSource::TargetMaxHp},
     {"TargetCurrentHp", StatSource::TargetCurrentHp},
     {"DamageDealtInWindow", StatSource::DamageDealtInWindow},
-    {"RawDamageDealtToTarget", StatSource::RawDamageDealtToTarget}};
+    {"RawDamageDealtToTarget", StatSource::RawDamageDealtToTarget},
+    {"PlayerLevel", StatSource::PlayerLevel},
+    {"TraitGold", StatSource::TraitGold},
+    {"TraitStarLevel", StatSource::TraitStarLevel},
+    {"TargetCastCount", StatSource::TargetCastCount}};
 constexpr EnumName<TargetMode> kTargetModes[] = {{"Self", TargetMode::Self},
                                                  {"CurrentTarget", TargetMode::CurrentTarget},
                                                  {"AreaAroundTarget", TargetMode::AreaAroundTarget},
@@ -68,6 +73,7 @@ constexpr EnumName<TargetMode> kTargetModes[] = {{"Self", TargetMode::Self},
                                                  {"HighestDamageAlly", TargetMode::HighestDamageAlly},
                                                  {"LowestHpAlly", TargetMode::LowestHpAlly},
                                                  {"HighestHpEnemyNearTarget", TargetMode::HighestHpEnemyNearTarget},
+                                                 {"AreaAroundDensestEnemy", TargetMode::AreaAroundDensestEnemy},
                                                  {"RandomEnemy", TargetMode::RandomEnemy},
                                                  {"ConeTowardTarget", TargetMode::ConeTowardTarget},
                                                  {"TriggerAttacker", TargetMode::TriggerAttacker},
@@ -75,13 +81,15 @@ constexpr EnumName<TargetMode> kTargetModes[] = {{"Self", TargetMode::Self},
                                                  {"LowestHpEnemy", TargetMode::LowestHpEnemy},
                                                  {"HighestHpEnemy", TargetMode::HighestHpEnemy},
                                                  {"AllEnemies", TargetMode::AllEnemies},
-                                                 {"AllAllies", TargetMode::AllAllies}};
+                                                 {"AllAllies", TargetMode::AllAllies},
+                                                 {"TopDamageEnemies", TargetMode::TopDamageEnemies}};
 constexpr EnumName<TeleportDestination> kDestinations[] = {{"BehindFarthestEnemy", TeleportDestination::BehindFarthestEnemy},
                                                            {"BehindClosestEnemy", TeleportDestination::BehindClosestEnemy},
                                                            {"NextToLowestHpEnemy", TeleportDestination::NextToLowestHpEnemy},
                                                            {"NextToHighestHpEnemy", TeleportDestination::NextToHighestHpEnemy},
                                                            {"BehindCurrentTarget", TeleportDestination::BehindCurrentTarget}};
-constexpr EnumName<DisplaceDirection> kDisplaceDirections[] = {{"Toward", DisplaceDirection::TowardCaster}, {"Away", DisplaceDirection::AwayFromCaster}};
+constexpr EnumName<DisplaceDirection> kDisplaceDirections[] = {{"Toward", DisplaceDirection::TowardCaster}, {"Away", DisplaceDirection::AwayFromCaster},
+                                                                  {"TowardAreaCenter", DisplaceDirection::TowardAreaCenter}};
 constexpr EnumName<GiftType> kGiftTypes[] = {{"Gold", GiftType::Gold}, {"Xp", GiftType::Xp}, {"Heal", GiftType::Heal}, {"Item", GiftType::Item}, {"Unit", GiftType::Unit}};
 constexpr EnumName<ItemClass> kItemClasses[] = {{"Any", ItemClass::Any}, {"Component", ItemClass::Component}, {"Legendary", ItemClass::Legendary}, {"Emblem", ItemClass::Emblem}};
 constexpr EnumName<PveDropType> kDropTypes[] = {{"Gold", PveDropType::Gold}, {"Champion", PveDropType::Champion}, {"Item", PveDropType::Item}};
@@ -102,7 +110,11 @@ constexpr EnumName<CastTrigger> kTriggers[] = {{"Mana", CastTrigger::Mana},
                                                {"OnAllyDealDamage", CastTrigger::OnAllyDealDamage},
                                                {"OnAnyUnitDeath", CastTrigger::OnAnyUnitDeath},
                                                {"OnShieldBreak", CastTrigger::OnShieldBreak},
-                                               {"EveryInterval", CastTrigger::EveryInterval}};
+                                               {"EveryInterval", CastTrigger::EveryInterval},
+                                               {"OnEnemyDeath", CastTrigger::OnEnemyDeath},
+                                               {"OnTeamHpLoss", CastTrigger::OnTeamHpLoss},
+                                               {"OnDeath", CastTrigger::OnDeath},
+                                               {"OnAllyDeath", CastTrigger::OnAllyDeath}};
 constexpr EnumName<EffectCondition> kConditions[] = {{"NoDamageTakenSinceCast", EffectCondition::NoDamageTakenSinceCast}};
 
 constexpr long long kMaxStat = 10'000'000;
@@ -523,11 +535,14 @@ private:
         if (permille && o.value->Find("percent") != nullptr) return Fail(path, v, "give either \"percent\" or \"permille\", not both");
         if (permille) percent = permille;
         else if (!Require(o, "percent", percent)) return false;
+        const Value* trait = Take(o, "trait");
         int window = 0;
         bool haveWindow = false;
         if (!ReadScalarTime(o, "window", window, haveWindow)) return false;
         if (!RejectUnknown(o)) return false;
         if (!ReadEnum(*source, path + ".source", kSources, out.source)) return false;
+        if ((out.source == StatSource::TraitStarLevel) != (trait != nullptr)) return Fail(path, v, "a TraitStarLevel term (and only that) names a \"trait\"");
+        if (trait && !ReadString(*trait, path + ".trait", out.trait)) return false;
         if (!ReadStarInts(*percent, path + (permille ? ".permille" : ".percent"), kMinPercent * (permille ? 10 : 1), kMaxPercent * (permille ? 10 : 1), out.percent)) return false;
         if (permille) out.divisor = 1000;
         out.windowTicks = window;
@@ -571,11 +586,19 @@ private:
         const Value* side = Take(o, "side");
         const Value* count = Take(o, "count");
         const Value* length = Take(o, "length");
+        const Value* traitFilter = Take(o, "trait");         // only units carrying this trait tag
+        const Value* championFilter = Take(o, "champion");   // only units of this champion
         int window = 0;
         bool haveWindow = false;
         if (!ReadScalarTime(o, "window", window, haveWindow)) return false;
         if (!RejectUnknown(o) || !ReadEnum(*mode, path + ".mode", kTargetModes, out.mode)) return false;
-        const bool area = out.mode == TargetMode::AreaAroundTarget || out.mode == TargetMode::AreaAroundSelf;
+        if (traitFilter && !ReadString(*traitFilter, path + ".trait", out.trait)) return false;
+        if (championFilter) {
+            int id = 0;
+            if (!ReadInt(*championFilter, path + ".champion", 1, 2'000'000'000, id)) return false;
+            out.champion = static_cast<ChampionId>(id);
+        }
+        const bool area = out.mode == TargetMode::AreaAroundTarget || out.mode == TargetMode::AreaAroundSelf || out.mode == TargetMode::AreaAroundDensestEnemy;
         const bool zone = area || out.mode == TargetMode::HighestHpEnemyNearTarget;
         switch (out.mode) {
             case TargetMode::Self: out.side = TargetSide::All; break;
@@ -588,10 +611,10 @@ private:
         if (zone && !radius) return Missing(o, "radius");
         if (!zone && radius) return Fail(path, v, "\"radius\" only applies to the Area modes and HighestHpEnemyNearTarget");
         if (includeCenter && !area) return Fail(path, v, "\"includeCenter\" only applies to the Area modes");
-        if (out.mode == TargetMode::ClosestEnemies) {
+        if (out.mode == TargetMode::ClosestEnemies || out.mode == TargetMode::TopDamageEnemies) {
             if (!count) return Missing(o, "count");
-        } else if (count && !area) {
-            return Fail(path, v, "\"count\" only applies to ClosestEnemies and the Area modes (at most that many, nearest first)");
+        } else if (count && !area && out.mode != TargetMode::LowestHpAlly) {
+            return Fail(path, v, "\"count\" only applies to ClosestEnemies, LowestHpAlly and the Area modes (at most that many, nearest first)");
         }
         const bool lineLike = out.mode == TargetMode::LineBehindTarget || out.mode == TargetMode::ConeTowardTarget;
         if (lineLike) {
@@ -602,7 +625,12 @@ private:
         if (haveWindow && out.mode != TargetMode::HighestDamageAlly) return Fail(path, v, "a window only applies to HighestDamageAlly");
         if (radius && !ReadInt(*radius, path + ".radius", 0, 32, out.radius)) return false;
         if (includeCenter && !ReadBool(*includeCenter, path + ".includeCenter", out.includeCenter)) return false;
-        if (count && !ReadInt(*count, path + ".count", 1, 16, out.count)) return false;
+        if (count && count->IsArray()) {   // per star: [2, 3, 3]
+            if (!ReadStarInts(*count, path + ".count", 1, 16, out.countPerStar)) return false;
+            out.count = out.countPerStar[0];
+        } else if (count && !ReadInt(*count, path + ".count", 1, 16, out.count)) {
+            return false;
+        }
         if (length && !ReadInt(*length, path + ".length", 1, 16, out.radius)) return false;
         if (side && !ReadEnum(*side, path + ".side", kSides, out.side)) return false;
         out.windowTicks = window;
@@ -643,7 +671,14 @@ private:
                 s.duration = FlatAmount(flat);
             }
         }
-        if (percent && !ReadStarInts(*percent, path + ".percent", kMinPercent, kMaxPercent, s.percent)) return false;
+        if (percent && percent->IsObject() && !IsFlatBonusStatus(s.status)) {   // {"flat": 10, "terms": [...]}: a percent that is a formula
+            if (!ReadAmount(*percent, path + ".percent", s.value)) return false;
+            s.percentFromValue = true;
+            percent = nullptr;
+            if (value) return Fail(path, v, "a formula percent cannot also have a \"value\"");
+        } else if (percent && !ReadStarInts(*percent, path + ".percent", kMinPercent, kMaxPercent, s.percent)) {
+            return false;
+        }
         const bool durationOnly = s.status == StatusType::Blind || s.status == StatusType::Stun || s.status == StatusType::Root || s.status == StatusType::Knockup ||
                                   s.status == StatusType::CcImmunity || s.status == StatusType::Untargetable || s.status == StatusType::AggroDrop ||
                                   s.status == StatusType::AbilityCrit || s.status == StatusType::SpellShield;
@@ -653,7 +688,7 @@ private:
             if (!ReadAmount(*value, path + ".value", s.value)) return false;
         } else {
             if (value) return Fail(path, v, "\"value\" only applies to the flat bonus statuses (BonusAttackDamage, BonusArmor, ...)");
-            if (!percent && !durationOnly) return Missing(o, "percent");
+            if (!percent && !durationOnly && !s.percentFromValue && s.status != StatusType::Awakened) return Missing(o, "percent");
         }
         if (multiplier && !ReadInt(*multiplier, path + ".multiplierPercent", 0, kMaxPercent, s.multiplierPercent)) return false;
         return true;
@@ -723,7 +758,9 @@ private:
             const Value* canCrit = Take(o, "canCrit");
             const Value* armorPen = Take(o, "armorPenPercent");
             const Value* onKill = Take(o, "onKill");
+            const Value* bounce = Take(o, "bounceOnCritPercent");
             if (!RejectUnknown(o)) return false;
+            if (bounce && !ReadInt(*bounce, path + ".bounceOnCritPercent", 0, 1000, d.bounceOnCritPercent)) return false;
             if (!damageType) return Missing(o, "damageType");
             if (!ReadEnum(*damageType, path + ".damageType", kDamageTypes, d.type) || !ReadAmount(*amount, path + ".amount", d.amount)) return false;
             if (multiplier && !ReadInt(*multiplier, path + ".multiplierPercent", 0, kMaxPercent, d.multiplierPercent)) return false;
@@ -843,8 +880,33 @@ private:
             if (interval < 1) return Fail(path + ".interval", v, "the interval must be at least 1 tick");
             d.intervalTicks = interval;
             out.payload = d;
+        } else if (kind == "AllyStrike") {
+            AllyStrikeEffect as;
+            const Value* ally = nullptr;
+            const Value* percent = nullptr;
+            if (!Require(o, "champion", ally) || !Require(o, "percentOfAllyAttackDamage", percent)) return false;
+            const Value* damageType = Take(o, "damageType");
+            const Value* canCrit = Take(o, "canCrit");
+            if (!RejectUnknown(o)) return false;
+            int allyId = 0;
+            if (!ReadInt(*ally, path + ".champion", 1, 2'000'000'000, allyId)) return false;
+            as.ally = static_cast<ChampionId>(allyId);
+            if (!ReadStarInts(*percent, path + ".percentOfAllyAttackDamage", 0, 10000, as.percentOfAllyAttackDamage)) return false;
+            if (damageType && !ReadEnum(*damageType, path + ".damageType", kDamageTypes, as.type)) return false;
+            if (canCrit && !ReadBool(*canCrit, path + ".canCrit", as.canCrit)) return false;
+            out.payload = as;
+        } else if (kind == "Clone") {
+            CloneEffect ce;
+            const Value* trait = nullptr;
+            if (!Require(o, "trait", trait)) return false;
+            const Value* count = Take(o, "count");
+            const Value* statPercent = Take(o, "statPercent");
+            if (!RejectUnknown(o) || !ReadString(*trait, path + ".trait", ce.trait)) return false;
+            if (count && !ReadInt(*count, path + ".count", 1, 4, ce.count)) return false;
+            if (statPercent && !ReadInt(*statPercent, path + ".statPercent", 1, 200, ce.statPercent)) return false;
+            out.payload = ce;
         } else {
-            return Fail(path + ".type", *type, "unknown effect type \"" + kind + "\"; expected one of: Damage, Shield, Status, DoT, Heal, Teleport, Displace, Mana, Summon");
+            return Fail(path + ".type", *type, "unknown effect type \"" + kind + "\"; expected one of: Damage, Shield, Status, DoT, Heal, Teleport, Displace, Mana, Summon, AllyStrike, Clone");
         }
         return true;
     }
@@ -867,6 +929,9 @@ private:
         const Value* castOnDeath = Take(o, "castOnDeath");
         const Value* requiresCharge = Take(o, "requiresCharge");
         const Value* onlyShieldsFrom = Take(o, "onlyShieldsFrom");
+        const Value* afterAttacks = Take(o, "afterAttacks");
+        const Value* triggerTrait = Take(o, "triggerTrait");
+        const Value* stopsOnDeath = Take(o, "stopsOnDeath");
         int interval = 0;
         bool haveInterval = false;
         int lock = 0;
@@ -899,6 +964,9 @@ private:
         if (resetOnTargetChange && !ReadBool(*resetOnTargetChange, path + ".resetOnTargetChange", out.resetCountOnTargetChange)) return false;
         if (castOnDeath && !ReadBool(*castOnDeath, path + ".castOnDeath", out.castOnDeath)) return false;
         if (requiresCharge && !ReadBool(*requiresCharge, path + ".requiresCharge", out.requiresCharge)) return false;
+        if (afterAttacks && !ReadStarInts(*afterAttacks, path + ".afterAttacks", 0, 1000, out.afterAttacks)) return false;
+        if (triggerTrait && !ReadString(*triggerTrait, path + ".triggerTrait", out.triggerTrait)) return false;
+        if (stopsOnDeath && !ReadBool(*stopsOnDeath, path + ".stopsOnDeath", out.stopsOnDeath)) return false;
         if (onlyShieldsFrom) {
             int from = 0;
             if (!ReadInt(*onlyShieldsFrom, path + ".onlyShieldsFrom", 1, 2'000'000'000, from)) return false;
@@ -1115,23 +1183,144 @@ private:
         const Value* name = nullptr;
         if (!Require(o, "id", id) || !Require(o, "name", name)) return false;
         const Value* breakpoints = Take(o, "breakpoints");
+        const Value* paths = Take(o, "paths");
+        const Value* mutations = Take(o, "mutations");
+        const Value* modules = Take(o, "modules");
+        const Value* invention = Take(o, "invention");
+        const Value* queen = Take(o, "queen");
         if (!RejectUnknown(o)) return false;
         int idValue = 0;
         if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
         out.id = static_cast<TraitId>(idValue);
         if (!ReadString(*name, path + ".name", out.name)) return false;
-        if (!breakpoints) return true;   // a trait tag with no synergy (yet)
-        if (!breakpoints->IsArray()) return Fail(path + ".breakpoints", *breakpoints, std::string("expected an array, found ") + Value::TypeName(breakpoints->type()));
-        for (std::size_t i = 0; i < breakpoints->Items().size(); ++i) {
-            const std::string bpPath = path + ".breakpoints[" + std::to_string(i) + "]";
+        if (breakpoints && !ReadBreakpoints(*breakpoints, path + ".breakpoints", out.breakpoints)) return false;
+        if (paths) {   // [ { "name": "Enlightenment", "breakpoints": [...] }, ... ]
+            if (!paths->IsArray()) return Fail(path + ".paths", *paths, "expected an array");
+            for (std::size_t i = 0; i < paths->Items().size(); ++i) {
+                const std::string pp = path + ".paths[" + std::to_string(i) + "]";
+                Obj p;
+                if (!Open(paths->Items()[i], pp, p)) return false;
+                const Value* pathName = nullptr;
+                const Value* pathBreakpoints = nullptr;
+                if (!Require(p, "name", pathName) || !Require(p, "breakpoints", pathBreakpoints) || !RejectUnknown(p)) return false;
+                TraitPath tp;
+                if (!ReadString(*pathName, pp + ".name", tp.name) || !ReadBreakpoints(*pathBreakpoints, pp + ".breakpoints", tp.breakpoints)) return false;
+                out.paths.push_back(std::move(tp));
+            }
+        }
+        if (mutations) {
+            if (!mutations->IsArray()) return Fail(path + ".mutations", *mutations, "expected an array");
+            for (std::size_t i = 0; i < mutations->Items().size(); ++i) {
+                const std::string mp = path + ".mutations[" + std::to_string(i) + "]";
+                Obj m;
+                if (!Open(mutations->Items()[i], mp, m)) return false;
+                const Value* mName = nullptr;
+                if (!Require(m, "name", mName)) return false;
+                const Value* classes = Take(m, "classes");
+                const Value* effects = Take(m, "effects");
+                const Value* triggers = Take(m, "triggers");
+                const Value* superEffects = Take(m, "superEffects");
+                const Value* superTriggers = Take(m, "superTriggers");
+                if (!RejectUnknown(m)) return false;
+                TraitMutation mutation;
+                if (!ReadString(*mName, mp + ".name", mutation.name)) return false;
+                if (classes) {
+                    if (!classes->IsArray()) return Fail(mp + ".classes", *classes, "expected an array of trait names");
+                    for (std::size_t c = 0; c < classes->Items().size(); ++c) {
+                        std::string cls;
+                        if (!ReadString(classes->Items()[c], mp + ".classes[" + std::to_string(c) + "]", cls)) return false;
+                        mutation.classes.push_back(std::move(cls));
+                    }
+                }
+                if (effects && !ReadEffectList(*effects, mp + ".effects", mutation.effects)) return false;
+                if (superEffects && !ReadEffectList(*superEffects, mp + ".superEffects", mutation.superEffects)) return false;
+                if (triggers && !ReadAbilityList(*triggers, mp + ".triggers", mutation.triggers)) return false;
+                if (superTriggers && !ReadAbilityList(*superTriggers, mp + ".superTriggers", mutation.superTriggers)) return false;
+                out.mutations.push_back(std::move(mutation));
+            }
+        }
+        if (modules) {   // [ { "id": 301, "name": "Electrical Overload", "tier": 1, "effects": [...] , "goldAfterCombat": 0, "echoEverySeconds": 8 } ]
+            if (!modules->IsArray()) return Fail(path + ".modules", *modules, "expected an array");
+            for (std::size_t i = 0; i < modules->Items().size(); ++i) {
+                const std::string mp = path + ".modules[" + std::to_string(i) + "]";
+                Obj m;
+                if (!Open(modules->Items()[i], mp, m)) return false;
+                const Value* mId = nullptr;
+                const Value* mName = nullptr;
+                const Value* tier = nullptr;
+                if (!Require(m, "id", mId) || !Require(m, "name", mName) || !Require(m, "tier", tier)) return false;
+                const Value* effects = Take(m, "effects");
+                const Value* gold = Take(m, "goldAfterCombat");
+                int echo = 0;
+                bool haveEcho = false;
+                if (!ReadScalarTime(m, "echoEvery", echo, haveEcho) || !RejectUnknown(m)) return false;
+                TraitModule module;
+                int mid = 0;
+                if (!ReadInt(*mId, mp + ".id", 1, 2'000'000'000, mid) || !ReadString(*mName, mp + ".name", module.name) ||
+                    !ReadInt(*tier, mp + ".tier", 1, 3, module.tier)) return false;
+                module.id = static_cast<std::uint32_t>(mid);
+                if (gold && !ReadInt(*gold, mp + ".goldAfterCombat", 0, 50, module.goldAfterCombat)) return false;
+                module.echo = haveEcho;
+                module.echoEveryTicks = echo;
+                if (effects) {
+                    module.ability.id = module.id;
+                    module.ability.name = module.name;
+                    module.ability.trigger = CastTrigger::StartOfCombat;
+                    if (!ReadEffectList(*effects, mp + ".effects", module.ability.effects)) return false;
+                }
+                out.modules.push_back(std::move(module));
+            }
+        }
+        if (invention) {
+            int inv = 0;
+            if (!ReadInt(*invention, path + ".invention", 1, 2'000'000'000, inv)) return false;
+            out.invention = static_cast<ChampionId>(inv);
+        }
+        if (queen) {   // { "champion": 9043, "uniqueHolders": 7, "level": 10 }
+            Obj q;
+            if (!Open(*queen, path + ".queen", q)) return false;
+            const Value* c = nullptr;
+            const Value* holders = nullptr;
+            const Value* level = nullptr;
+            if (!Require(q, "champion", c) || !Require(q, "uniqueHolders", holders) || !Require(q, "level", level) || !RejectUnknown(q)) return false;
+            int cid = 0;
+            if (!ReadInt(*c, path + ".queen.champion", 1, 2'000'000'000, cid) || !ReadInt(*holders, path + ".queen.uniqueHolders", 1, 20, out.queen.uniqueHolders) ||
+                !ReadInt(*level, path + ".queen.level", 1, kMaxPlayerLevel, out.queen.level)) return false;
+            out.queen.champion = static_cast<ChampionId>(cid);
+        }
+        return true;
+    }
+
+    bool ReadEffectList(const Value& v, const std::string& path, std::vector<AbilityEffect>& out) {
+        if (!v.IsArray()) return Fail(path, v, std::string("expected an array, found ") + Value::TypeName(v.type()));
+        for (std::size_t k = 0; k < v.Items().size(); ++k) {
+            AbilityEffect effect;
+            if (!ReadEffect(v.Items()[k], path + "[" + std::to_string(k) + "]", effect)) return false;
+            out.push_back(std::move(effect));
+        }
+        return true;
+    }
+
+    bool ReadBreakpoints(const Value& v, const std::string& path, std::vector<TraitBreakpoint>& out) {
+        if (!v.IsArray()) return Fail(path, v, std::string("expected an array, found ") + Value::TypeName(v.type()));
+        for (std::size_t i = 0; i < v.Items().size(); ++i) {
+            const std::string bpPath = path + "[" + std::to_string(i) + "]";
             Obj b;
-            if (!Open(breakpoints->Items()[i], bpPath, b)) return false;
+            if (!Open(v.Items()[i], bpPath, b)) return false;
             const Value* count = nullptr;
             if (!Require(b, "count", count)) return false;
             const Value* effects = Take(b, "effects");
             const Value* triggers = Take(b, "triggers");
+            const Value* mutationSlots = Take(b, "mutationSlots");
+            const Value* supercharge = Take(b, "supercharge");
+            const Value* xp = Take(b, "xpAfterCombat");
+            const Value* takedowns = Take(b, "takedownsPerGold");
+            const Value* starDust = Take(b, "starDust");
+            const Value* grantUnit = Take(b, "grantUnit");
+            const Value* plants = Take(b, "plants");
+            const Value* plantStar = Take(b, "plantStar");
+            const Value* moduleTier = Take(b, "moduleTier");
             if (!RejectUnknown(b)) return false;
-            if (!effects && !triggers) return Missing(b, "effects (or triggers)");
             TraitBreakpoint bp;
             if (!ReadInt(*count, bpPath + ".count", 1, 100, bp.count)) return false;
             if (effects) {
@@ -1157,7 +1346,53 @@ private:
                     bp.triggers.push_back(std::move(tt));
                 }
             }
-            out.breakpoints.push_back(std::move(bp));
+            if (mutationSlots && !ReadInt(*mutationSlots, bpPath + ".mutationSlots", -1, 20, bp.mutationSlots)) return false;
+            if (supercharge && !ReadBool(*supercharge, bpPath + ".supercharge", bp.supercharge)) return false;
+            if (xp && !ReadInt(*xp, bpPath + ".xpAfterCombat", 0, 100, bp.xpAfterCombat)) return false;
+            if (takedowns && !ReadInt(*takedowns, bpPath + ".takedownsPerGold", 1, 100, bp.takedownsPerGold)) return false;
+            if (starDust) {   // { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2, "multiplier": 2 }
+                Obj d;
+                if (!Open(*starDust, bpPath + ".starDust", d)) return false;
+                const Value* onLoss = Take(d, "onLoss");
+                const Value* perStreak = Take(d, "perLossStreak");
+                const Value* perTakedown = Take(d, "perTakedown");
+                const Value* multiplier = Take(d, "multiplier");
+                if (!RejectUnknown(d)) return false;
+                if (onLoss && !ReadInt(*onLoss, bpPath + ".starDust.onLoss", 0, 1000, bp.starDust.onLoss)) return false;
+                if (perStreak && !ReadInt(*perStreak, bpPath + ".starDust.perLossStreak", 0, 1000, bp.starDust.perLossStreak)) return false;
+                if (perTakedown && !ReadInt(*perTakedown, bpPath + ".starDust.perTakedown", 0, 1000, bp.starDust.perTakedown)) return false;
+                if (multiplier && !ReadInt(*multiplier, bpPath + ".starDust.multiplier", 1, 10, bp.starDust.multiplier)) return false;
+            }
+            if (grantUnit) {   // { "champion": 9041, "afterCombats": 2 }
+                Obj g;
+                if (!Open(*grantUnit, bpPath + ".grantUnit", g)) return false;
+                const Value* c = nullptr;
+                const Value* after = Take(g, "afterCombats");
+                if (!Require(g, "champion", c) || !RejectUnknown(g)) return false;
+                int cid = 0;
+                if (!ReadInt(*c, bpPath + ".grantUnit.champion", 1, 2'000'000'000, cid)) return false;
+                bp.grantUnit.champion = static_cast<ChampionId>(cid);
+                if (after && !ReadInt(*after, bpPath + ".grantUnit.afterCombats", 0, 50, bp.grantUnit.afterCombats)) return false;
+            }
+            if (plants) {   // [ { "champion": 9110, "count": 2 }, ... ]
+                if (!plants->IsArray()) return Fail(bpPath + ".plants", *plants, "expected an array");
+                for (std::size_t k = 0; k < plants->Items().size(); ++k) {
+                    const std::string gp = bpPath + ".plants[" + std::to_string(k) + "]";
+                    Obj g;
+                    if (!Open(plants->Items()[k], gp, g)) return false;
+                    const Value* c = nullptr;
+                    const Value* n = nullptr;
+                    if (!Require(g, "champion", c) || !Require(g, "count", n) || !RejectUnknown(g)) return false;
+                    PlantGrant grant;
+                    int cid = 0;
+                    if (!ReadInt(*c, gp + ".champion", 1, 2'000'000'000, cid) || !ReadInt(*n, gp + ".count", 1, 4, grant.count)) return false;
+                    grant.champion = static_cast<ChampionId>(cid);
+                    bp.plants.push_back(grant);
+                }
+            }
+            if (plantStar && !ReadInt(*plantStar, bpPath + ".plantStar", 1, kMaxStarLevel, bp.plantStar)) return false;
+            if (moduleTier && !ReadInt(*moduleTier, bpPath + ".moduleTier", 1, 3, bp.moduleTier)) return false;
+            out.push_back(std::move(bp));
         }
         return true;
     }
@@ -1209,6 +1444,42 @@ private:
         return true;
     }
 
+    // "pilot": { "hpPercent": 80, "bonuses": [ { "traits": ["Bastion", "Protector"], "effects": [ ... ] }, ... ] }
+    bool ReadPilot(const Value& v, const std::string& path, PilotDefinition& out) {
+        Obj o;
+        if (!Open(v, path, o)) return false;
+        const Value* hp = Take(o, "hpPercent");
+        const Value* bonuses = Take(o, "bonuses");
+        if (!RejectUnknown(o)) return false;
+        out.enabled = true;
+        if (hp && !ReadInt(*hp, path + ".hpPercent", 0, 500, out.hpPercent)) return false;
+        if (bonuses) {
+            if (!bonuses->IsArray()) return Fail(path + ".bonuses", *bonuses, "expected an array");
+            for (std::size_t i = 0; i < bonuses->Items().size(); ++i) {
+                const std::string bp = path + ".bonuses[" + std::to_string(i) + "]";
+                Obj b;
+                if (!Open(bonuses->Items()[i], bp, b)) return false;
+                const Value* traits = nullptr;
+                const Value* effects = nullptr;
+                if (!Require(b, "traits", traits) || !Require(b, "effects", effects) || !RejectUnknown(b)) return false;
+                PilotBonus bonus;
+                if (!traits->IsArray() || !effects->IsArray()) return Fail(bp, bonuses->Items()[i], "\"traits\" and \"effects\" are arrays");
+                for (std::size_t t = 0; t < traits->Items().size(); ++t) {
+                    std::string name;
+                    if (!ReadString(traits->Items()[t], bp + ".traits[" + std::to_string(t) + "]", name)) return false;
+                    bonus.traits.push_back(std::move(name));
+                }
+                for (std::size_t e = 0; e < effects->Items().size(); ++e) {
+                    AbilityEffect effect;
+                    if (!ReadEffect(effects->Items()[e], bp + ".effects[" + std::to_string(e) + "]", effect)) return false;
+                    bonus.effects.push_back(std::move(effect));
+                }
+                out.bonuses.push_back(std::move(bonus));
+            }
+        }
+        return true;
+    }
+
     bool ReadChampion(const Value& v, const std::string& path, ChampionDefinition& out) {
         Obj o;
         if (!Open(v, path, o)) return false;
@@ -1233,7 +1504,20 @@ private:
         const Value* ability = Take(o, "ability");
         const Value* passive = Take(o, "passive");
         const Value* onAttack = Take(o, "onAttack");
+        const Value* plant = Take(o, "plant");
+        const Value* special = Take(o, "special");
+        const Value* price = Take(o, "price");
+        const Value* teamSlots = Take(o, "teamSlots");
+        const Value* stationary = Take(o, "stationary");
+        const Value* pilot = Take(o, "pilot");
         if (!RejectUnknown(o)) return false;
+        if (plant && !ReadBool(*plant, path + ".plant", out.plant)) return false;
+        if (special && !ReadBool(*special, path + ".special", out.special)) return false;
+        if (price && !ReadInt(*price, path + ".price", 1, 20, out.price)) return false;
+        if (out.plant) out.teamSlots = 0;
+        if (teamSlots && !ReadInt(*teamSlots, path + ".teamSlots", 0, 2, out.teamSlots)) return false;
+        if (stationary && !ReadBool(*stationary, path + ".stationary", out.stationary)) return false;
+        if (pilot && !ReadPilot(*pilot, path + ".pilot", out.pilot)) return false;
 
         int idValue = 0;
         if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;

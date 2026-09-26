@@ -23,6 +23,8 @@ constexpr std::uint64_t kRngStreamPveBase = 3000;    // + round number: which en
 constexpr std::uint64_t kRngStreamPveDropBase = 4000; // + round number: the drops that round's winners get
 constexpr std::uint64_t kRngStreamMotherNatureBase = 5000; // + round number: the gifts Mother Nature offers that round
 constexpr std::uint64_t kRngStreamOpening = 6000;     // the units dealt to every player before round 1
+constexpr std::uint64_t kRngStreamTraitPaths = 7000;  // the path each trait with paths takes this match (Selini)
+constexpr std::uint64_t kRngStreamTraitBase = 8000;   // + round number: module and prototype offers
 
 // The full generator state, for snapshots. All-zero is not a valid xoshiro state (it would emit zeros forever).
 struct RngState {

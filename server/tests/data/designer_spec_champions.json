@@ -18,7 +18,7 @@
     // ---------------------------------------------------------------- ALESK (4-cost tank)
     {
       "id": 9001, "name": "Alesk", "cost": 4, "role": "Tank",
-      "traits": ["Helios"],
+      "traits": ["Helios", "Bastion"],
       "stats": {
         "hp": [325, 475, 650], "armor": [31, 45, 63], "magicResist": [17, 24, 29], "attackDamage": [30, 35, 40],
         "attackSpeed": 1.0, "range": 1,
@@ -52,72 +52,50 @@
     // ---------------------------------------------------------------- BAIRA (3-cost marksman)
     {
       "id": 9002, "name": "Baira", "cost": 3, "role": "Damage",
-      "traits": ["Phaisa"],
+      "traits": ["Selini", "Sorcerer"],                       // moved from Phaisa (Marksman) to Selini (Mage), September 2026
       "stats": {
-        "hp": [100, 150, 200], "armor": [10, 15, 20], "magicResist": [5, 9, 13], "attackDamage": [20, 25, 29],
-        "abilityDamage": [15, 21, 40],            // the sheet's "AP"
-        "attackSpeed": 0.5, "range": 4            // range ASSUMED (marksman)
-        // no maxMana: Baira does not use mana
+        "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 55,
+        "attackSpeed": 0.70, "range": 4, "maxMana": 80, "startMana": 30,
+        "projectileSpeed": 14
       },
-      // Every 5th attack (the count restarts when she changes target or her target dies):
-      //   * burns everything within 3 hexes of her target for 15/21/36 TOTAL over 2.5/2.0/1.75 s. The total scales with her
-      //     AP (abilityDamage 15/21/40, x abilityPowerPercent): 100% / 100% / 90% of it = 15 / 21 / 36. Stacks:
-      //     a burn landing on a running one deals more (+25/35/45% -- ASSUMED, carried over from the earlier design);
-      //   * grants her +20/25/35% attack speed for 5 s.
+      // Crashing Tide: 3 waves, 0.4 s apart, each on the largest cluster of enemies at that moment (it can move), 170/255/400 (+100% AP) magic damage
+      // to every enemy within 1 hex. An enemy struck by a wave takes 25% more from the next one (a 0.5 s DamageTaken mark, applied a tick after each wave).
       "ability": {
-        "id": 2, "name": "Ardeat's Destiny", "trigger": "EveryNthAttack", "attackCount": 5, "resetOnTargetChange": true,
+        "id": 2, "name": "Crashing Tide", "trigger": "Mana", "castLockTicks": 15,
         "effects": [
-          {
-            "type": "DoT", "target": { "mode": "AreaAroundTarget", "radius": 3, "includeCenter": true },
-            "damageType": "Magic",
-            "amount": { "terms": [ { "source": "SelfAbilityDamage", "percent": [100, 100, 90] } ] }, "amountIsTotal": true,
-            "durationSeconds": [2.5, 2.0, 1.75], "intervalSeconds": 0.5,   // interval ASSUMED: a hit every 0.5 s
-            "stackBonusPercent": [25, 35, 45]
-          },
-          { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": [20, 25, 35], "durationSeconds": 5 }
+          { "type": "Damage", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "damageType": "Magic",
+            "amount": { "flat": [170, 255, 400], "terms": [ { "source": "SelfAbilityDamage", "percent": 100 } ] },
+            "repeat": { "count": 3, "everySeconds": 0.4 } },
+          { "type": "Status", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "status": "DamageTaken", "percent": 25,
+            "durationSeconds": 0.5, "stacking": "refresh", "delayTicks": 1, "repeat": { "count": 3, "everySeconds": 0.4 } }
         ]
-      },
-      // Passive "Wound": her burns also reduce their victims' healing by 30% for as long as they burn.
-      // (There is no healing in the game yet; the status is applied and shown, and will bite once healing exists.)
-      "passive": {
-        "id": 102, "name": "Wound",
-        "effects": [ { "type": "Status", "target": "Self", "status": "InflictsWound", "percent": 30, "permanent": true } ]
       }
     },
 
     // ---------------------------------------------------------------- CYLA (2-cost marksman)
     {
       "id": 9003, "name": "Cyla", "cost": 2, "role": "Damage",
-      "traits": ["Hexagon"],
+      "traits": ["Hexagon", "Gunslinger"],
       "stats": {
-        "hp": [90, 140, 180], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [50, 60, 80],
-        "crit": [15, 25, 50],
-        "attackSpeed": 0.78, "range": 4,          // range ASSUMED (marksman)
-        "maxMana": 60, "manaRegen": 10.0
+        "hp": [650, 1170, 2106], "armor": 25, "magicResist": 25, "attackDamage": [50, 75, 113],
+        "attackSpeed": 0.75, "range": 4
       },
-      // Rocket: the target takes 100% of the damage Cyla dealt in the last 2 s; adjacent hexes take 25%.
-      // She keeps auto-attacking while casting (castLock 0). Physical damage (her damage is AD, not AP); both hits can crit.
-      "ability": {
-        "id": 3, "name": "Rocket Strike", "trigger": "Mana", "castLockTicks": 0,
-        "effects": [
-          {
-            "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "canCrit": true,
-            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": 100, "windowSeconds": 2 } ] }
-          },
-          {
-            "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false },
-            "damageType": "Physical", "canCrit": true, "multiplierPercent": 25,
-            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": 100, "windowSeconds": 2 } ] }
-          }
-        ]
-      }
+      // Fishbones (September 2026 rework, the Jinx pattern; no mana): after 18/18/16 attacks she switches to Fishbones for the rest of the fight. Her
+      // attacks no longer deal their own damage; each one fires 3 rockets instead, each at a random enemy, for 58/88/159 physical damage (can crit).
+      "triggers": [
+        { "id": 70, "name": "Switch to Fishbones", "trigger": "OnBasicAttack", "afterAttacks": [17, 17, 15], "maxTriggers": 1,
+          "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": -100, "permanent": true } ] },
+        { "id": 3, "name": "Rocket Strike", "trigger": "OnBasicAttack", "afterAttacks": [18, 18, 16],
+          "effects": [ { "type": "Damage", "target": "RandomEnemy", "damageType": "Physical", "canCrit": true, "amount": [58, 88, 159],
+                         "repeat": { "count": 3, "everySeconds": 0.1 } } ] }
+      ]
     },
 
     // ---------------------------------------------------------------- FAIRE (3-cost control crowd mage, "Arm of the Future")
     // Role changed to Damage because the sheet now calls her a mage (it only decides which row bots put her in).
     {
       "id": 9005, "name": "Faire", "cost": 3, "role": "Damage",
-      "traits": ["Hexagon"],
+      "traits": ["Hexagon", "Najmi", "Sorcerer"],
       "stats": {
         "hp": [225, 333, 427], "armor": [20, 32, 41], "magicResist": [15, 20, 25], "attackDamage": [25, 30, 35],
         "abilityDamage": [28, 45, 60],
@@ -155,7 +133,7 @@
     // Role Tank; range ASSUMED 1 (melee).
     {
       "id": 9006, "name": "Les", "cost": 5, "role": "Tank",
-      "traits": ["Omnilium", "Protector"],
+      "traits": ["Omnilium", "Protector", "Bastion"],
       "stats": {
         "hp": [1000, 2000, 3500], "armor": [60, 80, 300], "magicResist": [50, 70, 285], "attackDamage": [40, 60, 70],
         "attackSpeed": 1.0, "range": 1,
@@ -187,7 +165,7 @@
     // Role Tank (front row); range ASSUMED 1 (melee).
     {
       "id": 9007, "name": "Lum", "cost": 5, "role": "Tank",
-      "traits": ["Omnilium", "Protector"],
+      "traits": ["Omnilium", "Protector", "Bruiser"],
       "stats": {
         "hp": [600, 1000, 2500], "armor": [45, 50, 100], "magicResist": [35, 40, 100], "attackDamage": [40, 60, 70],
         "attackSpeed": 1.0, "range": 1,
@@ -227,7 +205,7 @@
     // ---------------------------------------------------------------- ASTRA (1-cost support) [Najmi]
     {
       "id": 9008, "name": "Astra", "cost": 1, "role": "Damage",
-      "traits": ["Najmi"],
+      "traits": ["Najmi", "Mystic"],
       "stats": {
         "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 20,
         "attackSpeed": 0.65, "range": 3, "maxMana": 60
@@ -249,7 +227,7 @@
     // ---------------------------------------------------------------- LUNIS (2-cost assassin) [Selini]
     {
       "id": 9009, "name": "Lunis", "cost": 2, "role": "Damage",
-      "traits": ["Selini", "Assassin"],
+      "traits": ["Selini", "Assassin", "Duelist"],
       "stats": {
         "hp": [550, 990, 1780], "armor": [25, 35, 50], "magicResist": [25, 35, 50], "attackDamage": [45, 68, 102],
         "attackSpeed": 0.80, "range": 1, "maxMana": 40
@@ -278,7 +256,7 @@
     // ---------------------------------------------------------------- SOUL (3-cost bruiser) [Coregons]
     {
       "id": 9010, "name": "Soul", "cost": 3, "role": "Tank",
-      "traits": ["Coregons"],
+      "traits": ["Coregons", "Bruiser"],
       "stats": {
         "hp": [100, 150, 200], "armor": 40, "magicResist": 40, "attackDamage": [45, 68, 102],
         "attackSpeed": 0.70, "range": 1, "maxMana": 70
@@ -319,7 +297,7 @@
     // ---------------------------------------------------------------- MYNA (4-cost support) [Selini]
     {
       "id": 9011, "name": "Myna", "cost": 4, "role": "Damage",
-      "traits": ["Selini"],
+      "traits": ["Selini", "Najmi", "Mystic"],
       "stats": {
         "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 30, "abilityDamage": [40, 60, 90],
         "attackSpeed": 0.70, "range": 4, "maxMana": 80
@@ -340,7 +318,7 @@
     // ---------------------------------------------------------------- VEGA (5-cost mage) [Najmi]
     {
       "id": 9012, "name": "Vega", "cost": 5, "role": "Damage",
-      "traits": ["Najmi"],
+      "traits": ["Najmi", "Sorcerer"],
       "stats": {
         "hp": [850, 1530, 2754], "armor": 35, "magicResist": 35, "attackDamage": 40, "abilityDamage": [80, 120, 180],
         "attackSpeed": 0.75, "range": 4, "maxMana": 100
@@ -368,7 +346,7 @@
     // ---------------------------------------------------------------- IGNIS (1-cost tank) [Helios]
     {
       "id": 9013, "name": "Ignis", "cost": 1, "role": "Tank",
-      "traits": ["Helios"],
+      "traits": ["Helios", "Bastion"],
       "stats": { "hp": [500, 900, 1620], "armor": 30, "magicResist": 30, "attackDamage": 30, "attackSpeed": 0.60, "range": 1, "maxMana": 50 },
       "ability": {
         "id": 20, "name": "Ember Ward", "trigger": "Mana", "castLockTicks": 15,   // lock ASSUMED
@@ -379,7 +357,7 @@
     // ---------------------------------------------------------------- PYRA (1-cost marksman) [Helios]
     {
       "id": 9014, "name": "Pyra", "cost": 1, "role": "Damage",
-      "traits": ["Helios"],
+      "traits": ["Helios", "Marksman"],
       "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 40, "attackSpeed": 0.70, "range": 4, "maxMana": 60 },
       // A piercing arrow: the target and the unit standing 1 hex behind it.
       "ability": {
@@ -409,7 +387,7 @@
     // ---------------------------------------------------------------- NULL (1-cost tank) [Phaisa]
     {
       "id": 9016, "name": "Null", "cost": 1, "role": "Tank",
-      "traits": ["Phaisa"],
+      "traits": ["Phaisa", "Bastion"],
       // Range 3 (the design doc says 1, but a pull needs a target that is not already adjacent: the designer chose 3).
       "stats": { "hp": [550, 990, 1782], "armor": 35, "magicResist": 35, "attackDamage": 30, "abilityDamage": 20, "attackSpeed": 0.55, "range": 3, "maxMana": 70 },
       // Magic damage and a pull 1 hex toward Null.
@@ -425,7 +403,7 @@
     // ---------------------------------------------------------------- BONE (1-cost bruiser) [Coregons]
     {
       "id": 9017, "name": "Bone", "cost": 1, "role": "Tank",
-      "traits": ["Coregons"],
+      "traits": ["Coregons", "Bruiser"],
       "stats": { "hp": [500, 900, 1620], "armor": 25, "magicResist": 25, "attackDamage": 40, "attackSpeed": 0.65, "range": 1, "maxMana": 60 },
       "ability": {
         "id": 24, "name": "Skull Bash", "trigger": "Mana", "castLockTicks": 15,
@@ -439,7 +417,7 @@
     // ---------------------------------------------------------------- ROT (1-cost mage) [Coregons]
     {
       "id": 9018, "name": "Rot", "cost": 1, "role": "Damage",
-      "traits": ["Coregons"],
+      "traits": ["Coregons", "Sorcerer"],
       "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 20, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 50 },
       // Poison: the damage is the TOTAL over 3 s, one tick every 0.5 s (ASSUMED). (Shown to the client as the generic damage-over-time status.)
       "ability": {
@@ -454,7 +432,7 @@
     // ---------------------------------------------------------------- BIT (1-cost bruiser) [Hexagon]
     {
       "id": 9019, "name": "Bit", "cost": 1, "role": "Tank",
-      "traits": ["Hexagon"],
+      "traits": ["Hexagon", "Duelist"],
       "stats": { "hp": [500, 900, 1620], "armor": 25, "magicResist": 25, "attackDamage": 45, "attackSpeed": 0.65, "range": 1, "maxMana": 50 },
       // Dashes through the target (lands on its far side, keeps fighting it) and hits it.
       "ability": {
@@ -470,7 +448,7 @@
     // ---------------------------------------------------------------- SOLIS (2-cost bruiser) [Helios]
     {
       "id": 9020, "name": "Solis", "cost": 2, "role": "Tank",
-      "traits": ["Helios"],
+      "traits": ["Helios", "Duelist"],
       "stats": { "hp": [600, 1080, 1944], "armor": 30, "magicResist": 30, "attackDamage": 50, "attackSpeed": 0.70, "range": 1, "maxMana": 50 },
       // "Next attack deals 150/225/350 Physical Damage and shreds 20% Armor for 3 s": the cast arms ONE charge (it lapses after 8 s, ASSUMED); the
       // next basic attack then carries the damage as a bonus hit on top of the normal attack (ASSUMED: the doc does not say "instead of").
@@ -490,7 +468,7 @@
     // ---------------------------------------------------------------- XUL (2-cost mage) [Phaisa]
     {
       "id": 9021, "name": "Xul", "cost": 2, "role": "Damage",
-      "traits": ["Phaisa"],
+      "traits": ["Phaisa", "Sorcerer"],
       "stats": { "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 40, "attackSpeed": 0.65, "range": 4, "maxMana": 60 },
       // A void bolt that bounces to 1 adjacent enemy (the one nearest the first target; the bounce hits as hard as the bolt).
       "ability": {
@@ -506,7 +484,7 @@
     // ---------------------------------------------------------------- GRAVE (2-cost support) [Coregons]
     {
       "id": 9022, "name": "Grave", "cost": 2, "role": "Damage",
-      "traits": ["Coregons"],
+      "traits": ["Coregons", "Mystic"],
       "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 80 },
       // A Skeleton (champion 9101, a summon) with 300/500/800 HP and 30 AD on the nearest free hex.
       "ability": {
@@ -518,7 +496,7 @@
     // ---------------------------------------------------------------- BYTE (2-cost support) [Hexagon]
     {
       "id": 9023, "name": "Byte", "cost": 2, "role": "Damage",
-      "traits": ["Hexagon"],
+      "traits": ["Hexagon", "Mystic"],
       "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 25, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 60 },
       "ability": {
         "id": 31, "name": "Firewall", "trigger": "Mana", "castLockTicks": 15,
@@ -529,7 +507,7 @@
     // ---------------------------------------------------------------- ORION (2-cost marksman) [Najmi]
     {
       "id": 9024, "name": "Orion", "cost": 2, "role": "Damage",
-      "traits": ["Najmi"],
+      "traits": ["Najmi", "Marksman"],
       "stats": { "hp": [500, 900, 1620], "armor": 20, "magicResist": 20, "attackDamage": 55, "attackSpeed": 0.75, "range": 4, "maxMana": 70 },
       // A heavy shot that knocks the target back 1 hex (away from Orion; stops at a blocked hex or the arena edge).
       "ability": {
@@ -545,7 +523,7 @@
     // ---------------------------------------------------------------- NYX (3-cost bruiser) [Phaisa]
     {
       "id": 9025, "name": "Nyx", "cost": 3, "role": "Tank",
-      "traits": ["Phaisa"],
+      "traits": ["Phaisa", "Duelist"],
       "stats": { "hp": [650, 1170, 2106], "armor": 35, "magicResist": 35, "attackDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 60 },
       "ability": {
         "id": 33, "name": "Cleave", "trigger": "Mana", "castLockTicks": 15,
@@ -556,7 +534,7 @@
     // ---------------------------------------------------------------- FLARE (3-cost mage) [Helios]
     {
       "id": 9026, "name": "Flare", "cost": 3, "role": "Damage",
-      "traits": ["Helios"],
+      "traits": ["Helios", "Sorcerer"],
       "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 50, "attackSpeed": 0.70, "range": 4, "maxMana": 80 },
       // A sunbeam on the target: everything within 1 hex of it.
       "ability": {
@@ -568,7 +546,7 @@
     // ---------------------------------------------------------------- LICH (3-cost mage) [Coregons]
     {
       "id": 9027, "name": "Lich", "cost": 3, "role": "Damage",
-      "traits": ["Coregons"],
+      "traits": ["Coregons", "Sorcerer"],
       "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 55, "attackSpeed": 0.65, "range": 3, "maxMana": 70 },
       // Drain: 250/375/600 magic damage over 2 s (a tick every 0.5 s, ASSUMED); each tick heals Lich for 100% of the damage it does.
       "ability": {
@@ -598,7 +576,7 @@
     // ---------------------------------------------------------------- KRYX (4-cost bruiser) [Phaisa]
     {
       "id": 9029, "name": "Kryx", "cost": 4, "role": "Tank",
-      "traits": ["Phaisa"],
+      "traits": ["Phaisa", "Bruiser"],
       "stats": { "hp": [800, 1440, 2592], "armor": 45, "magicResist": 45, "attackDamage": 65, "attackSpeed": 0.80, "range": 1, "maxMana": 50 },
       // Frenzy for 5 s: +50/75/150% attack speed, and every hit he takes deals 10% more. Casting again refreshes it.
       "ability": {
@@ -613,7 +591,7 @@
     // ---------------------------------------------------------------- MORTIS (4-cost marksman) [Coregons]
     {
       "id": 9030, "name": "Mortis", "cost": 4, "role": "Damage",
-      "traits": ["Coregons"],
+      "traits": ["Coregons", "Gunslinger"],
       "stats": { "hp": [650, 1170, 2106], "armor": 30, "magicResist": 30, "attackDamage": 75, "attackSpeed": 0.80, "range": 4, "maxMana": 60 },
       // "His next 3 basic attacks deal 150/225/400 bonus Physical Damage and ignore 50% Armor": the cast arms 3 charges (they lapse after
       // 10 s, ASSUMED); each of the next 3 attacks carries a bonus hit that ignores half the victim's armor. (The armor bypass applies to the
@@ -632,7 +610,7 @@
     // ---------------------------------------------------------------- UMBRA (5-cost tank) [Selini]
     {
       "id": 9031, "name": "Umbra", "cost": 5, "role": "Tank",
-      "traits": ["Selini"],
+      "traits": ["Selini", "Bastion"],
       "stats": { "hp": [900, 1620, 2916], "armor": 50, "magicResist": 50, "attackDamage": 50, "abilityDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 100 },
       // Eclipse: enemies within 2 hexes are blinded for 3 s (they cannot basic attack; they still walk and cast) and take 300/450/1000 magic damage.
       "ability": {
@@ -640,6 +618,440 @@
         "effects": [
           { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 2, "includeCenter": false }, "damageType": "Magic", "amount": [300, 450, 1000] },
           { "type": "Status", "target": { "mode": "AreaAroundSelf", "radius": 2, "includeCenter": false }, "status": "Blind", "durationSeconds": 3 }
+        ]
+      }
+    },
+
+    // ================================================================ SEPTEMBER 2026 ADDITIONS (W2F_GameDesignDocument.md, "[NEW]")
+
+    // ---------------------------------------------------------------- TIDE (1-cost Selini bruiser)
+    {
+      "id": 9032, "name": "Tide", "cost": 1, "role": "Tank",
+      "traits": ["Selini", "Bruiser"],
+      "stats": { "hp": [600, 1080, 1944], "armor": 35, "magicResist": 35, "attackDamage": 40, "attackSpeed": 0.60, "range": 1, "maxMana": 80, "startMana": 30 },
+      // Riptide Bash: a 180/260/400 water shield for 3 s, then a bash for 100/150/230 (+50% AD) physical damage.
+      "ability": {
+        "id": 41, "name": "Riptide Bash", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": [180, 260, 400], "durationSeconds": 3 },
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "delaySeconds": 0.2,
+            "amount": { "flat": [100, 150, 230], "terms": [ { "source": "SelfAttackDamage", "percent": 50 } ] } }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- SUNNA (2-cost Helios support)
+    {
+      "id": 9033, "name": "Sunna", "cost": 2, "role": "Damage",
+      "traits": ["Helios", "Mystic"],
+      "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 30, "attackSpeed": 0.65, "range": 3, "maxMana": 70, "startMana": 20 },
+      // Morning Light: the 2 lowest-HP allies are healed for 160/240/380 (+100% AP) and gain 25/35/60 Armor and Magic Resist for 4 s.
+      "ability": {
+        "id": 42, "name": "Morning Light", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Heal", "target": { "mode": "LowestHpAlly", "count": 2 }, "amount": { "flat": [160, 240, 380], "terms": [ { "source": "SelfAbilityDamage", "percent": 100 } ] } },
+          { "type": "Status", "target": { "mode": "LowestHpAlly", "count": 2 }, "status": "BonusArmor", "value": [25, 35, 60], "durationSeconds": 4 },
+          { "type": "Status", "target": { "mode": "LowestHpAlly", "count": 2 }, "status": "BonusMagicResist", "value": [25, 35, 60], "durationSeconds": 4 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- KAEL (3-cost Helios bruiser)
+    {
+      "id": 9034, "name": "Kael", "cost": 3, "role": "Tank",
+      "traits": ["Helios", "Bruiser"],
+      "stats": { "hp": [750, 1350, 2430], "armor": 40, "magicResist": 40, "attackDamage": 60, "attackSpeed": 0.70, "range": 1, "maxMana": 80, "startMana": 30 },
+      // Dawnbreaker: a hammer slam on his target: 200/300/470 (+120% AD) physical damage to enemies within 1 hex and a 1 s knock-up; he gains a shield of 20% of his max HP for 3 s.
+      "ability": {
+        "id": 43, "name": "Dawnbreaker", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "damageType": "Physical",
+            "amount": { "flat": [200, 300, 470], "terms": [ { "source": "SelfAttackDamage", "percent": 120 } ] } },
+          { "type": "Status", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "status": "Knockup", "durationSeconds": 1 },
+          { "type": "Shield", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 20 } ] }, "durationSeconds": 3 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- APHEL (4-cost Selini marksman)
+    {
+      "id": 9035, "name": "Aphel", "cost": 4, "role": "Damage",
+      "traits": ["Selini", "Marksman"],
+      "stats": { "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 80, "attackSpeed": 0.80, "range": 4, "maxMana": 80, "startMana": 20,
+                 "projectileSpeed": 16, "attackWindupSeconds": 0.25 },
+      // Moonlit Volley: 3 piercing arrows, 0.2 s apart, each hitting her target and every enemy up to 4 hexes behind it for 160/240/600 (+110% AD)
+      // physical damage. The arrows can crit; a critical arrow also bounces to the victim's nearest other enemy for 60%.
+      "ability": {
+        "id": 44, "name": "Moonlit Volley", "trigger": "Mana", "castLockTicks": 18,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "canCrit": true, "bounceOnCritPercent": 60,
+            "amount": { "flat": [160, 240, 600], "terms": [ { "source": "SelfAttackDamage", "percent": 110 } ] }, "repeat": { "count": 3, "everySeconds": 0.2 } },
+          { "type": "Damage", "target": { "mode": "LineBehindTarget", "length": 4 }, "damageType": "Physical", "canCrit": true, "bounceOnCritPercent": 60,
+            "amount": { "flat": [160, 240, 600], "terms": [ { "source": "SelfAttackDamage", "percent": 110 } ] }, "repeat": { "count": 3, "everySeconds": 0.2 } }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- SOLA (4-cost Selini assassin; Lunis's rival)
+    {
+      "id": 9036, "name": "Sola", "cost": 4, "role": "Damage",
+      "traits": ["Selini", "Assassin", "Duelist"],
+      "stats": { "hp": [750, 1350, 2430], "armor": 40, "magicResist": 40, "attackDamage": 75, "attackSpeed": 0.85, "range": 1, "maxMana": 60 },
+      // Waning Moon Waltz: dashes next to the lowest-HP enemy and slashes 4 times over 1 s, 90/135/330 (+40% AD) physical damage each (can crit).
+      // Blade Brothers: if Lunis (9009) is alive on her team, each slash is answered by Lunis: he blinks in and strikes the same enemy for 120% of
+      // HIS attack damage (it is his hit: his crit chance, his damage dealt; the blink is shown, he stays on his hex).
+      "ability": {
+        "id": 45, "name": "Waning Moon Waltz", "trigger": "Mana", "castLockTicks": 30,
+        "effects": [
+          { "type": "Teleport", "target": "Self", "destination": "NextToLowestHpEnemy" },
+          { "type": "Damage", "target": "LowestHpEnemy", "damageType": "Physical", "canCrit": true, "delaySeconds": 0.1,
+            "amount": { "flat": [90, 135, 330], "terms": [ { "source": "SelfAttackDamage", "percent": 40 } ] }, "repeat": { "count": 4, "everySeconds": 0.25 } },
+          { "type": "AllyStrike", "target": "LowestHpEnemy", "champion": 9009, "percentOfAllyAttackDamage": 120, "damageType": "Physical",
+            "delaySeconds": 0.15, "repeat": { "count": 4, "everySeconds": 0.25 } }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- MORRAH (4-cost Phaisa mage)
+    {
+      "id": 9037, "name": "Morrah", "cost": 4, "role": "Damage",
+      "traits": ["Phaisa", "Sorcerer"],
+      "stats": { "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 35, "abilityDamage": 70, "attackSpeed": 0.70, "range": 4, "maxMana": 90, "startMana": 30 },
+      // Rift Collapse: a rift under the largest group of enemies pulls everyone within 2 hexes 1 hex toward its centre, then deals 320/480/1200 (+100% AP)
+      // magic damage and shreds 30% of their Magic Resist for 4 s.
+      "ability": {
+        "id": 46, "name": "Rift Collapse", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Displace", "target": { "mode": "AreaAroundDensestEnemy", "radius": 2, "includeCenter": true }, "direction": "TowardAreaCenter", "hexes": 1 },
+          { "type": "Damage", "target": { "mode": "AreaAroundDensestEnemy", "radius": 2, "includeCenter": true }, "damageType": "Magic", "delaySeconds": 0.3,
+            "amount": { "flat": [320, 480, 1200], "terms": [ { "source": "SelfAbilityDamage", "percent": 100 } ] } },
+          { "type": "Status", "target": { "mode": "AreaAroundDensestEnemy", "radius": 2, "includeCenter": true }, "status": "MagicResist", "percent": -30,
+            "durationSeconds": 4, "delaySeconds": 0.3 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- AUREON (5-cost Helios mage, The Sun Emperor)
+    {
+      "id": 9038, "name": "Aureon", "cost": 5, "role": "Damage",
+      "traits": ["Helios", "Sorcerer"],
+      "stats": { "hp": [950, 1710, 3078], "armor": 45, "magicResist": 45, "attackDamage": 45, "abilityDamage": 100, "attackSpeed": 0.75, "range": 4, "maxMana": 160, "startMana": 60 },
+      // Solar Judgment: the sun rises over the largest cluster of enemies and falls 1.5 s later: 600/900/4000 (+150% AP) magic damage to every enemy within
+      // 2 hexes, a burn of 3% of their max HP per second for 5 s, and a 300/450/2000 shield for 4 s on every ally inside the blast.
+      // (Radiant Crown, +30 mana when Helios rallies, waits for the Helios "Rally" rework.)
+      "ability": {
+        "id": 47, "name": "Solar Judgment", "trigger": "Mana", "castLockTicks": 20,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundDensestEnemy", "radius": 2, "includeCenter": true }, "damageType": "Magic", "delaySeconds": 1.5,
+            "amount": { "flat": [600, 900, 4000], "terms": [ { "source": "SelfAbilityDamage", "percent": 150 } ] } },
+          { "type": "DoT", "target": { "mode": "AreaAroundDensestEnemy", "radius": 2, "includeCenter": true }, "damageType": "Magic", "delaySeconds": 1.5,
+            "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 3 } ] }, "durationSeconds": 5, "intervalSeconds": 1, "visual": "Burn" },
+          { "type": "Shield", "target": { "mode": "AreaAroundDensestEnemy", "radius": 2, "includeCenter": true, "side": "Allies" }, "delaySeconds": 1.5,
+            "amount": [300, 450, 2000], "durationSeconds": 4 }
+        ]
+      },
+      "triggers": [
+        { "id": 71, "name": "Radiant Crown", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+          "effects": [ { "type": "Mana", "target": "Self", "amount": 30 } ] }
+      ]
+    },
+
+    // ---------------------------------------------------------------- NIHILA (5-cost Phaisa mage, The Void Empress)
+    {
+      "id": 9039, "name": "Nihila", "cost": 5, "role": "Damage",
+      "traits": ["Phaisa", "Sorcerer"],
+      "stats": { "hp": [1000, 1800, 3240], "armor": 45, "magicResist": 45, "attackDamage": 50, "abilityDamage": 90, "attackSpeed": 0.70, "range": 3, "maxMana": 180, "startMana": 80 },
+      // Devour Reality: a 2 s channel (a stun or knock-up breaks it), then every enemy takes 400/650/5000 (+120% AP) magic damage and the ones left below
+      // 20/25/50% of their max HP are executed (the engine caps an execute at 50%; at 3 stars the 5000 damage wipes the board anyway).
+      "ability": {
+        "id": 48, "name": "Devour Reality", "trigger": "Mana", "channelSeconds": 2,
+        "effects": [
+          { "type": "Damage", "target": "AllEnemies", "damageType": "Magic", "delaySeconds": 2,
+            "amount": { "flat": [400, 650, 5000], "terms": [ { "source": "SelfAbilityDamage", "percent": 120 } ] } },
+          { "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow", "percent": [20, 25, 50], "durationTicks": 3, "delayTicks": 61 }
+        ]
+      },
+      // Hunger of the Void: every enemy that dies while she stands gives her 8 Ability Power for the rest of the fight.
+      "triggers": [
+        { "id": 132, "name": "Hunger of the Void", "trigger": "OnEnemyDeath",
+          "effects": [ { "type": "Status", "target": "Self", "status": "BonusAbilityDamage", "value": 8, "permanent": true } ] }
+      ]
+    },
+
+    // ================================================================ TRAIT SYSTEM v2 (September 2026): the design sheet's numbers
+    {
+      "id": 9040, "name": "Rivet", "cost": 3, "role": "Damage",
+      "traits": ["Gunslinger"],
+      "stats": { "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 60, "attackSpeed": 0.75, "range": 4, "maxMana": 70, "startMana": 20 },
+      // Shred Volley: shredding rounds at the target and the enemies next to it: 180/270/420 (+100% AD) physical damage, and their Armor and Magic Resist
+      // are reduced by 30% for 4 s.
+      "ability": {
+        "id": 51, "name": "Shred Volley", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "damageType": "Physical",
+            "amount": { "flat": [135, 200, 315], "terms": [ { "source": "SelfAttackDamage", "percent": 75 } ] } },   // balance pass: sheet 180/270/420 +100% AD
+          { "type": "Status", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "status": "Armor", "percent": -30, "durationSeconds": 4 },
+          { "type": "Status", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "status": "MagicResist", "percent": -30, "durationSeconds": 4 }
+        ]
+      }
+    },
+
+    {
+      "id": 9045, "name": "Hexa", "cost": 5, "role": "Tank",
+      "traits": ["Hexagon", "Hexa", "Gunslinger"],
+      "stats": { "hp": [1100, 1980, 3564], "armor": 80, "magicResist": 80, "attackDamage": [110, 165, 248], "attackSpeed": 0.90, "range": 2,
+                 "maxMana": 140, "startMana": 60 },
+      "pilot": {
+        "hpPercent": 80,
+        "bonuses": [
+          { "traits": ["Bastion", "Protector"], "effects": [ { "type": "Status", "target": "Self", "status": "Omnivamp", "percent": [20, 30, 40], "permanent": true } ] },
+          { "traits": ["Bruiser", "Duelist"], "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": [20, 30, 40], "permanent": true } ] },
+          { "traits": ["Marksman", "Gunslinger"], "effects": [ { "type": "Status", "target": "Self", "status": "DamageAmp", "percent": [12, 20, 30], "permanent": true } ] },
+          { "traits": ["Sorcerer", "Mystic"], "effects": [ { "type": "Status", "target": "Self", "status": "BonusManaRegen", "value": [2000, 4000, 5000], "permanent": true } ] },
+          { "traits": ["Assassin"], "effects": [ { "type": "Status", "target": "Self", "status": "BonusCritChance", "value": [40, 70, 100], "permanent": true } ] }
+        ]
+      },
+      // Overdrive: a shield of 300/400/5000 (+10% max HP) and a 4 s channel: every second a laser hits the target for 290/435/2150 physical damage and the
+      // enemies up to 3 hexes behind it for 30% of that, and 4 missiles hit random enemies for 17/26/129 each.
+      "ability": {
+        "id": 52, "name": "Overdrive", "trigger": "Mana", "channelSeconds": 4,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": { "flat": [300, 400, 5000], "terms": [ { "source": "SelfMaxHp", "percent": 10 } ] }, "durationSeconds": 4 },
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "delaySeconds": 1, "repeat": { "count": 4, "everySeconds": 1 },
+            "amount": [210, 315, 1550] },   // balance pass: sheet 290/435/2150
+          { "type": "Damage", "target": { "mode": "LineBehindTarget", "length": 3 }, "damageType": "Physical", "delaySeconds": 1, "repeat": { "count": 4, "everySeconds": 1 },
+            "multiplierPercent": 30, "amount": [210, 315, 1550] },
+          { "type": "Damage", "target": "RandomEnemy", "damageType": "Physical", "delaySeconds": 0.25, "repeat": { "count": 16, "everySeconds": 0.25 },
+            "amount": [13, 20, 95] }
+        ]
+      }
+    },
+
+    {
+      "id": 9046, "name": "Moss", "cost": 1, "role": "Tank",
+      "traits": ["Nature", "Bastion"],
+      "stats": { "hp": [650, 1170, 2106], "armor": 40, "magicResist": 40, "attackDamage": 35, "attackSpeed": 0.55, "range": 1, "maxMana": 90, "startMana": 40 },
+      // Barkskin: a 250/375/560 shield for 4 s and a 1 s root on the adjacent enemies.
+      "ability": {
+        "id": 53, "name": "Barkskin", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": [190, 280, 420], "durationSeconds": 4 },   // balance pass: sheet 250/375/560
+          { "type": "Status", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "status": "Root", "durationSeconds": 1 }
+        ]
+      }
+    },
+
+    {
+      "id": 9047, "name": "Thorn", "cost": 1, "role": "Damage",
+      "traits": ["Nature", "Marksman"],
+      "stats": { "hp": [450, 810, 1458], "armor": 15, "magicResist": 15, "attackDamage": 45, "attackSpeed": 0.70, "range": 4, "maxMana": 60 },
+      // Bramble Shot: a thorn at the target: 180/270/400 physical damage and a 1.5 s root.
+      "ability": {
+        "id": 54, "name": "Bramble Shot", "trigger": "Mana", "castLockTicks": 12,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [135, 200, 300] },   // balance pass: sheet 180/270/400
+          { "type": "Status", "target": "CurrentTarget", "status": "Root", "durationSeconds": 1.5 }
+        ]
+      }
+    },
+
+    {
+      "id": 9048, "name": "Briar", "cost": 2, "role": "Tank",
+      "traits": ["Nature", "Duelist"],
+      "stats": { "hp": [650, 1170, 2106], "armor": 30, "magicResist": 30, "attackDamage": 55, "attackSpeed": 0.75, "range": 1, "maxMana": 60 },
+      // Thornwhirl: a spin for 140/210/320 (+80% AD) physical damage to the adjacent enemies, who bleed for 90/135/200 over 3 s.
+      "ability": {
+        "id": 55, "name": "Thornwhirl", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "damageType": "Physical",
+            "amount": { "flat": [105, 160, 240], "terms": [ { "source": "SelfAttackDamage", "percent": 60 } ] } },   // balance pass: sheet 140/210/320 +80% AD
+          { "type": "DoT", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "damageType": "Physical", "visual": "Bleed",
+            "amount": [70, 105, 150], "amountIsTotal": true, "durationSeconds": 3, "intervalSeconds": 1 }
+        ]
+      }
+    },
+
+    {
+      "id": 9049, "name": "Fern", "cost": 2, "role": "Damage",
+      "traits": ["Nature", "Mystic"],
+      "stats": { "hp": [550, 990, 1782], "armor": 25, "magicResist": 25, "attackDamage": 25, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 70, "startMana": 20 },
+      // Verdant Bloom: heals the 3 lowest-HP allies for 150/225/340 (+100% AP).
+      "ability": {
+        "id": 56, "name": "Verdant Bloom", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Heal", "target": { "mode": "LowestHpAlly", "count": 3 },
+            "amount": { "flat": [115, 170, 255], "terms": [ { "source": "SelfAbilityDamage", "percent": 75 } ] } }   // balance pass: sheet 150/225/340 +100% AP
+        ]
+      }
+    },
+
+    {
+      "id": 9050, "name": "Oakheart", "cost": 3, "role": "Tank",
+      "traits": ["Nature", "Bruiser"],
+      "stats": { "hp": [850, 1530, 2754], "armor": 40, "magicResist": 40, "attackDamage": 55, "attackSpeed": 0.65, "range": 1, "maxMana": 100, "startMana": 40 },
+      // Uproot: a slam for 220/330/500 (+10% max HP) magic damage to the enemies within 1 hex and a 1 s knock-up; he heals 15% of his max HP.
+      "ability": {
+        "id": 57, "name": "Uproot", "trigger": "Mana", "castLockTicks": 18,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "damageType": "Magic",
+            "amount": { "flat": [165, 250, 375], "terms": [ { "source": "SelfMaxHp", "percent": 8 } ] } },   // balance pass: sheet 220/330/500 +10% max HP
+          { "type": "Status", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "status": "Knockup", "durationSeconds": 1 },
+          { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 15 } ] } }
+        ]
+      }
+    },
+
+    {
+      "id": 9051, "name": "Willow", "cost": 3, "role": "Damage",
+      "traits": ["Nature", "Sorcerer"],
+      "stats": { "hp": [600, 1080, 1944], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 50, "attackSpeed": 0.70, "range": 4, "maxMana": 80, "startMana": 20 },
+      // Weeping Grove: vines under the largest group of enemies: 260/390/600 (+100% AP) magic damage within 1 hex and a 1.5 s root.
+      "ability": {
+        "id": 58, "name": "Weeping Grove", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "damageType": "Magic", "delaySeconds": 0.3,
+            "amount": { "flat": [195, 290, 450], "terms": [ { "source": "SelfAbilityDamage", "percent": 75 } ] } },   // balance pass: sheet 260/390/600 +100% AP
+          { "type": "Status", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "status": "Root", "durationSeconds": 1.5, "delaySeconds": 0.3 }
+        ]
+      }
+    },
+
+    {
+      "id": 9052, "name": "Sylva", "cost": 4, "role": "Damage",
+      "traits": ["Nature", "Najmi", "Marksman"],
+      "stats": { "hp": [700, 1260, 2268], "armor": 30, "magicResist": 30, "attackDamage": 80, "attackSpeed": 0.80, "range": 4, "maxMana": 70,
+                 "projectileSpeed": 16 },
+      // Starseed Volley: 5 seed-arrows, each at a random enemy, for 150/225/600 (+60% AD) physical damage (can crit).
+      "ability": {
+        "id": 59, "name": "Starseed Volley", "trigger": "Mana", "castLockTicks": 20,
+        "effects": [
+          { "type": "Damage", "target": "RandomEnemy", "damageType": "Physical", "canCrit": true, "repeat": { "count": 5, "everySeconds": 0.15 },
+            "amount": { "flat": [110, 170, 450], "terms": [ { "source": "SelfAttackDamage", "percent": 45 } ] } }   // balance pass: sheet 150/225/600 +60% AD
+        ]
+      }
+    },
+
+    {
+      "id": 9053, "name": "Talon", "cost": 4, "role": "Damage",
+      "traits": ["Nature", "Assassin"],
+      "stats": { "hp": [800, 1440, 2592], "armor": 40, "magicResist": 40, "attackDamage": 75, "attackSpeed": 0.85, "range": 1, "maxMana": 60 },
+      // Pounce: leaps next to the lowest-HP enemy and mauls it 3 times for 160/240/600 (+50% AD) physical damage each (can crit), healing 25% of the damage.
+      "ability": {
+        "id": 60, "name": "Pounce", "trigger": "Mana", "castLockTicks": 24,
+        "effects": [
+          { "type": "Teleport", "target": "Self", "destination": "NextToLowestHpEnemy" },
+          { "type": "Status", "target": "Self", "status": "Omnivamp", "percent": 25, "durationSeconds": 1 },
+          { "type": "Damage", "target": "LowestHpEnemy", "damageType": "Physical", "canCrit": true, "delaySeconds": 0.1, "repeat": { "count": 3, "everySeconds": 0.25 },
+            "amount": { "flat": [120, 180, 450], "terms": [ { "source": "SelfAttackDamage", "percent": 40 } ] } }   // balance pass: sheet 160/240/600 +50% AD
+        ]
+      }
+    },
+
+    {
+      "id": 9054, "name": "Yggra", "cost": 5, "role": "Tank",
+      "traits": ["Nature", "Bastion"],
+      "stats": { "hp": [1200, 2160, 3888], "armor": 60, "magicResist": 60, "attackDamage": 50, "abilityDamage": 70, "attackSpeed": 0.60, "range": 1, "maxMana": 180, "startMana": 80 },
+      // Heart of the Forest: every enemy within 3 hexes is rooted for 1.5/2/5 s and takes 300/450/2000 (+100% AP) magic damage; every ally (plants
+      // included) heals 20% of its max HP.
+      "ability": {
+        "id": 61, "name": "Heart of the Forest", "trigger": "Mana", "castLockTicks": 24,
+        "effects": [
+          { "type": "Status", "target": { "mode": "AreaAroundSelf", "radius": 3, "includeCenter": false }, "status": "Root", "durationSeconds": [1.5, 2, 5] },
+          { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 3, "includeCenter": false }, "damageType": "Magic", "delaySeconds": 0.2,
+            "amount": { "flat": [220, 330, 1500], "terms": [ { "source": "SelfAbilityDamage", "percent": 75 } ] } },   // balance pass: sheet 300/450/2000 +100% AP
+          { "type": "Heal", "target": "AllAllies", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 20 } ] } }
+        ]
+      }
+    },
+
+    {
+      "id": 9041, "name": "Rift Herald", "cost": 4, "role": "Tank", "special": true,
+      "traits": ["Phaisa", "Bruiser"],
+      "stats": { "hp": [1800, 3240, 5832], "armor": 50, "magicResist": 50, "attackDamage": 90, "attackSpeed": 0.65, "range": 1 },
+      // +15% max HP per player level.
+      "passive": { "id": 62, "name": "Grows with the Rift",
+        "effects": [ { "type": "Status", "target": "Self", "status": "MaxHp", "permanent": true,
+                       "percent": { "terms": [ { "source": "PlayerLevel", "percent": 1500 } ] } } ] },
+      // Every 8 s it charges down the line in front of it: 250 magic damage and a 1.25 s knock-up.
+      "triggers": [
+        { "id": 63, "name": "Rift Charge", "trigger": "EveryInterval", "intervalSeconds": 8,
+          "effects": [
+            { "type": "Damage", "target": { "mode": "ConeTowardTarget", "length": 3 }, "damageType": "Magic", "amount": 250 },
+            { "type": "Status", "target": { "mode": "ConeTowardTarget", "length": 3 }, "status": "Knockup", "durationSeconds": 1.25 }
+          ] }
+      ]
+    },
+
+    {
+      "id": 9043, "name": "Phaisa Queen", "cost": 5, "price": 7, "teamSlots": 2, "role": "Tank", "special": true,
+      "traits": ["Phaisa"],
+      "stats": { "hp": [4500, 8100, 14580], "armor": 100, "magicResist": 100, "attackDamage": 210, "attackSpeed": 0.85, "range": 1 },
+      "passive": { "id": 64, "name": "Sovereign", "effects": [ { "type": "Status", "target": "Self", "status": "CcImmunity", "permanent": true } ] },
+      // Her attacks splash 30% physical damage to the enemies next to her target.
+      "onAttack": { "id": 65, "name": "Acid Splash",
+        "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false }, "damageType": "Physical",
+                       "amount": { "terms": [ { "source": "SelfAttackDamage", "percent": 30 } ] } } ] },
+      // Void Torrent (every 3rd attack): acid on the 3 densest enemy clusters (re-picked each time): 600 magic damage, -40% Armor for 4 s, a 1 s knock-up.
+      "ability": {
+        "id": 66, "name": "Void Torrent", "trigger": "EveryNthAttack", "attackCount": 3,
+        "effects": [
+          { "type": "Damage", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "damageType": "Magic", "amount": [480, 720, 1500],
+            "repeat": { "count": 3, "everySeconds": 0.2 } },
+          { "type": "Status", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "status": "Armor", "percent": -40, "durationSeconds": 4 },
+          { "type": "Status", "target": { "mode": "AreaAroundDensestEnemy", "radius": 1, "includeCenter": true }, "status": "Knockup", "durationSeconds": 1 }
+        ]
+      }
+    },
+
+    {
+      "id": 9110, "name": "Stonebark Tree", "cost": 1, "role": "Tank", "plant": true, "stationary": true,
+      "traits": ["Plant"],
+      "stats": { "hp": [450, 700, 1100], "armor": 31, "magicResist": 31, "attackDamage": 50, "attackSpeed": 0.50, "range": 1 },
+      // On death: stuns the nearest 2 / 3 / 3 enemies for 1.5 s.
+      "triggers": [
+        { "id": 67, "name": "Falling Timber", "trigger": "OnDeath",
+          "effects": [ { "type": "Status", "target": { "mode": "ClosestEnemies", "count": [2, 3, 3] }, "status": "Stun", "durationSeconds": 1.5 } ] }
+      ]
+    },
+
+    {
+      "id": 9111, "name": "Omnilium Blossom", "cost": 1, "role": "Damage", "plant": true, "stationary": true,
+      "traits": ["Plant"],
+      "stats": { "hp": [350, 550, 900], "armor": 20, "magicResist": 20, "attackDamage": 0, "attackSpeed": 0.20, "range": 1 },
+      // After 4 s of combat, Nature allies gain 10 / 15 / 15% AD and AP; every 4 s after that, 3 / 5 / 5% more (the 3-star values are doubled: at
+      // Nature (11) "the forest comes to life"). It stops when the Blossom dies.
+      "passive": {
+        "id": 68, "name": "Omnilium Bloom", "stopsOnDeath": true,
+        "effects": [
+          { "type": "Status", "target": { "mode": "AllAllies", "trait": "Nature" }, "status": "AttackDamage", "percent": [10, 15, 30], "permanent": true, "delaySeconds": 4 },
+          { "type": "Status", "target": { "mode": "AllAllies", "trait": "Nature" }, "status": "AbilityPower", "percent": [10, 15, 30], "permanent": true, "delaySeconds": 4 },
+          { "type": "Status", "target": { "mode": "AllAllies", "trait": "Nature" }, "status": "AttackDamage", "percent": [3, 5, 10], "permanent": true,
+            "delaySeconds": 8, "repeat": { "count": 12, "everySeconds": 4 } },
+          { "type": "Status", "target": { "mode": "AllAllies", "trait": "Nature" }, "status": "AbilityPower", "percent": [3, 5, 10], "permanent": true,
+            "delaySeconds": 8, "repeat": { "count": 12, "everySeconds": 4 } }
+        ]
+      }
+    },
+
+    {
+      "id": 9112, "name": "Omnilium Protector", "cost": 1, "role": "Tank", "plant": true,
+      "traits": ["Plant"],
+      "stats": { "hp": [650, 1050, 1700], "armor": 35, "magicResist": 35, "attackDamage": 50, "abilityDamage": 40, "attackSpeed": 0.70, "range": 1,
+                 "maxMana": 70, "startMana": 20 },
+      // When a Nature ally dies: heals 54 / 97 / 175 HP and gains 80 / 100 / 250% Attack Speed for 3 s.
+      "triggers": [
+        { "id": 69, "name": "Grove Warden", "trigger": "OnAllyDeath", "triggerTrait": "Nature",
+          "effects": [
+            { "type": "Heal", "target": "Self", "amount": [54, 97, 175] },
+            { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": [80, 100, 250], "durationSeconds": 3 }
+          ] }
+      ],
+      // Bulwark Roar: a 300/450/800 (+100% AP) shield for 4 s and a 1 s stun on the adjacent enemies.
+      "ability": {
+        "id": 72, "name": "Bulwark Roar", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": { "flat": [300, 450, 800], "terms": [ { "source": "SelfAbilityDamage", "percent": 100 } ] }, "durationSeconds": 4 },
+          { "type": "Status", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false }, "status": "Stun", "durationSeconds": 1 }
         ]
       }
     },
@@ -669,7 +1081,22 @@
               "amount": { "terms": [ { "source": "TriggerDamage", "percent": [5, 8, 12] } ] } }
           ] }
       ]
-    }
+    },
 
+    {
+      "id": 9042, "name": "Baron Nashor", "summon": true,
+      "stats": { "hp": 3000, "armor": 60, "magicResist": 60, "attackDamage": 150, "attackSpeed": 0.70, "range": 2 },
+      // Every 3rd attack hits every enemy within 1 hex of its target for 300 magic damage.
+      "ability": {
+        "id": 73, "name": "Void Maw", "trigger": "EveryNthAttack", "attackCount": 3,
+        "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true }, "damageType": "Magic", "amount": 300 } ]
+      }
+    },
+
+    {
+      "id": 9044, "name": "Invention", "summon": true, "stationary": true,
+      "stats": { "hp": 1000, "armor": 0, "magicResist": 0, "attackDamage": 0, "attackSpeed": 0.10, "range": 1 },
+      "passive": { "id": 74, "name": "Workshop", "effects": [ { "type": "Status", "target": "Self", "status": "Untargetable", "permanent": true } ] }
+    }
   ]
 }

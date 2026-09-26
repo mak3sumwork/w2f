@@ -93,6 +93,7 @@ any unknown or missing field and any out-of-range number is refused with an `err
 | `combine_items` | `first`, `second` | (revision 2) two base components in the item bag become the finished item; answered with `result`, a `bag_event`, and the new `state` |
 | `equip_item` | `unit_id`, `item_id` | Planning; in Combat/Resolution only onto bench units. An **Item Remover** takes *all* items off the unit and is used up |
 | `unequip_item` | `unit_id`, `slot` 0..2 | as `equip_item` |
+| `pick_trait_choice` | `index` -1..7 | (revision 5) Planning, Combat, Resolution: answer `state.trait_choice` (a Hexagon module: pick an option; a Najmi prototype: pick, or `-1` to decline and bank the star dust). Open choices are settled automatically when the next Combat starts |
 | `get_state` | | any time: re-sends `state` and `public_state` |
 | `get_fight` | `fight_index` 0..7 | any time: the combat log of any of this round's fights (they are public) |
 | `get_catalog` | | any time, also in the lobby |
@@ -216,7 +217,7 @@ A short real excerpt (a fight of 5 v 5), reading the first columns of each row:
 * **Attack**: `unit` attacks `other`. `kind` 0 = melee / instant, 1 = projectile. `windup` = ticks *before* the impact that the swing animation should start (the release of a
   projectile is at `T - flight`). `flight` = ticks the projectile travels; fly it from the attacker's hex (`from_x, from_y`) to the target's (`to_x, to_y`, where the target stood when the
   attack was made). Damage arrives at `T`, in the `Damage` row(s) of the same tick.
-* **SpellCast**: `unit` casts `ability` at `other` (0 if it has no target). The **effects land at tick T**. Start the cast animation at `T - windup`; the caster is *locked* (cannot act) for
+* **SpellCast**: `unit` casts `ability` at `other` (0 if it has no target). (For a **"largest cluster"** spell, one with an `AreaAroundDensestEnemy` target, `to` is that cluster's centre when the cast starts, an enemy's hex, not the target's.) The **effects land at tick T**. Start the cast animation at `T - windup`; the caster is *locked* (cannot act) for
   `duration` ticks *after* `T` (the recovery part of the animation). `shape` / `size` describe the area (section 7.5) centred on `(to_x, to_y)`; `from` is the caster's hex.
 * Where a start time would fall before tick 0, or overlap the unit's previous action, shorten the animation. Timings are hints: use your own animation lengths and *time-scale* clips to
   fit `windup` + `flight` if you like: only the impact tick is exact.
@@ -241,7 +242,7 @@ Teleport, SpellInterrupted, Overtime`). Columns each type uses (the rest are 0):
 | **10 ManaChanged** | `unit`, `amount` = its mana now (thousandths). Sent on discrete changes; between events show the bar rising at `mana_regen` per second (not while casting) |
 | **11 Heal** | `unit` healed, `other` healer, `amount` = HP restored, `reduced` = healing removed by Wound, `hp_after` |
 | **12 TraitActivated** | tick 0 only: `team`, `trait_id`, `amount` = how many different champions have it, `subtype` = which breakpoint (1 = lowest) is active |
-| **13 Teleport** | `unit`, `from` -> `to`: it is at `to` from this tick on |
+| **13 Teleport** | `unit`, `from` -> `to`: it is at `to` from this tick on. `subtype` 0 = a blink / dash / leap of its own, 1 = displaced by someone else (a pull or a knock-back: slide it). **`subtype` 2 = an assist blink (Sept. 2026, Sola's "Blade Brothers"): presentation only: the unit blinks to `to` (next to `other`, the enemy it strikes), hits, and is back on `from` at once; its position does NOT change** |
 | **14 SpellInterrupted** | `unit`, `ability`: its channel was broken |
 | **15 Overtime** | no unit. See 7.6 |
 
@@ -254,6 +255,11 @@ a `Damage` row with `flags & 2` and `kind` = that status's index, and a `StatusE
 ### 7.4 Status types
 `subtype` on status rows indexes `catalog.enums.status_types` (Stun, Burn, AttackDamage, AttackSpeed, Armor, MagicResist, MaxHp, Wound, ..., Poison, Bleed, Drain). Crowd control worth an icon: `Stun`, `Root`,
 `Knockup` (airborne), `Blind`, `Untargetable` (fade the unit), `AggroDrop`. Permanent statuses (duration 0) applied on tick 0 are passives, items and synergies: usually no effect is needed.
+Trait system v2 (revision 5): `Piloting` = the unit climbed into Hexa (`other` = Hexa's unit id): **hide it** (or draw it in the cockpit) until its `StatusEnded`, when Hexa
+has died and it ejects onto its own hex; it neither acts nor takes damage meanwhile. `ManaCost` (a Helios Rally: the bar is shorter; re-read `ManaChanged`), `Omnivamp`, `HealingAmp`
+are plain buffs; `Awakened` = a plant came to life (the Nature trees start walking). Two summons are special: **Baron Nashor** (9042, Phaisa 9) and the **Invention** (9044,
+Hexagon: untargetable, never moves; its modules fire 8 s in — draw a machine on the team's right-most back hex). A Superior Lifeform clone is a summon Spawn whose `champion`
+is a real champion (draw it tinted). Plants (9110-9112) are ordinary units of the board (`catalog.champions[].plant`), stationary until `Awakened`.
 
 ### 7.5 Spell areas
 `SpellCast.shape` indexes `catalog.enums.area_shapes`; `size` is in hexes:
@@ -343,6 +349,8 @@ data yet; names are. Fights are instant on the server: the log is produced in on
   numeric meanings do not change and are not removed. New fields, new message types, new appended enum values (event types, status types, area shapes, action results) may appear: a client must
   **ignore unknown fields and unknown message types**, and treat an unknown enum index as "no special effect".
 * A breaking change would bump `protocol` to 2 and be announced in this file. The schema files are versioned with the protocol and updated in the same commit as any addition.
-* **Revision history** (additive only): **1** the frozen protocol; **4** (Phase 22) the catalog champions also carry `armor[3]`, `magic_resist[3]`, `ability_damage[3]`, `start_mana`, `mana_regen_milli`; **3** (Phase 21) `set_shop_lock` + `state.shop_locked` (the lock rule; snapshot format 5); **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
+* **Revision history** (additive only): **1** the frozen protocol; **5** (trait system v2, Sept. 2026) command `pick_trait_choice`; messages `trait_choice` and `trait_rewards`;
+  `state.traits` + `state.trait_choice`; `public_state.trait_paths` (the path the match picked for each trait with paths: Selini); catalog champions carry `plant`, `special`, `price`,
+  `team_slots`, `stationary`, `pilot`, catalog traits `paths`, `modules`, `mutations`; status types `ManaCost`, `HealingAmp`, `Omnivamp`, `Awakened`, `Piloting` appended (snapshot format 6); **4** (Phase 22) the catalog champions also carry `armor[3]`, `magic_resist[3]`, `ability_damage[3]`, `start_mana`, `mana_regen_milli`; **3** (Phase 21) `set_shop_lock` + `state.shop_locked` (the lock rule; snapshot format 5); **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
   scouted player's arena), `combat.unit_items` (unit id -> item ids of the fighters).
 * The combat log's columns are named in every message: read them from `columns`, never by hard-coded position, and tolerate extra columns at the end.

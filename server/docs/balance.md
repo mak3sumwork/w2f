@@ -46,3 +46,35 @@ they need human play or a bot that builds for them. Re-run `make balance` after 
 
 `tests/tests.cpp` (`TestProductionDataKeepsTheDesignerStructure`) makes sure the balance data keeps the designer's champions, abilities and synergy breakpoints: only numbers may move, and none may run away by more than 3x
 (Baira 6x, documented above).
+
+
+## September 2026 champions (first pass)
+
+The 8 new champions and the reworked Baira came in at the design sheet's raw numbers while the rest of the roster had been through the balance pass. They got the same treatment: tanks (Tide, Kael) HP x0.68, armor / MR x0.78; the others HP x0.9. Their abilities were then trimmed twice; the sheet's numbers stay in `tests/data/designer_spec_champions.json`.
+
+| champion | sheet | now |
+|---|---|---|
+| Baira (Crashing Tide, per wave) | 170/255/400 + 100% AP | 95/140/230 + 40% AP |
+| Kael (Dawnbreaker) | 200/300/470 + 120% AD | 150/225/350 + 90% AD |
+| Aphel (per arrow) | 160/240/600 + 110% AD | 120/180/450 + 80% AD |
+| Sola (per slash) | 90/135/330 + 40% AD | 75/115/280 + 35% AD |
+| Morrah (Rift Collapse) | 320/480/1200 + 100% AP | 200/300/760 + 60% AP |
+| Aureon (Solar Judgment) | 600/900/4000 + 150% AP | 330/500/2200 + 90% AP |
+| Nihila (Devour Reality) | 400/650/5000 + 120% AP | 300/480/3600 + 90% AP; execute 20/25/50% (engine cap 50%) |
+
+After it (`make balance ARGS="--matches 300 --seed 1000"`): Aureon 63%, Baira 63%, Nihila 61%, Sunna 59%, Morrah 58%, Aphel 58%, Kael 57%, Sola 56%, Tide 55% (the old roster sits at 40-55%, Vega was 64%).
+**Selini (3) wins 66%**: the old Selini bonus (drop aggro and heal once below 50% HP) now has 7 units to trigger it. The Selini / Helios / Phaisa reworks in the design doc replace these traits, so the real balance pass belongs after them.
+
+## Trait system v2 (September 2026)
+
+60 bot matches (`make balance`, seeds 1..60) with the whole v2 system on (bots answer module / prototype choices and ignore plants). After two tuning rounds every
+champion and synergy with 150+ samples sits between about 41% and 64% (the old roster's spread was 40-66%); fights average 18.5 s, 8.7% reach overtime.
+Numbers moved away from the design sheet (each marked `balance pass` in the data):
+* Aureon 280/420/2000 +75% AP, ally shield 200/300/1500; Kael 125/190/300 +75% AD, shield 15% max HP; Sunna heal 120/180/300 +75% AP, resists 20/30/50;
+  Baira waves 75/110/190 +30% AP; Tide shield 150/220/340; Talon 100/150/400 +35% AD.
+* Rot poison 170/255/390; Nyx cleave 180/270/420; Lum's punch gets a flat 150/225/500 (+75/110/250 behind).
+* Plants: Stonebark Tree 350/550/900 HP; the Blossom 8/12/25% then +2/4/8% every 4 s.
+* Traits: Bruiser allies +60 HP and holders 12/40/65%; Marksman 8/30% AS, 6/20% amp; Phaisa (4) 25% AS; Selini Enlightenment 5/12/18% + 1.5/2.5/3.5 per level,
+  Prosperity 6/20/40% + 2 per gold.
+Still worth watching: Aureon (~62%), Kael / Oakheart (~58%), Nature (3) and Selini (3) (~59%), Rot (~41%).
+

@@ -1,0 +1,1094 @@
+{
+ "_doc": "Fight VFX per champion, read by UW2FFx (copied to Content/W2F/Data/unit_fx.json by tools/unreal/import_fx.py). colour / accent = linear RGB. attack = the basic attack style: melee slash | heavy | stab | punch | claw | smash, ranged arrow | bolt | bullet | glob | orb (a melee style on a ranged attack falls back to bolt). cast = a recipe in W2FFx.cpp (see docs/models/mixamo-casting.md, 'Fight effects'). hit = what lands on every unit the ability damages: spark (default) | starfall | spear | wave | slash | none. Everything else (shields, stuns, roots, knock-ups, blinds, tethers, damage over time, heals, blinks, deaths) is drawn from the log's own rows, in the colour of the unit that caused it. move = how the body travels on the champion's own teleports: blink (default) | dash | leap. brightness = one multiplier for every glow (bloom turns anything bright white).",
+ "brightness": 0.4,
+ "default": {
+  "colour": [
+   1.0,
+   0.85,
+   0.6
+  ],
+  "accent": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "attack": "claw",
+  "cast": "burst",
+  "hit": "spark"
+ },
+ "champions": {
+  "9001": {
+   "name": "Alesk",
+   "colour": [
+    0.1,
+    0.95,
+    0.85
+   ],
+   "accent": [
+    0.6,
+    1.0,
+    0.95
+   ],
+   "attack": "punch",
+   "cast": "rune_ring"
+  },
+  "9002": {
+   "name": "Baira",
+   "colour": [
+    0.25,
+    0.55,
+    1.0
+   ],
+   "accent": [
+    0.7,
+    0.95,
+    1.0
+   ],
+   "attack": "orb",
+   "cast": "crashing_tide",
+   "hit": "wave"
+  },
+  "9003": {
+   "name": "Cyla",
+   "colour": [
+    0.1,
+    0.9,
+    0.95
+   ],
+   "accent": [
+    1.0,
+    0.6,
+    0.2
+   ],
+   "attack": "bullet",
+   "cast": "rocket",
+   "hit": "rocket"
+  },
+  "9005": {
+   "name": "Faire",
+   "colour": [
+    0.1,
+    0.9,
+    0.95
+   ],
+   "accent": [
+    0.8,
+    0.95,
+    1.0
+   ],
+   "attack": "bolt",
+   "cast": "time_glyph"
+  },
+  "9006": {
+   "name": "Les",
+   "colour": [
+    1.0,
+    0.88,
+    0.55
+   ],
+   "accent": [
+    0.9,
+    0.95,
+    1.0
+   ],
+   "attack": "claw",
+   "cast": "crystal_wall"
+  },
+  "9007": {
+   "name": "Lum",
+   "colour": [
+    1.0,
+    0.82,
+    0.4
+   ],
+   "accent": [
+    1.0,
+    1.0,
+    0.9
+   ],
+   "attack": "punch",
+   "cast": "shockwave_line"
+  },
+  "9008": {
+   "name": "Astra",
+   "colour": [
+    0.55,
+    0.7,
+    1.0
+   ],
+   "accent": [
+    1.0,
+    0.9,
+    0.5
+   ],
+   "attack": "orb",
+   "cast": "star_link"
+  },
+  "9009": {
+   "name": "Lunis",
+   "colour": [
+    0.5,
+    0.7,
+    1.0
+   ],
+   "accent": [
+    0.9,
+    0.95,
+    1.0
+   ],
+   "attack": "slash",
+   "cast": "crescent_cone",
+   "move": "blink"
+  },
+  "9010": {
+   "name": "Soul",
+   "colour": [
+    0.45,
+    1.0,
+    0.55
+   ],
+   "accent": [
+    0.8,
+    1.0,
+    0.8
+   ],
+   "attack": "heavy",
+   "cast": "soul_rend"
+  },
+  "9011": {
+   "name": "Myna",
+   "colour": [
+    0.3,
+    0.65,
+    1.0
+   ],
+   "accent": [
+    0.7,
+    0.95,
+    1.0
+   ],
+   "attack": "orb",
+   "cast": "tide",
+   "hit": "spear"
+  },
+  "9012": {
+   "name": "Vega",
+   "colour": [
+    0.7,
+    0.8,
+    1.0
+   ],
+   "accent": [
+    1.0,
+    0.85,
+    0.5
+   ],
+   "attack": "orb",
+   "cast": "starfall",
+   "hit": "starfall"
+  },
+  "9013": {
+   "name": "Ignis",
+   "colour": [
+    1.0,
+    0.55,
+    0.12
+   ],
+   "accent": [
+    1.0,
+    0.85,
+    0.4
+   ],
+   "attack": "slash",
+   "cast": "ember_ward"
+  },
+  "9014": {
+   "name": "Pyra",
+   "colour": [
+    1.0,
+    0.5,
+    0.1
+   ],
+   "accent": [
+    1.0,
+    0.85,
+    0.3
+   ],
+   "attack": "arrow",
+   "cast": "piercing_arrow"
+  },
+  "9015": {
+   "name": "Vex",
+   "colour": [
+    0.6,
+    0.22,
+    1.0
+   ],
+   "accent": [
+    0.9,
+    0.6,
+    1.0
+   ],
+   "attack": "stab",
+   "cast": "cull"
+  },
+  "9016": {
+   "name": "Null",
+   "colour": [
+    0.55,
+    0.15,
+    0.95
+   ],
+   "accent": [
+    0.15,
+    0.0,
+    0.3
+   ],
+   "attack": "orb",
+   "cast": "gravity_well"
+  },
+  "9017": {
+   "name": "Bone",
+   "colour": [
+    0.9,
+    0.88,
+    0.75
+   ],
+   "accent": [
+    0.45,
+    1.0,
+    0.55
+   ],
+   "attack": "smash",
+   "cast": "skull_bash"
+  },
+  "9018": {
+   "name": "Rot",
+   "colour": [
+    0.45,
+    1.0,
+    0.2
+   ],
+   "accent": [
+    0.2,
+    0.6,
+    0.1
+   ],
+   "attack": "glob",
+   "cast": "blight"
+  },
+  "9019": {
+   "name": "Bit",
+   "colour": [
+    0.1,
+    0.9,
+    0.95
+   ],
+   "accent": [
+    0.8,
+    1.0,
+    1.0
+   ],
+   "attack": "slash",
+   "cast": "breakthrough",
+   "move": "dash"
+  },
+  "9020": {
+   "name": "Solis",
+   "colour": [
+    1.0,
+    0.72,
+    0.25
+   ],
+   "accent": [
+    1.0,
+    0.95,
+    0.7
+   ],
+   "attack": "heavy",
+   "cast": "sun_charge"
+  },
+  "9021": {
+   "name": "Xul",
+   "colour": [
+    0.6,
+    0.2,
+    1.0
+   ],
+   "accent": [
+    0.2,
+    0.0,
+    0.35
+   ],
+   "attack": "bolt",
+   "cast": "void_bolt",
+   "hit": "none"
+  },
+  "9022": {
+   "name": "Grave",
+   "colour": [
+    0.45,
+    1.0,
+    0.55
+   ],
+   "accent": [
+    0.8,
+    1.0,
+    0.8
+   ],
+   "attack": "orb",
+   "cast": "raise"
+  },
+  "9023": {
+   "name": "Byte",
+   "colour": [
+    0.1,
+    0.9,
+    0.95
+   ],
+   "accent": [
+    0.8,
+    1.0,
+    1.0
+   ],
+   "attack": "bolt",
+   "cast": "firewall"
+  },
+  "9024": {
+   "name": "Orion",
+   "colour": [
+    0.6,
+    0.75,
+    1.0
+   ],
+   "accent": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "attack": "arrow",
+   "cast": "concussive"
+  },
+  "9025": {
+   "name": "Nyx",
+   "colour": [
+    0.6,
+    0.25,
+    1.0
+   ],
+   "accent": [
+    0.9,
+    0.7,
+    1.0
+   ],
+   "attack": "heavy",
+   "cast": "cleave"
+  },
+  "9026": {
+   "name": "Flare",
+   "colour": [
+    1.0,
+    0.6,
+    0.15
+   ],
+   "accent": [
+    1.0,
+    0.95,
+    0.6
+   ],
+   "attack": "orb",
+   "cast": "sunbeam"
+  },
+  "9027": {
+   "name": "Lich",
+   "colour": [
+    0.4,
+    1.0,
+    0.5
+   ],
+   "accent": [
+    0.1,
+    0.4,
+    0.15
+   ],
+   "attack": "bolt",
+   "cast": "soul_drain"
+  },
+  "9028": {
+   "name": "Raa",
+   "colour": [
+    1.0,
+    0.65,
+    0.15
+   ],
+   "accent": [
+    1.0,
+    0.9,
+    0.5
+   ],
+   "attack": "stab",
+   "cast": "solar_leap",
+   "move": "leap"
+  },
+  "9029": {
+   "name": "Kryx",
+   "colour": [
+    0.75,
+    0.2,
+    0.9
+   ],
+   "accent": [
+    1.0,
+    0.2,
+    0.3
+   ],
+   "attack": "heavy",
+   "cast": "frenzy"
+  },
+  "9030": {
+   "name": "Mortis",
+   "colour": [
+    0.45,
+    1.0,
+    0.55
+   ],
+   "accent": [
+    0.8,
+    1.0,
+    0.7
+   ],
+   "attack": "bullet",
+   "cast": "death_volley"
+  },
+  "9031": {
+   "name": "Umbra",
+   "colour": [
+    0.5,
+    0.65,
+    1.0
+   ],
+   "accent": [
+    0.02,
+    0.0,
+    0.08
+   ],
+   "attack": "claw",
+   "cast": "eclipse"
+  },
+  "9101": {
+   "name": "Skeleton",
+   "colour": [
+    0.9,
+    0.88,
+    0.75
+   ],
+   "accent": [
+    0.45,
+    1.0,
+    0.55
+   ],
+   "attack": "claw",
+   "cast": "burst"
+  },
+  "9102": {
+   "name": "LostSoul",
+   "colour": [
+    0.3,
+    0.6,
+    1.0
+   ],
+   "accent": [
+    0.7,
+    0.9,
+    1.0
+   ],
+   "attack": "orb",
+   "cast": "burst"
+  },
+  "10001": {
+   "name": "Gloop",
+   "colour": [
+    0.45,
+    1.0,
+    0.3
+   ],
+   "accent": [
+    0.2,
+    0.5,
+    0.1
+   ],
+   "attack": "glob",
+   "cast": "burst"
+  },
+  "10002": {
+   "name": "Spitter",
+   "colour": [
+    0.7,
+    1.0,
+    0.3
+   ],
+   "accent": [
+    0.3,
+    0.6,
+    0.1
+   ],
+   "attack": "glob",
+   "cast": "burst"
+  },
+  "10003": {
+   "name": "Boulder",
+   "colour": [
+    0.85,
+    0.7,
+    0.5
+   ],
+   "accent": [
+    1.0,
+    0.9,
+    0.7
+   ],
+   "attack": "smash",
+   "cast": "burst"
+  },
+  "10004": {
+   "name": "ElderWraith",
+   "colour": [
+    0.55,
+    0.45,
+    1.0
+   ],
+   "accent": [
+    0.1,
+    0.0,
+    0.2
+   ],
+   "attack": "orb",
+   "cast": "burst"
+  },
+  "9032": {
+   "name": "Tide",
+   "colour": [
+    0.25,
+    0.6,
+    1.0
+   ],
+   "accent": [
+    0.75,
+    0.95,
+    1.0
+   ],
+   "attack": "punch",
+   "cast": "riptide"
+  },
+  "9033": {
+   "name": "Sunna",
+   "colour": [
+    1.0,
+    0.72,
+    0.25
+   ],
+   "accent": [
+    1.0,
+    0.95,
+    0.7
+   ],
+   "attack": "orb",
+   "cast": "morning_light"
+  },
+  "9034": {
+   "name": "Kael",
+   "colour": [
+    1.0,
+    0.62,
+    0.15
+   ],
+   "accent": [
+    1.0,
+    0.9,
+    0.5
+   ],
+   "attack": "heavy",
+   "cast": "dawnbreaker"
+  },
+  "9035": {
+   "name": "Aphel",
+   "colour": [
+    0.45,
+    0.65,
+    1.0
+   ],
+   "accent": [
+    0.9,
+    0.95,
+    1.0
+   ],
+   "attack": "arrow",
+   "cast": "moonlit_volley"
+  },
+  "9036": {
+   "name": "Sola",
+   "colour": [
+    0.5,
+    0.7,
+    1.0
+   ],
+   "accent": [
+    0.95,
+    0.97,
+    1.0
+   ],
+   "attack": "slash",
+   "cast": "moon_waltz",
+   "hit": "slash",
+   "move": "dash"
+  },
+  "9037": {
+   "name": "Morrah",
+   "colour": [
+    0.6,
+    0.2,
+    1.0
+   ],
+   "accent": [
+    0.15,
+    0.0,
+    0.3
+   ],
+   "attack": "bolt",
+   "cast": "rift_collapse"
+  },
+  "9038": {
+   "name": "Aureon",
+   "colour": [
+    1.0,
+    0.6,
+    0.12
+   ],
+   "accent": [
+    1.0,
+    0.92,
+    0.6
+   ],
+   "attack": "orb",
+   "cast": "solar_judgment"
+  },
+  "9039": {
+   "name": "Nihila",
+   "colour": [
+    0.55,
+    0.1,
+    1.0
+   ],
+   "accent": [
+    0.05,
+    0.0,
+    0.1
+   ],
+   "attack": "bolt",
+   "cast": "devour_reality"
+  },
+  "9040": {
+   "name": "Rivet",
+   "colour": [
+    1.0,
+    0.55,
+    0.15
+   ],
+   "accent": [
+    1.0,
+    0.85,
+    0.5
+   ],
+   "attack": "bullet",
+   "cast": "shred_volley"
+  },
+  "9045": {
+   "name": "Hexa",
+   "colour": [
+    0.2,
+    0.8,
+    1.0
+   ],
+   "accent": [
+    0.7,
+    0.95,
+    1.0
+   ],
+   "attack": "bullet",
+   "cast": "overdrive"
+  },
+  "9046": {
+   "name": "Moss",
+   "colour": [
+    0.35,
+    0.85,
+    0.3
+   ],
+   "accent": [
+    0.75,
+    1.0,
+    0.5
+   ],
+   "attack": "punch",
+   "cast": "barkskin"
+  },
+  "9047": {
+   "name": "Thorn",
+   "colour": [
+    0.35,
+    0.85,
+    0.3
+   ],
+   "accent": [
+    0.75,
+    1.0,
+    0.5
+   ],
+   "attack": "arrow",
+   "cast": "bramble_shot"
+  },
+  "9048": {
+   "name": "Briar",
+   "colour": [
+    0.45,
+    0.9,
+    0.3
+   ],
+   "accent": [
+    0.9,
+    0.3,
+    0.35
+   ],
+   "attack": "slash",
+   "cast": "thornwhirl"
+  },
+  "9049": {
+   "name": "Fern",
+   "colour": [
+    0.45,
+    1.0,
+    0.55
+   ],
+   "accent": [
+    1.0,
+    0.8,
+    0.9
+   ],
+   "attack": "orb",
+   "cast": "verdant_bloom"
+  },
+  "9050": {
+   "name": "Oakheart",
+   "colour": [
+    0.55,
+    0.8,
+    0.3
+   ],
+   "accent": [
+    0.75,
+    1.0,
+    0.5
+   ],
+   "attack": "heavy",
+   "cast": "uproot"
+  },
+  "9051": {
+   "name": "Willow",
+   "colour": [
+    0.4,
+    0.95,
+    0.55
+   ],
+   "accent": [
+    0.75,
+    1.0,
+    0.5
+   ],
+   "attack": "orb",
+   "cast": "weeping_grove"
+  },
+  "9052": {
+   "name": "Sylva",
+   "colour": [
+    0.6,
+    0.9,
+    0.5
+   ],
+   "accent": [
+    0.85,
+    0.9,
+    1.0
+   ],
+   "attack": "arrow",
+   "cast": "starseed",
+   "hit": "starfall"
+  },
+  "9053": {
+   "name": "Talon",
+   "colour": [
+    0.6,
+    1.0,
+    0.3
+   ],
+   "accent": [
+    1.0,
+    1.0,
+    0.7
+   ],
+   "attack": "claw",
+   "cast": "pounce",
+   "move": "leap"
+  },
+  "9054": {
+   "name": "Yggra",
+   "colour": [
+    0.4,
+    0.95,
+    0.35
+   ],
+   "accent": [
+    0.95,
+    1.0,
+    0.6
+   ],
+   "attack": "heavy",
+   "cast": "heart_of_forest"
+  },
+  "9041": {
+   "name": "Rift Herald",
+   "colour": [
+    0.7,
+    0.3,
+    1.0
+   ],
+   "accent": [
+    0.95,
+    0.6,
+    1.0
+   ],
+   "attack": "heavy",
+   "cast": "burst"
+  },
+  "9042": {
+   "name": "Baron Nashor",
+   "colour": [
+    0.65,
+    0.25,
+    1.0
+   ],
+   "accent": [
+    0.9,
+    0.5,
+    1.0
+   ],
+   "attack": "smash",
+   "cast": "void_maw"
+  },
+  "9043": {
+   "name": "Phaisa Queen",
+   "colour": [
+    0.75,
+    0.3,
+    1.0
+   ],
+   "accent": [
+    0.6,
+    1.0,
+    0.4
+   ],
+   "attack": "claw",
+   "cast": "void_torrent"
+  },
+  "9044": {
+   "name": "Invention",
+   "colour": [
+    1.0,
+    0.8,
+    0.35
+   ],
+   "accent": [
+    0.4,
+    0.9,
+    1.0
+   ],
+   "attack": "bullet",
+   "cast": "burst"
+  },
+  "9110": {
+   "name": "Stonebark Tree",
+   "colour": [
+    0.55,
+    0.75,
+    0.3
+   ],
+   "accent": [
+    0.75,
+    1.0,
+    0.5
+   ],
+   "attack": "heavy",
+   "cast": "burst"
+  },
+  "9111": {
+   "name": "Omnilium Blossom",
+   "colour": [
+    1.0,
+    0.7,
+    0.9
+   ],
+   "accent": [
+    0.3,
+    1.0,
+    0.9
+   ],
+   "attack": "orb",
+   "cast": "burst"
+  },
+  "9112": {
+   "name": "Omnilium Protector",
+   "colour": [
+    0.2,
+    0.95,
+    0.85
+   ],
+   "accent": [
+    0.75,
+    1.0,
+    0.5
+   ],
+   "attack": "slash",
+   "cast": "bulwark_roar"
+  }
+ },
+ "statuses": {
+  "_doc": "How a status looks while it lasts (only statuses with a duration, applied during the fight). colour null = the colour of the unit that caused it.",
+  "Stun": {
+   "look": "stars",
+   "colour": [
+    1.0,
+    0.9,
+    0.35
+   ]
+  },
+  "Root": {
+   "look": "roots",
+   "colour": null
+  },
+  "Knockup": {
+   "look": "lift",
+   "colour": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "Blind": {
+   "look": "blind",
+   "colour": [
+    0.15,
+    0.05,
+    0.25
+   ]
+  },
+  "Burn": {
+   "look": "dot",
+   "colour": [
+    1.0,
+    0.45,
+    0.1
+   ]
+  },
+  "Poison": {
+   "look": "dot",
+   "colour": [
+    0.45,
+    1.0,
+    0.2
+   ]
+  },
+  "Bleed": {
+   "look": "dot",
+   "colour": [
+    1.0,
+    0.1,
+    0.15
+   ]
+  },
+  "Drain": {
+   "look": "dot",
+   "colour": [
+    0.75,
+    0.35,
+    1.0
+   ]
+  },
+  "Tether": {
+   "look": "tether",
+   "colour": null
+  },
+  "AttackSpeed": {
+   "look": "swirl",
+   "colour": null
+  },
+  "EmpoweredAttack": {
+   "look": "charged",
+   "colour": null
+  },
+  "AggroDrop": {
+   "look": "fade",
+   "colour": [
+    0.6,
+    0.7,
+    1.0
+   ]
+  },
+  "Untargetable": {
+   "look": "fade",
+   "colour": [
+    0.6,
+    0.7,
+    1.0
+   ]
+  },
+  "CcImmunity": {
+   "look": "ward",
+   "colour": [
+    1.0,
+    0.9,
+    0.6
+   ]
+  },
+  "Wound": {
+   "look": "wound",
+   "colour": [
+    0.8,
+    0.1,
+    0.15
+   ]
+  },
+  "Piloting": {
+   "look": "fade",
+   "colour": [
+    0.2,
+    0.8,
+    1.0
+   ]
+  },
+  "Awakened": {
+   "look": "swirl",
+   "colour": [
+    0.5,
+    1.0,
+    0.4
+   ]
+  },
+  "ManaCost": {
+   "look": "charged",
+   "colour": [
+    1.0,
+    0.8,
+    0.3
+   ]
+  }
+ }
+}

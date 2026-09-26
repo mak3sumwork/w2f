@@ -4,6 +4,7 @@
 
 #include "w2f/Hash.h"
 #include "w2f/MatchManager.h"
+#include "w2f/Trait.h"
 
 namespace w2f {
 
@@ -304,6 +305,24 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
             w.U32(offer.item);
             w.U32(offer.champion != nullptr ? offer.champion->id : kInvalidChampionId);
         }
+
+        // Trait system v2 (format 6): the player's trait progress and the choice waiting for them.
+        const TraitProgress& tp = p.Traits();
+        w.I32(tp.traitGold);
+        w.I32(tp.takedownCounter);
+        w.I32(tp.starDust);
+        w.I32(tp.grantCombats);
+        w.Bool(tp.unitGranted);
+        w.I32(tp.moduleTiersOffered);
+        w.U32(static_cast<std::uint32_t>(tp.modules.size()));
+        for (std::uint32_t m : tp.modules) w.U32(m);
+        const TraitChoice& choice = choices_[static_cast<std::size_t>(i)];
+        w.U8(static_cast<std::uint32_t>(choice.kind));
+        w.U32(choice.trait);
+        w.I32(choice.tier);
+        w.I32(choice.bonusGold);
+        w.U32(static_cast<std::uint32_t>(choice.options.size()));
+        for (std::uint32_t o : choice.options) w.U32(o);
     }
 
     w.U32(static_cast<std::uint32_t>(matchups_.size()));
@@ -326,6 +345,11 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
         w.U64(o.log.checksum);
         w.U32(static_cast<std::uint32_t>(o.log.events.size()));
         for (const CombatEvent& e : o.log.events) WriteEvent(w, e);
+        w.U32(static_cast<std::uint32_t>(o.log.takedowns.size()));   // (format 6)
+        for (const auto& [unit, count] : o.log.takedowns) {
+            w.U32(unit);
+            w.I32(count);
+        }
     }
 
     std::vector<std::uint8_t> bytes = std::move(w.Bytes());
@@ -340,7 +364,8 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
                                                     const ChampionDatabase& database,
                                                     std::unique_ptr<ICombatSimulator> simulator, std::string* error,
                                                     const ItemDatabase* items, const EncounterDatabase* encounters,
-                                                    const MotherNatureDatabase* motherNature, const RestoreOptions& options) {
+                                                    const MotherNatureDatabase* motherNature, const RestoreOptions& options,
+                                                    const TraitDatabase* traits) {
     const auto fail = [error](const std::string& message) -> std::unique_ptr<MatchManager> {
         Fail(error, message);
         return nullptr;
@@ -359,7 +384,7 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
     if (info.phase > static_cast<std::uint8_t>(MatchPhase::MatchOver)) return fail("unknown phase");
     if (info.playerCount != config.match.playerCount) return fail("player count does not match the configuration");
 
-    std::unique_ptr<MatchManager> match = Create(config, database, info.seed, std::move(simulator), error, items, encounters, motherNature);
+    std::unique_ptr<MatchManager> match = Create(config, database, info.seed, std::move(simulator), error, items, encounters, motherNature, traits);
     if (!match) return nullptr;
     match->phase_ = static_cast<MatchPhase>(info.phase);
     match->round_ = info.round;
@@ -463,6 +488,45 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
         }
         if (gifts.settled && !gifts.offers.empty()) return fail("a settled gift choice still lists offers");
 
+        data.traits.traitGold = r.I32();
+        data.traits.takedownCounter = r.I32();
+        data.traits.starDust = r.I32();
+        data.traits.grantCombats = r.I32();
+        data.traits.unitGranted = r.Bool();
+        data.traits.moduleTiersOffered = r.I32();
+        const std::size_t moduleCount = r.Count(3, 4);
+        for (std::size_t m = 0; m < moduleCount; ++m) data.traits.modules.push_back(r.U32());
+        TraitChoice& choice = match->choices_[static_cast<std::size_t>(i)];
+        const std::uint32_t kind = r.U8();
+        choice.trait = r.U32();
+        choice.tier = r.I32();
+        choice.bonusGold = r.I32();
+        const std::size_t optionCount = r.Count(8, 4);
+        for (std::size_t o = 0; o < optionCount; ++o) choice.options.push_back(r.U32());
+        if (!r.ok()) return fail("truncated trait section");
+        if (kind > static_cast<std::uint32_t>(TraitChoiceKind::Prototype)) return fail("unknown trait choice");
+        choice.kind = static_cast<TraitChoiceKind>(kind);
+        if (choice.Pending() == choice.options.empty()) return fail("a trait choice without options (or options without a choice)");
+        if (choice.bonusGold < 0 || choice.tier < 0 || choice.tier > 4) return fail("a trait choice is out of range");
+        const TraitDefinition* chooser = traits != nullptr ? traits->FindById(choice.trait) : nullptr;
+        if (choice.kind == TraitChoiceKind::Module) {
+            if (chooser == nullptr) return fail("a module choice names a trait missing from the loaded data");
+            for (std::uint32_t o : choice.options) {
+                if (chooser->FindModule(o) == nullptr) return fail("a module choice offers a module missing from the loaded data");
+            }
+        } else if (choice.kind == TraitChoiceKind::Prototype) {
+            for (std::uint32_t o : choice.options) {
+                if (items == nullptr || items->Find(o) == nullptr) return fail("a prototype offers an item missing from the loaded data");
+            }
+        }
+        for (std::uint32_t m : data.traits.modules) {
+            bool known = false;
+            if (traits != nullptr) {
+                for (const TraitDefinition& t : traits->All()) known = known || t.FindModule(m) != nullptr;
+            }
+            if (!known) return fail("a chosen module is missing from the loaded trait data");
+        }
+
         std::string playerError;
         if (!match->players_.Get(static_cast<PlayerId>(i))->RestoreState(data, &playerError)) return fail(playerError);
     }
@@ -490,6 +554,13 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
         outcome.log.events.resize(eventCount);
         for (CombatEvent& e : outcome.log.events) {
             if (!ReadEvent(r, e)) return fail("a combat event is malformed");
+        }
+        const std::size_t takedownCount = r.Count(256, 8);
+        for (std::size_t t = 0; t < takedownCount; ++t) {
+            const UnitId unit = r.U32();
+            const int count = r.I32();
+            if (count < 1) return fail("a takedown tally is out of range");
+            outcome.log.takedowns.emplace_back(unit, count);
         }
         if (!r.ok()) return fail("truncated combat section");
         if (winner > static_cast<std::uint32_t>(CombatWinner::Draw)) return fail("unknown combat winner");

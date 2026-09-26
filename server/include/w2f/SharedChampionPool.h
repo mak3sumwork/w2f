@@ -30,6 +30,8 @@ public:
     // Puts copies back. Returns false (and changes nothing) if that would exceed the
     // champion's original supply -- that always indicates a bookkeeping bug in the caller.
     bool Return(const ChampionDefinition* champion, int copies = 1);
+    // Checks `copies` of one specific champion out of the pool (admin tools, tests, scripted setups). False (and nothing changes) if not enough remain.
+    bool Take(const ChampionDefinition* champion, int copies = 1);
 
     // Snapshot support: replaces the remaining-copy counts (parallel to Database().All(), so one per champion).
     // Fails without changing anything unless every count is within [0, initial supply] and the size matches.

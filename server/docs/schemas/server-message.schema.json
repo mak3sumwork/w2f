@@ -63,6 +63,12 @@
   },
   {
    "$ref": "#/$defs/bag_event"
+  },
+  {
+   "$ref": "#/$defs/trait_choice"
+  },
+  {
+   "$ref": "#/$defs/trait_rewards"
   }
  ],
  "$defs": {
@@ -589,6 +595,27 @@
        "mana_regen_milli": {
         "type": "integer",
         "minimum": 0
+       },
+       "plant": {
+        "type": "boolean"
+       },
+       "special": {
+        "type": "boolean"
+       },
+       "price": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "team_slots": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2
+       },
+       "stationary": {
+        "type": "boolean"
+       },
+       "pilot": {
+        "type": "boolean"
        }
       },
       "required": [
@@ -606,11 +633,17 @@
        "monster",
        "name",
        "passive",
+       "pilot",
+       "plant",
        "presentation",
+       "price",
        "range",
        "role",
+       "special",
        "start_mana",
+       "stationary",
        "summon",
+       "team_slots",
        "traits"
       ],
       "additionalProperties": false
@@ -713,12 +746,69 @@
          "type": "integer",
          "minimum": 0
         }
+       },
+       "paths": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "modules": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "name": {
+           "type": "string"
+          },
+          "tier": {
+           "type": "integer",
+           "minimum": 1,
+           "maximum": 3
+          }
+         },
+         "required": [
+          "id",
+          "name",
+          "tier"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "mutations": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "name": {
+           "type": "string"
+          },
+          "classes": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         },
+         "required": [
+          "classes",
+          "name"
+         ],
+         "additionalProperties": false
+        }
        }
       },
       "required": [
        "breakpoints",
        "id",
-       "name"
+       "modules",
+       "mutations",
+       "name",
+       "paths"
       ],
       "additionalProperties": false
      }
@@ -1013,6 +1103,45 @@
     "shop_locked": {
      "type": "boolean",
      "description": "the shop is locked: its offer survives the next round's refresh (revision 3)"
+    },
+    "traits": {
+     "type": "object",
+     "description": "(revision 5) trait system v2 progress",
+     "properties": {
+      "star_dust": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "trait_gold": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "takedown_counter": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "unit_granted": {
+       "type": "boolean"
+      },
+      "modules": {
+       "type": "array",
+       "items": {
+        "type": "integer",
+        "minimum": 0
+       }
+      }
+     },
+     "required": [
+      "modules",
+      "star_dust",
+      "takedown_counter",
+      "trait_gold",
+      "unit_granted"
+     ],
+     "additionalProperties": false
+    },
+    "trait_choice": {
+     "$ref": "#/$defs/traitChoice"
     }
    },
    "required": [
@@ -1029,6 +1158,8 @@
     "shop",
     "shop_locked",
     "streak",
+    "trait_choice",
+    "traits",
     "type",
     "xp",
     "xp_to_next"
@@ -1098,11 +1229,34 @@
       ],
       "additionalProperties": false
      }
+    },
+    "trait_paths": {
+     "type": "array",
+     "description": "(revision 5) the path the match picked for each trait with paths (Selini)",
+     "items": {
+      "type": "object",
+      "properties": {
+       "trait": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "path": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "path",
+       "trait"
+      ],
+      "additionalProperties": false
+     }
     }
    },
    "required": [
     "players",
     "round",
+    "trait_paths",
     "type"
    ],
    "additionalProperties": false
@@ -1892,6 +2046,142 @@
    ],
    "additionalProperties": false,
    "description": "two components of the player's item bag were combined into `result` (the bag itself arrives in the next `state`)"
+  },
+  "traitChoice": {
+   "type": "object",
+   "description": "a trait's pending choice (revision 5): kind none / module (Hexagon: pick one) / prototype (Najmi: take, or decline with index -1)",
+   "properties": {
+    "kind": {
+     "enum": [
+      "none",
+      "module",
+      "prototype"
+     ]
+    },
+    "trait": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "tier": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 4
+    },
+    "options": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "bonus_gold": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "can_decline": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "bonus_gold",
+    "can_decline",
+    "kind",
+    "options",
+    "tier",
+    "trait"
+   ],
+   "additionalProperties": false
+  },
+  "trait_choice": {
+   "oneOf": [
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "trait_choice"
+      },
+      "event": {
+       "const": "offered"
+      },
+      "choice": {
+       "$ref": "#/$defs/traitChoice"
+      }
+     },
+     "required": [
+      "choice",
+      "event",
+      "type"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "properties": {
+      "type": {
+       "const": "trait_choice"
+      },
+      "event": {
+       "const": "resolved"
+      },
+      "choice": {
+       "$ref": "#/$defs/traitChoice"
+      },
+      "index": {
+       "type": "integer",
+       "minimum": -1
+      },
+      "automatic": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "automatic",
+      "choice",
+      "event",
+      "index",
+      "type"
+     ],
+     "additionalProperties": false
+    }
+   ]
+  },
+  "trait_rewards": {
+   "type": "object",
+   "description": "(revision 5) what a player's traits paid after a combat",
+   "properties": {
+    "type": {
+     "const": "trait_rewards"
+    },
+    "xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "gold": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "star_dust": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "star_dust_total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unit": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "gold",
+    "star_dust",
+    "star_dust_total",
+    "type",
+    "unit",
+    "xp"
+   ],
+   "additionalProperties": false
   }
  }
 }

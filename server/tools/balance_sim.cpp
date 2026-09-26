@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
         const std::uint64_t seed = baseSeed + static_cast<std::uint64_t>(m);
         GameConfig config;
         auto match = MatchManager::Create(config, *champions, seed, std::make_unique<CombatSimulator>(config.combat, traits.get(), items.get()), &error, items.get(),
-                                          encounters.get(), motherNature.get());
+                                          encounters.get(), motherNature.get(), traits.get());
         if (!match) { std::fprintf(stderr, "Cannot start a match: %s\n", error.c_str()); return 2; }
         match->AddListener(&collector);
         std::vector<AIBotController> bots;
@@ -237,9 +237,9 @@ int main(int argc, char** argv) {
     std::printf("  %-14s %-10s %9s %8s\n", "synergy", "tier (n)", "teams", "won %");
     for (const auto& [key, t] : collector.traitTiers) {
         const TraitDefinition* trait = traits->FindById(key.first);
-        if (trait == nullptr || key.second < 1 || static_cast<std::size_t>(key.second) > trait->breakpoints.size()) continue;
+        if (trait == nullptr || key.second < 1 || static_cast<std::size_t>(key.second) > trait->Breakpoints(0).size()) continue;
         const bool outlier = t.appearances >= minFights && (t.Rate() > 58.0 || t.Rate() < 42.0);
-        std::printf("  %-14s %d (%d)%*s %9ld %7.1f%% %s\n", trait->name.c_str(), key.second, trait->breakpoints[static_cast<std::size_t>(key.second - 1)].count, 5, "", t.appearances, t.Rate(),
+        std::printf("  %-14s %d (%d)%*s %9ld %7.1f%% %s\n", trait->name.c_str(), key.second, trait->Breakpoints(0)[static_cast<std::size_t>(key.second - 1)].count, 5, "", t.appearances, t.Rate(),
                     outlier ? (t.Rate() > 50 ? " <- strong outlier" : " <- weak outlier") : "");
     }
     std::printf("\n(Outliers: >= %ld samples and a win rate outside 42-58%%. Not everything has to be 50%%: a slightly stronger champion or synergy is fine.)\n", minFights);

@@ -79,16 +79,19 @@ each run **re-resolves its targets** — Vega's eight pulses each pick a new ran
 * `{ "mode": "LineBehindTarget", "length": N }` (the N hexes in a straight line behind the target, as seen from the caster);
 * `{ "mode": "ConeTowardTarget", "length": N }` (a 120° cone opening from the caster toward its target: 3 hexes at length 1, 8 at length 2, 15 at length 3; the caster's own hex is not in it);
 * `{ "mode": "HighestHpEnemyNearTarget", "radius": N }` (the enemy with the most current HP among those within N hexes of the cast target — a "targeted zone");
-* `"LowestHpEnemy"` / `"HighestHpEnemy"` (the whole board, not just near the target; ties go to the lowest unit id), `"AllEnemies"`, `"AllAllies"` (every living ally, the caster and summons included).
+* `"LowestHpEnemy"` / `"HighestHpEnemy"` (the whole board, not just near the target; ties go to the lowest unit id), `"AllEnemies"`, `"AllAllies"` (every living ally, the caster and summons included);
+* `{ "mode": "AreaAroundDensestEnemy", "radius": N, "includeCenter": true|false, "side": ..., "count": N }` — the **largest cluster**: centred on the living, targetable enemy that has the most enemies within `radius` of it (ties: lowest unit id), then like `AreaAroundTarget`. Re-resolved every time the effect runs, so repeated waves follow the crowd (Baira, Morrah, Aureon);
+* `{ "mode": "LowestHpAlly", "count": N }` — the N allies with the least current HP (ties: lowest unit id); the short form `"LowestHpAlly"` is N = 1 (Sunna heals two).
 
 Enemies that are **Untargetable** are never picked by any of these, area effects included.
 
 | type | keys |
 |---|---|
-| `Damage` | `damageType` (`Physical`/`Magic`/`True`), `amount`, `multiplierPercent` (default 100), `armorPenPercent` (ignores that % of the victim's armor / magic resist), `canCrit`, `onKill` (statuses the **caster** gains if this damage kills: `[ { "status": "AggroDrop", "durationSeconds": 1.5 } ]`, same keys as a `Status` effect) |
+| `Damage` | `damageType` (`Physical`/`Magic`/`True`), `amount`, `multiplierPercent` (default 100), `armorPenPercent` (ignores that % of the victim's armor / magic resist), `canCrit`, `onKill` (statuses the **caster** gains if this damage kills: `[ { "status": "AggroDrop", "durationSeconds": 1.5 } ]`, same keys as a `Status` effect), `bounceOnCritPercent` (a critical hit also strikes the victim's nearest other enemy for this % of it — Aphel) |
+| `AllyStrike` | `champion` (the ally's champion id), `percentOfAllyAttackDamage` (per the ALLY's star), `damageType` (default Physical), `canCrit` (default true): the living ally of that champion on the caster's team (highest star, then lowest unit id) strikes each target for that % of its own attack damage; it is the attacker (its crit, its damage dealt). Shown as a `Teleport` event with `subtype` 2 (a blink in and back — presentation only, it keeps its hex). No such ally = nothing. Sola's Blade Brothers with Lunis |
 | `Shield` | `amount`, a duration **or** `"permanent": true`, `damageReductionPercent` (per star; also cuts damage taken while the shield holds), `cap` (a permanent shield can be refilled by later shield effects, never above this total) |
 | `Teleport` | `destination` (`BehindFarthestEnemy` / `BehindClosestEnemy` / `NextToLowestHpEnemy` / `NextToHighestHpEnemy` / `BehindCurrentTarget`); target must be `Self`. Lands on a free hex next to that enemy, on the side away from where it started; stays put if nothing is free. The first two leave the unit without a target; the others make that enemy its target (Vex, Raa, Bit) |
-| `Displace` | `direction` (`Toward` / `Away` from the caster), `hexes` (1-8, default 1): slides each target in a straight line and stops at the first blocked or off-board hex (Null's pull, Orion's knock-back). Reported as a `Teleport` event with `subtype` 1 |
+| `Displace` | `direction` (`Toward` / `Away` from the caster, or `TowardAreaCenter`: toward the centre the same effect's area target picked — Morrah's rift), `hexes` (1-8, default 1): slides each target in a straight line and stops at the first blocked or off-board hex (Null's pull, Orion's knock-back). Reported as a `Teleport` event with `subtype` 1 |
 | `Status` | `status`, `percent` (per star, signed; not for Stun/Root/Knockup/CcImmunity), a duration **or** `"permanent": true`, `multiplierPercent` (scales the duration), `"stacking": "add"\|"refresh"`, and `value` (BonusAttackDamage only) |
 | `DoT` | `damageType`, `amount`, `amountIsTotal` (amount is the total over the duration, split evenly), a duration, `intervalSeconds`/`intervalTicks`, `stackBonusPercent`, `healPercent` (a drain: the caster heals this % of the damage each tick actually deals — Lich), `"visual"`: `"Burn"` (default), `"Poison"`, `"Bleed"` or `"Drain"` (what a viewer shows; it tags the effect's status and each of its damage ticks), `"refreshes": true` (applying it again while a burn from the same ability runs on the victim, from anyone, REPLACES it — one burn at a time, and it keeps its tick rhythm so a fast attacker cannot re-light it before it ever ticks; exclusive with `stackBonusPercent` — Helios) |
 | `Heal` | `amount` (flat, or a formula such as 5% of `TargetMaxHp`). Reduced by the target's Wound; capped at max HP |
@@ -273,7 +276,7 @@ The rider's effects then hit the unit that attack just hit (`CurrentTarget`).
 **Phase 12**: `OnShieldBreak` now carries the shield's **stored damage** as `TriggerDamage` (everything that shield absorbed) and an optional `"onlyShieldsFrom": <ability id>`; a new hook `EveryInterval` (`intervalSeconds` / `intervalTicks`)
 fires every N ticks for a holder that is alive, not disabled, and has a living enemy target in attack range (`CurrentTarget`); and any effect with a `delay*` may carry `"condition": "NoDamageTakenSinceCast"` (runs only if the caster took no damage since the cast began). Details in `item-coverage.md`.
 
-New **hook triggers**: `OnAnyUnitDeath` (any unit on the board dies, either team; fires once per death for every unit still alive that holds it — Phaisa) and `OnShieldBreak` (one of the holder's shields is used up by damage, not by expiring; `TriggerAttacker` = who broke it — Hexagon's detonation).
+New **hook triggers**: `OnAnyUnitDeath` (any unit on the board dies, either team; fires once per death for every unit still alive that holds it — Phaisa), `OnEnemyDeath` (only the holder's ENEMIES dying count — Nihila's Hunger of the Void) and `OnShieldBreak` (one of the holder's shields is used up by damage, not by expiring; `TriggerAttacker` = who broke it — Hexagon's detonation).
 
 **Basic attack damage type**: champion `stats` may set `"attackType": "Magic"` (default `"Physical"`): the Lost Souls' basic attacks are magic damage.
 
@@ -293,3 +296,26 @@ it is not in the data hash and changing it never changes a fight. The server sen
 `TestDisplayText` requires an entry for every champion / monster name, ability, passive, trait breakpoint, item and Mother Nature gift, requires each name to equal the name in the data,
 and fails on an entry for something that no longer exists. The numbers in the descriptions are hand-written: **after a balance change, update the sentence.**
 A server started without the file still runs (the catalog then has no `text`).
+
+## Trait system v2 (September 2026)
+
+Champions:
+* `"plant": true` — a Nature plant: granted by the trait's breakpoint (`plants`), never in the pool, never on the bench, cannot be sold or equipped, takes no board slot (`teamSlots` 0).
+* `"special": true` (+ optional `"price"`) — owned like a champion but never in the pool: given by a trait (`grantUnit`, the Rift Herald) or offered in the shop (`queen`).
+* `"teamSlots"` (0..2) — board slots the unit takes (the Phaisa Queen: 2). `"stationary": true` — never walks or basic-attacks unless it has the `Awakened` status.
+* `"pilot": { "hpPercent": 80, "bonuses": [ { "traits": [...], "effects": [...] } ] }` — Hexa: the ally on the hex directly behind it climbs in at the start of combat (status
+  `Piloting`), the unit gains `hpPercent`% of its max HP and the first bonus whose `traits` the pilot carries; when the unit dies the pilot ejects.
+
+Abilities: `"afterAttacks": [n1, n2, n3]` (OnBasicAttack / EveryNthAttack hooks fire only from the holder's n-th attack on), `"triggerTrait"` (OnAllyDeath),
+`"stopsOnDeath": true` (delayed effects die with the caster). New triggers: `OnTeamHpLoss` (`thresholdPercent` = the step), `OnDeath`, `OnAllyDeath`.
+
+Effects: target `TopDamageEnemies` (`count`), any target may carry `"trait"` / `"champion"` filters and a per-star `"count": [2, 3, 3]`; Status `"percent"` may be a formula
+object (`{"flat": 10, "terms": [...]}`); new sources `PlayerLevel`, `TraitGold`, `TraitStarLevel` (+ `"trait"`), `TargetCastCount`; new statuses `ManaCost` (permanent; the
+bar never drops below 30%), `HealingAmp`, `Omnivamp`, `Awakened`; new effect `{"type": "Clone", "trait": "Hexagon", "count": 2, "statPercent": 60}`.
+
+Traits: `"paths": [ {"name", "breakpoints"} ]` (instead of `breakpoints`; the match picks one at random from its seed), `"mutations"` + breakpoint `"mutationSlots"` (-1 = all) /
+`"supercharge"`, `"modules"` (`id`, `name`, `tier`, `effects`, `goldAfterCombat`, `echoEverySeconds`) + `"invention"` (the summon that fires them) + breakpoint `"moduleTier"`,
+`"queen": {champion, uniqueHolders, level}`; breakpoint keys `"xpAfterCombat"`, `"takedownsPerGold"`, `"starDust": {onLoss, perLossStreak, perTakedown, multiplier}`,
+`"grantUnit": {champion, afterCombats}`, `"plants": [{champion, count}]`, `"plantStar"`. Trigger scope `"Team"` (OnTeamHpLoss only) fires once per team.
+The match-level keys need the trait data passed to `MatchManager::Create` / `Restore`.
+

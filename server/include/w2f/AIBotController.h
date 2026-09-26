@@ -67,6 +67,7 @@ public:
 
 private:
     void PickGift(MatchManager& match);
+    void AnswerTraitChoice(MatchManager& match);
     void BuyExperience(MatchManager& match);
     void BuyUnits(MatchManager& match);
     void BuyWantedUnits(MatchManager& match, int keepGold);   // buys from the current shop until nothing worth it is left

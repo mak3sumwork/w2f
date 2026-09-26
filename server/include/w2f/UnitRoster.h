@@ -35,7 +35,7 @@ public:
     const std::vector<UnitInstance>& Units() const { return units_; }
     std::size_t Count() const { return units_.size(); }
     int BenchCount() const;
-    int BoardCount() const;
+    int BoardCount() const;   // board SLOTS in use (plants take none, the Queen two)
     const UnitInstance* Find(UnitId id) const;
     const UnitInstance* BenchAt(int slot) const;
     const UnitInstance* BoardAt(int x, int y) const;
@@ -75,6 +75,8 @@ public:
     // Empties `slot` (0..kMaxItemsPerUnit-1) and reports what was in it. InvalidUnit / InvalidSlot (out of range or empty).
     ActionResult UnequipItem(UnitId id, int slot, ItemId* outItem = nullptr);
 
+    // Puts a new unit straight onto the free board cell (x, y), never merging (the Nature trait's plants). Returns it (id 0 = the cell was not free).
+    UnitInstance AddPlaced(const ChampionDefinition* champion, int starLevel, int x, int y);
     // Removes a unit and frees its cell. Returns false if the id is unknown.
     bool Remove(UnitId id, UnitInstance* outRemoved = nullptr);
     void Clear();

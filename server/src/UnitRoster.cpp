@@ -42,9 +42,10 @@ int UnitRoster::BenchCount() const {
     return n;
 }
 
+// Board SLOTS in use: a plant takes none, the Phaisa Queen two (ChampionDefinition::teamSlots).
 int UnitRoster::BoardCount() const {
     int n = 0;
-    for (const UnitInstance& u : units_) n += u.location == LocationType::Board ? 1 : 0;
+    for (const UnitInstance& u : units_) n += u.location == LocationType::Board ? u.champion->teamSlots : 0;
     return n;
 }
 
@@ -232,9 +233,11 @@ ActionResult UnitRoster::Move(UnitId id, LocationType location, int x, int y, st
     first.fromX = unit->x;
     first.fromY = unit->y;
 
+    const auto slots = [](const UnitInstance* u) { return u != nullptr ? u->champion->teamSlots : 0; };
+    if (unit->champion->plant && location != LocationType::Board) return ActionResult::InvalidSlot;   // a plant never leaves the board
     if (occupantId == kInvalidUnitId) {
         if (location == LocationType::Board && unit->location != LocationType::Board &&
-            BoardCount() >= boardCapacity_) {
+            BoardCount() + slots(unit) > boardCapacity_) {
             return ActionResult::BoardFull;
         }
         Unplace(*unit);
@@ -247,6 +250,11 @@ ActionResult UnitRoster::Move(UnitId id, LocationType location, int x, int y, st
     // Swap. Clear both cells first so neither placement can overwrite the other.
     UnitInstance* other = FindMutable(occupantId);
     assert(other != nullptr);
+    if (other->champion->plant && unit->location != LocationType::Board) return ActionResult::InvalidSlot;
+    if (unit->location != location) {   // a bench <-> board swap may change the slots in use (a plant or the Queen)
+        const int delta = location == LocationType::Board ? slots(unit) - slots(other) : slots(other) - slots(unit);
+        if (delta > 0 && BoardCount() + delta > boardCapacity_) return ActionResult::BoardFull;
+    }
     UnitMove second;
     second.fromLocation = other->location;
     second.fromX = other->x;
@@ -299,6 +307,20 @@ ActionResult UnitRoster::UnequipItem(UnitId id, int slot, ItemId* outItem) {
     if (outItem) *outItem = unit->items[static_cast<std::size_t>(slot)];
     unit->items[static_cast<std::size_t>(slot)] = 0;
     return ActionResult::Ok;
+}
+
+UnitInstance UnitRoster::AddPlaced(const ChampionDefinition* champion, int starLevel, int x, int y) {
+    UnitInstance unit;
+    if (champion == nullptr || starLevel < 1 || starLevel > kMaxStarLevel || !InRange(LocationType::Board, x, y) ||
+        CellValue(LocationType::Board, x, y) != kInvalidUnitId) {
+        return unit;   // id 0: nothing was added
+    }
+    unit.id = MakeId();
+    unit.champion = champion;
+    unit.starLevel = starLevel;
+    Place(unit, LocationType::Board, x, y);
+    units_.push_back(unit);
+    return unit;
 }
 
 bool UnitRoster::Remove(UnitId id, UnitInstance* outRemoved) {
@@ -359,7 +381,8 @@ bool UnitRoster::CheckInvariants() const {
     if (BoardCount() > kBoardRows * kBoardColumns) return false;
 
     for (const UnitInstance& u : units_) {
-        if (u.starLevel < kMaxStarLevel && CountOf(u.champion, u.starLevel) > 2) return false;
+        if (u.starLevel < kMaxStarLevel && CountOf(u.champion, u.starLevel) > 2 && !u.champion->plant) return false;
+        if (u.champion->plant && u.location != LocationType::Board) return false;
     }
     return true;
 }

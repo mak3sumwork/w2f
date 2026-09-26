@@ -58,6 +58,9 @@ inline std::string ProductionTraitsPath() { return std::string(W2F_DATA_DIR) + "
 inline std::string SpecChampionsPath() { return std::string(W2F_TEST_DATA_DIR) + "/designer_spec_champions.json"; }
 inline std::string SpecTraitsPath() { return std::string(W2F_TEST_DATA_DIR) + "/designer_spec_traits.json"; }
 inline std::string LegacyRosterPath() { return std::string(W2F_TEST_DATA_DIR) + "/phase4_roster.json"; }
+inline std::string OldBairaPath() { return std::string(W2F_TEST_DATA_DIR) + "/baira_until_2026_09.json"; }   // her pre-Sept-2026 design, for the mechanics tests
+inline std::string OldCylaPath() { return std::string(W2F_TEST_DATA_DIR) + "/cyla_until_2026_09.json"; }     // her mana rocket, before Fishbones
+inline std::string LegacyTraitsPath() { return std::string(W2F_TEST_DATA_DIR) + "/traits_until_2026_09.json"; }   // the synergies before trait system v2
 
 inline ChampionDefinition Def(w2f::ChampionId id, const char* name, int cost) {
     ChampionDefinition d;
@@ -84,6 +87,14 @@ inline std::vector<ChampionDefinition> LoadRosterFile(const std::string& path) {
 }
 
 // The production trait / synergy data (data/traits.json). Prints the loader's error and returns nullptr on failure.
+// The synergies as they were until September 2026 (the mechanics tests written against them still run on them).
+inline std::unique_ptr<w2f::TraitDatabase> LoadLegacyTraits() {
+    std::string error;
+    auto traits = w2f::LoadTraitDatabaseFromFile(LegacyTraitsPath(), &error);
+    if (!traits) std::printf("LoadLegacyTraits failed: %s\n", error.c_str());
+    return traits;
+}
+
 inline std::unique_ptr<w2f::TraitDatabase> LoadProductionTraits() {
     std::string error;
     auto traits = w2f::LoadTraitDatabaseFromFile(ProductionTraitsPath(), &error);

@@ -79,5 +79,9 @@ std::string ItemUnequipped(const UnitInstance& unit, ItemId item);
 std::string BagItemsCombined(ItemId first, ItemId second, ItemId result);
 std::string ItemsCombined(const UnitInstance& unit, const ItemCombination& combination);
 std::string ItemConsumed(const UnitInstance& unit, ItemId consumable, const std::vector<ItemId>& returned);
+// (revision 5) Trait system v2, private to the player: a trait asks for a choice / it was made; what the traits paid after a combat.
+std::string TraitChoiceOffered(const TraitChoice& choice);
+std::string TraitChoiceResolved(const TraitChoice& choice, int index, bool automatic);
+std::string TraitRewardsMsg(const TraitRewards& rewards, int starDustTotal);
 
 }  // namespace w2f::net::msg

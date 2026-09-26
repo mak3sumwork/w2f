@@ -88,7 +88,7 @@ int SynergyValue(const TraitDatabase* traits, const std::string& tag, int count)
     int reachedCount = 0;
     int reachedValue = 0;
     int tier = 0;
-    for (const TraitBreakpoint& bp : def->breakpoints) {
+    for (const TraitBreakpoint& bp : def->Breakpoints(0)) {   // (a trait with paths: every path has the same counts)
         ++tier;
         if (count >= bp.count) {
             reachedCount = bp.count;
@@ -134,11 +134,17 @@ int UnitPower(const UnitInstance& unit) {
 // The `capacity` units to field: repeatedly the one whose strength plus the synergy it adds to those already chosen is highest (ties: lowest id).
 std::vector<const UnitInstance*> ChooseBoard(const UnitRoster& roster, int capacity, const ItemDatabase* items, const TraitDatabase* traits) {
     std::vector<const UnitInstance*> remaining;
-    for (const UnitInstance& unit : roster.Units()) remaining.push_back(&unit);
+    for (const UnitInstance& unit : roster.Units()) {
+        if (!unit.champion->plant) remaining.push_back(&unit);   // plants stand where the Nature trait put them: never chosen, never moved
+    }
     std::vector<const UnitInstance*> chosen;
     TagSets sets;
     std::vector<std::string> tags;
-    while (static_cast<int>(chosen.size()) < capacity && !remaining.empty()) {
+    int used = 0;   // board slots (the Phaisa Queen takes 2)
+    while (used < capacity && !remaining.empty()) {
+        remaining.erase(std::remove_if(remaining.begin(), remaining.end(), [&](const UnitInstance* u) { return used + u->champion->teamSlots > capacity; }),
+                        remaining.end());
+        if (remaining.empty()) break;
         std::size_t best = 0;
         int bestScore = 0;
         for (std::size_t i = 0; i < remaining.size(); ++i) {
@@ -151,6 +157,7 @@ std::vector<const UnitInstance*> ChooseBoard(const UnitRoster& roster, int capac
         }
         CollectTags(*remaining[best]->champion, items, &remaining[best]->items, tags);
         AddToSets(sets, remaining[best]->champion->id, tags);
+        used += remaining[best]->champion->teamSlots;
         chosen.push_back(remaining[best]);
         remaining.erase(remaining.begin() + static_cast<std::ptrdiff_t>(best));
     }
@@ -166,6 +173,7 @@ void AIBotController::Tick(MatchManager& match) {
         PickGift(match);
         return;
     }
+    AnswerTraitChoice(match);
     if (match.Phase() != MatchPhase::Planning) return;
     if (match.Round() == lastActedRound_) return;  // already played this round's planning
     const PlayerState* self = match.Players().Get(player_);
@@ -200,6 +208,21 @@ void AIBotController::PickGift(MatchManager& match) {
         if (rank(offers[i]) > rank(offers[best])) best = i;
     }
     if (!offers.empty()) match.TryPickGift(player_, best);
+}
+
+// Trait system v2: a Hexagon module offer takes the first option; a Najmi prototype is taken once it is worth it (a choice of completed items or
+// the cash-out), or when the bot is in trouble; otherwise the star dust is banked. Deterministic (no randomness).
+void AIBotController::AnswerTraitChoice(MatchManager& match) {
+    const TraitChoice& choice = match.PendingTraitChoice(player_);
+    if (!choice.Pending()) return;
+    const PlayerState* self = match.Players().Get(player_);
+    if (self == nullptr || !self->IsAlive()) return;
+    if (choice.kind == TraitChoiceKind::Module) {
+        match.TryPickTraitChoice(player_, 0);
+        return;
+    }
+    const bool take = choice.tier >= 3 || (choice.tier >= 2 && self->Health() <= profile_.lowHealth);
+    match.TryPickTraitChoice(player_, take ? 0 : -1);
 }
 
 void AIBotController::BuyExperience(MatchManager& match) {
@@ -291,6 +314,7 @@ const UnitInstance* AIBotController::WeakestSellable(const UnitRoster& roster) c
     const UnitInstance* weakest = nullptr;
     std::tuple<int, int, int, UnitId> weakestKey{};
     for (const UnitInstance& unit : roster.Units()) {
+        if (!unit.champion->IsPooled()) continue;   // plants cannot be sold; special units (the Rift Herald, the Queen) are worth keeping
         if (unit.starLevel > 1 || roster.CountOf(unit.champion, unit.starLevel) >= 2) continue;   // keep upgraded units and merge candidates
         // Items last, then bench before board (the bench is what blocks buying), then the cheapest, then the lowest id (a total order).
         const std::tuple<int, int, int, UnitId> key{unit.ItemCount(), unit.location == LocationType::Board ? 1 : 0, unit.champion->cost, unit.id};
@@ -333,7 +357,7 @@ void AIBotController::ArrangeBoard(MatchManager& match) {
             // The board is full: the unit takes the place of the weakest fielded unit that did not make the cut.
             const UnitInstance* out = nullptr;
             for (const UnitInstance& other : roster.Units()) {
-                if (other.location != LocationType::Board || isChosen(other.id)) continue;
+                if (other.location != LocationType::Board || isChosen(other.id) || other.champion->plant) continue;
                 if (out == nullptr || UnitPower(other) < UnitPower(*out) || (UnitPower(other) == UnitPower(*out) && other.id < out->id)) out = &other;
             }
             if (out != nullptr) match.TryMoveUnit(player_, id, LocationType::Board, out->x, out->y);
@@ -364,7 +388,7 @@ void AIBotController::EquipItems(MatchManager& match) {
         const UnitInstance* best = nullptr;
         int bestScore = kNotWanted;
         for (const UnitInstance& unit : self->Roster().Units()) {
-            if (unit.location != LocationType::Board) continue;   // only what fights is worth equipping
+            if (unit.location != LocationType::Board || unit.champion->plant) continue;   // only what fights is worth equipping (plants carry nothing)
             const int score = ScoreItemOnUnit(unit, *item, *items);
             if (score > bestScore || (score == bestScore && best != nullptr && unit.id < best->id)) {
                 best = &unit;

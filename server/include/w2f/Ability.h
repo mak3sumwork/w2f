@@ -88,6 +88,12 @@ enum class StatusType : std::uint8_t {
     Poison,              // a toxin: green cloud / drip
     Bleed,               // a wound: red drip
     Drain,               // life drain: the source heals from each tick
+    // ---- Trait system v2 (September 2026) ----
+    ManaCost,            // +/- percent of the holder's ORIGINAL max mana (-10 = the bar is 10% shorter: Helios's Rally). Permanent only; never below 30%
+    HealingAmp,          // +/- percent to every heal and shield the holder RECEIVES (Tuned Oscillator)
+    Omnivamp,            // the holder heals this % of all damage it deals (after mitigation)
+    Awakened,            // a stationary unit (a plant) may walk and attack while it has this ("the forest comes to life")
+    Piloting,            // inside Hexa: cannot act and cannot be affected by anything; ends when Hexa dies (the pilot ejects)
 };
 constexpr bool IsFlatBonusStatus(StatusType t) {
     return t == StatusType::BonusAttackDamage || t == StatusType::BonusArmor || t == StatusType::BonusMagicResist ||
@@ -118,6 +124,10 @@ enum class StatSource : std::uint8_t {
     CastTargetArmor,         // the cast target's current armor
     TriggerDamage,           // hook triggers only: the damage (after mitigation) of the hit that fired the trigger
     HighestAllyMaxHp,        // the largest max HP among the caster's living allies (summons excluded): "25% of your tankiest ally"
+    PlayerLevel,             // the level of the player the caster fights for (1 for monsters and bare RunFight calls)
+    TraitGold,               // gold the caster's player has earned so far through the trait's gold path (Selini's Prosperity)
+    TraitStarLevel,          // the sum of the star levels of the caster's team's units that carry the term's `trait` (summons / plants excluded)
+    TargetCastCount,         // how many times the unit the effect lands on has cast this fight
 };
 
 // Contributes  source * percent[star] / divisor  to an Amount. The divisor is 100 (whole percents) unless the data says "permille"
@@ -127,6 +137,7 @@ struct ScalingTerm {
     StarValue percent{};
     int windowTicks = 0;  // DamageDealtInWindow only
     int divisor = 100;
+    std::string trait{};  // TraitStarLevel only: which trait's holders count
 };
 
 // value = flat[star] + sum(term.source * term.percent[star] / 100)   (integer math, floors)
@@ -177,6 +188,9 @@ enum class TargetMode : std::uint8_t {
     HighestHpEnemy,    // ... with the most current HP
     AllEnemies,        // every living, targetable enemy
     AllAllies,         // every living ally, the caster and summons included
+    AreaAroundDensestEnemy,  // units within `radius` hexes of the living, targetable ENEMY that has the most enemies within `radius` of it
+                             // ("the largest cluster"; ties: lowest UnitId). Re-resolved every time the effect runs (Baira's waves, Aureon's sun)
+    TopDamageEnemies,        // the `count` living, targetable enemies that have dealt the most damage this fight (ties: lowest UnitId). 90 Caliber Nets
 };
 
 enum class TargetSide : std::uint8_t { Enemies, Allies, All };
@@ -186,8 +200,12 @@ struct TargetSpec {
     int radius = 0;             // area modes: hex distance from the centre, inclusive
     bool includeCenter = true;  // area modes: also hit the unit standing on the centre hex
     TargetSide side = TargetSide::Enemies;
-    int count = 0;              // ClosestEnemies: how many. Area modes: at most this many, nearest to the centre first (0 = all): "bounces to 1 adjacent enemy"
+    int count = 0;              // ClosestEnemies: how many. Area modes: at most this many, nearest to the centre first (0 = all): "bounces to 1 adjacent enemy". LowestHpAlly: the N lowest (0 = 1)
     int windowTicks = 0;        // HighestDamageAlly: how far back "damage dealt" looks (0 = 150 ticks)
+    // Filters (any mode): only units that carry this trait tag (their own or an emblem's) / that are this champion. Empty / 0 = everyone.
+    std::string trait{};
+    ChampionId champion = 0;
+    StarValue countPerStar{};   // non-zero: replaces `count` by the caster's star (the Stonebark Tree stuns the nearest 2 / 3 / 3)
 
     static TargetSpec Self() { return {TargetMode::Self, 0, true, TargetSide::All}; }
     static TargetSpec CurrentTarget() { return {}; }
@@ -224,6 +242,8 @@ struct StatusEffect {
     Amount value;                   // BonusAttackDamage only: its flat size, as a formula (e.g. 15% of own armor)
     // Never expires (used by passives). `duration` is ignored; the event stream reports duration 0.
     bool permanent = false;
+    // A percent status whose size is a formula: the percent is `value` evaluated when it is applied ("+2% AD per player level").
+    bool percentFromValue = false;
     // Statuses of one type normally ADD UP (two +10% become +20%; the Protector synergy relies on it). With `refreshes`,
     // applying this again while the holder already has one of that type does not add a second: it keeps the larger
     // magnitude and extends the end to the later time. Use it for "modes" that can be re-entered (Les's wall).
@@ -239,6 +259,8 @@ struct DamageEffect {
     // Statuses the CASTER gains if this hit is the one that kills its victim (e.g. Lunis drops aggro on a kill).
     // Formulas in them can read the victim as the "cast target" (CastTargetArmor ...).
     std::vector<StatusEffect> onKill;
+    // A critical hit also strikes the nearest OTHER targetable enemy of the victim for this % of it (0 = no bounce): Aphel's moonlit arrows.
+    int bounceOnCritPercent = 0;
 };
 
 struct ShieldEffect {
@@ -307,13 +329,33 @@ struct SummonEffect {
 
 // Moves the targets up to `hexes` hexes along the straight line from / to the caster, stopping at the first blocked or off-board hex.
 // (A pull stops next to the caster.) The event stream reports it as a Teleport event with subtype 1.
-enum class DisplaceDirection : std::uint8_t { TowardCaster, AwayFromCaster };
+// TowardAreaCenter: toward the centre the effect's own AreaAroundDensestEnemy / area target picked (Morrah's rift pulls enemies inward).
+enum class DisplaceDirection : std::uint8_t { TowardCaster, AwayFromCaster, TowardAreaCenter };
 struct DisplaceEffect {
     DisplaceDirection direction = DisplaceDirection::AwayFromCaster;
     int hexes = 1;
 };
 
-using EffectPayload = std::variant<DamageEffect, ShieldEffect, StatusEffect, DotEffect, HealEffect, TeleportEffect, ManaEffect, SummonEffect, DisplaceEffect>;
+// An ally joins in: the living ally of `champion` on the caster's team (the highest star, then the lowest UnitId) blinks to each target and strikes it for
+// `percentOfAllyAttackDamage` of ITS OWN attack damage (it is the attacker: its crit chance, its "damage dealt"). The blink is presentation only (a Teleport event
+// with subtype 2: the ally stays on its hex). No such ally alive = nothing happens. Sola's "Blade Brothers" with Lunis.
+struct AllyStrikeEffect {
+    ChampionId ally = 0;
+    DamageType type = DamageType::Physical;
+    StarValue percentOfAllyAttackDamage{};   // indexed by the ALLY's star level
+    bool canCrit = true;
+};
+
+// Copies of the caster team's strongest units join the fight: the `count` highest-cost units carrying `trait` (then star, then lowest UnitId), each
+// cloned as a summon at `statPercent`% of its max HP and attack damage, next to the original. Superior Lifeform.
+struct CloneEffect {
+    std::string trait{};
+    int count = 1;
+    int statPercent = 60;
+};
+
+using EffectPayload = std::variant<DamageEffect, ShieldEffect, StatusEffect, DotEffect, HealEffect, TeleportEffect, ManaEffect, SummonEffect, DisplaceEffect, AllyStrikeEffect,
+                                   CloneEffect>;
 
 // A condition an effect checks when it RUNS (so a delayed effect looks back over the delay): "if the user took no damage during this time".
 enum class EffectCondition : std::uint8_t {
@@ -378,6 +420,11 @@ enum class EventTrigger : std::uint8_t {
     OnAnyUnitDeath,
     OnShieldBreak,
     EveryInterval,
+    OnEnemyDeath,    // an ENEMY of the holder dies (the holder must still be alive). Fires once per death. Nihila's hunger
+    OnTeamHpLoss,    // the holder's team has lost another `thresholdPercent`% of its total max HP (summons excluded): at 25, it fires as the team drops
+                     // below 75%, 50% and 25%. Helios's Rally
+    OnDeath,         // the holder itself dies (its effects still run; the Stonebark Tree's stun)
+    OnAllyDeath,     // an ally of the holder dies (`triggerTrait`: only allies carrying that trait). The Omnilium Protector
 };
 using CastTrigger = EventTrigger;   // the original name, kept so existing code and data keep working
 
@@ -390,7 +437,8 @@ constexpr bool IsDamageHook(EventTrigger t) {
 // Everything that can live in a unit's trigger list (as opposed to a champion's cast slots): riders and hooks.
 constexpr bool IsHook(EventTrigger t) {
     return IsDamageHook(t) || t == EventTrigger::OnBasicAttack || t == EventTrigger::EveryNthAttack || t == EventTrigger::OnCast ||
-           t == EventTrigger::OnAnyUnitDeath || t == EventTrigger::EveryInterval;
+           t == EventTrigger::OnAnyUnitDeath || t == EventTrigger::EveryInterval || t == EventTrigger::OnEnemyDeath || t == EventTrigger::OnTeamHpLoss ||
+           t == EventTrigger::OnDeath || t == EventTrigger::OnAllyDeath;
 }
 
 enum class DamageFilter : std::uint8_t { Any, Basic, Ability };   // OnDealDamage / OnAllyDealDamage: which damage counts
@@ -433,6 +481,12 @@ struct AbilityDefinition {
     int channelTicks = 0;
     // If true, the caster also casts once when it dies (if it has a target), regardless of mana.
     bool castOnDeath = false;
+    // OnBasicAttack / EveryNthAttack hooks: only from the holder's Nth basic attack of the fight on (per star; 0 = from the first). Cyla's Fishbones.
+    StarValue afterAttacks{};
+    // OnAllyDeath: only allies carrying this trait tag count (empty = any ally).
+    std::string triggerTrait;
+    // The ability's delayed / repeated effects stop when its caster dies (a plant's timed blessing ends with the plant).
+    bool stopsOnDeath = false;
     std::vector<AbilityEffect> effects;
 
     bool HasAbility() const { return id != kNoAbility; }

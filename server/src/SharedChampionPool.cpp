@@ -15,7 +15,7 @@ SharedChampionPool::SharedChampionPool(const ChampionDatabase& database, const P
     remaining_.resize(all.size());
     initial_.resize(all.size());
     for (std::size_t i = 0; i < all.size(); ++i) {
-        if (all[i].summon) continue;   // summons are never sold: no copies exist (initial_ / remaining_ stay 0)
+        if (!all[i].IsPooled()) continue;   // summons, plants and special units are never sold: no copies exist (initial_ / remaining_ stay 0)
         const std::size_t tierIndex = TierIndex(all[i].cost);  // cost validated by ChampionDatabase::Create
         const int copies = config.copiesPerTier[tierIndex];
         initial_[i] = copies;
@@ -51,6 +51,15 @@ bool SharedChampionPool::Return(const ChampionDefinition* champion, int copies) 
     if (remaining_[index] + copies > initial_[index]) return false;
     remaining_[index] += copies;
     tierRemaining_[TierIndex(champion->cost)] += copies;
+    return true;
+}
+
+bool SharedChampionPool::Take(const ChampionDefinition* champion, int copies) {
+    if (champion == nullptr || copies <= 0) return false;
+    const std::size_t index = database_.IndexOf(champion->id);
+    if (index == ChampionDatabase::kNotFound || remaining_[index] < copies) return false;
+    remaining_[index] -= copies;
+    tierRemaining_[TierIndex(champion->cost)] -= copies;
     return true;
 }
 

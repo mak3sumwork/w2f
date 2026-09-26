@@ -86,7 +86,7 @@ ParseResult ParseCommand(std::string_view text) {
     static const Known kKnown[] = {{"buy_unit", CommandType::BuyUnit}, {"reroll_shop", CommandType::RerollShop}, {"pick_gift", CommandType::PickGift}, {"buy_xp", CommandType::BuyXp}, {"set_shop_lock", CommandType::SetShopLock},
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
                                    {"unequip_item", CommandType::UnequipItem}, {"combine_items", CommandType::CombineItems}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
-                                   {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}};
+                                   {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}, {"pick_trait_choice", CommandType::PickTraitChoice}};
     bool found = false;
     for (const Known& k : kKnown) {
         if (name == k.name) { c.type = k.type; found = true; }
@@ -105,6 +105,7 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::CombineItems: allowed = {"id", "action", "first", "second"}; break;
         case CommandType::SetShopLock: allowed = {"id", "action", "locked"}; break;
         case CommandType::GetFight: allowed = {"id", "action", "fight_index"}; break;
+        case CommandType::PickTraitChoice: allowed = {"id", "action", "index"}; break;
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:
@@ -183,6 +184,10 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::GetFight:
             ok = in.Required("fight_index", 0, kMaxPlayers - 1, v);
             c.fightIndex = static_cast<int>(v);
+            break;
+        case CommandType::PickTraitChoice:
+            ok = in.Required("index", -1, 7, v);
+            c.choiceIndex = static_cast<int>(v);
             break;
         case CommandType::RerollShop:
         case CommandType::BuyXp:

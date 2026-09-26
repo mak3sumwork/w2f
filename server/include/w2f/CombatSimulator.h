@@ -50,6 +50,18 @@ struct FightUnitSpec {
     std::vector<const ItemDefinition*> items = {};   // equipment (applied as permanent statuses on tick 0)
 };
 
+// What a fight knows about each side's PLAYER (trait system v2): their level, the gold earned through Selini's Prosperity path, the Hexagon
+// modules they chose, and which path the match picked for every trait that has paths. Monsters and bare RunFight calls use the defaults.
+struct FightTeamContext {
+    int playerLevel = 1;
+    int traitGold = 0;
+    std::vector<std::uint32_t> modules;
+};
+struct FightSetup {
+    FightTeamContext teams[2];
+    std::vector<std::pair<std::uint32_t, int>> traitPaths;   // (trait id, path index); a trait not listed uses path 0
+};
+
 struct FightResult {
     CombatWinner winner = CombatWinner::Draw;
     CombatLog log;
@@ -81,7 +93,7 @@ public:
     // in-bounds arena hexes and ids unique. `maxTicks` is the time limit; on timeout the team
     // with more survivors wins, then the one with more total HP, otherwise it's a draw.
     // `seed` drives crit rolls only.
-    FightResult RunFight(const std::vector<FightUnitSpec>& units, int maxTicks, std::uint64_t seed = 0) const;
+    FightResult RunFight(const std::vector<FightUnitSpec>& units, int maxTicks, std::uint64_t seed = 0, const FightSetup& setup = FightSetup{}) const;
 
 private:
     CombatConfig config_;

@@ -28,6 +28,34 @@
 
 namespace w2f {
 
+class TraitDatabase;
+struct TraitDefinition;
+struct TraitCountUnit;
+
+// ---- Trait system v2: the decisions and rewards the traits hand a player (see Trait.h) ----
+
+// A choice waiting for a player: Hexagon offers modules (pick one), Najmi offers a star-dust prototype (take it, or decline and bank the dust).
+enum class TraitChoiceKind : std::uint8_t { None, Module, Prototype };
+struct TraitChoice {
+    TraitChoiceKind kind = TraitChoiceKind::None;
+    std::uint32_t trait = 0;              // the trait asking
+    int tier = 0;                         // Module: the module tier (1..3). Prototype: the star-dust tier (1 below 35, 2 below 70, 3 below 100, 4 = cash out)
+    std::vector<std::uint32_t> options;   // Module: module ids. Prototype: item ids
+    int bonusGold = 0;                    // Prototype cash-out: gold paid along with the item
+    bool Pending() const { return kind != TraitChoiceKind::None; }
+    bool operator==(const TraitChoice& o) const {
+        return kind == o.kind && trait == o.trait && tier == o.tier && options == o.options && bonusGold == o.bonusGold;
+    }
+};
+
+// What the traits paid a player after a combat (Resolution): Selini's XP and gold, Najmi's star dust, Hexagon's Mining Drill, Phaisa's Rift Herald.
+struct TraitRewards {
+    int xp = 0;
+    int gold = 0;
+    int starDust = 0;                       // gained this combat (the bank is in PlayerState::Traits())
+    ChampionId unit = kInvalidChampionId;   // a unit given to the bench
+    bool Any() const { return xp != 0 || gold != 0 || starDust != 0 || unit != kInvalidChampionId; }
+};
 
 constexpr const char* ToString(MatchPhase p) {
     switch (p) {
@@ -75,6 +103,12 @@ public:
     // Fired when Planning begins (shops already refreshed, before OnPhaseChanged): the crash-recovery snapshot of the
     // whole match as of the start of the round. Persist it; MatchManager::Restore turns it back into this exact moment.
     virtual void OnAutoSnapshot(int /*round*/, const std::vector<std::uint8_t>& /*snapshot*/) {}
+    // Trait system v2. A trait asks the player to choose (private information).
+    virtual void OnTraitChoiceOffered(PlayerId /*player*/, const TraitChoice& /*choice*/) {}
+    // The choice was made: `index` into its options, -1 = declined (a prototype: the star dust stays banked). `automatic` = the time ran out.
+    virtual void OnTraitChoiceResolved(PlayerId /*player*/, const TraitChoice& /*choice*/, int /*index*/, bool /*automatic*/) {}
+    // Fired during Resolution entry, after the round's results: what the player's traits paid out.
+    virtual void OnTraitRewards(PlayerId /*player*/, const TraitRewards& /*rewards*/) {}
 };
 
 class MatchManager : private IPlayerListener {  // private: it only re-broadcasts player events
@@ -92,7 +126,7 @@ public:
                                                 std::uint64_t seed, std::unique_ptr<ICombatSimulator> simulator,
                                                 std::string* error = nullptr, const ItemDatabase* items = nullptr,
                                                 const EncounterDatabase* encounters = nullptr,
-                                                const MotherNatureDatabase* motherNature = nullptr);
+                                                const MotherNatureDatabase* motherNature = nullptr, const TraitDatabase* traits = nullptr);
 
     // Owns objects that reference each other (players hold a pointer back to it), so it is pinned in memory.
     MatchManager(const MatchManager&) = delete;
@@ -128,6 +162,17 @@ public:
     bool IsShopClosed() const { return IsShopClosed(round_); }
     bool IsShopClosed(int round) const { return config_.match.IsOpeningRound(round) || IsMotherNatureRound(round); }
     const MotherNatureDatabase* MotherNature() const { return motherNature_; }
+    // Trait system v2 (all empty / none when the match runs without trait data -- then the traits only act inside fights).
+    // `traits` (optional, must outlive the match) turns on the match-level half of the traits: the path each trait with paths takes this match,
+    // after-combat rewards, choices, plants, granted and offered units.
+    const TraitDatabase* Traits() const { return traits_; }
+    // The path the match picked for each trait that has paths (trait id, path index), chosen from the match seed when it was created.
+    const std::vector<std::pair<std::uint32_t, int>>& TraitPaths() const { return traitPaths_; }
+    int TraitPath(std::uint32_t trait) const;
+    // The choice waiting for `player` (kind None when there is none).
+    const TraitChoice& PendingTraitChoice(PlayerId player) const;
+    // How many different champions on `player`'s board carry `trait`, and the tier that reaches (0 = none).
+    int TraitTier(PlayerId player, const TraitDefinition& trait, int* countOut = nullptr) const;
     // The item data this match validates against (nullptr when the match runs without items). Read-only: lets a client of the match (a bot,
     // a UI) look up what an item is.
     const ItemDatabase* Items() const { return items_; }
@@ -146,6 +191,7 @@ public:
     const SharedChampionPool& Pool() const { return pool_; }
     // Bypasses phase rules. For server-internal systems, admin tools and tests only.
     PlayerManager& PlayersMutable() { return players_; }
+    SharedChampionPool& PoolMutable() { return pool_; }
 
     // ---- Player actions ----
     // Planning: everything. Combat and Resolution: the shop (TryBuyShopUnit -- the champion goes to the BENCH and may only merge bench units --,
@@ -166,6 +212,8 @@ public:
     ActionResult TryUnequipItem(PlayerId player, UnitId unit, int slot);
     // Combine two components of the player's item bag into a finished item (any phase in which items may be handled, like equipping to a bench unit).
     ActionResult TryCombineItems(PlayerId player, ItemId first, ItemId second);
+    // Answer the pending trait choice: an option index, or -1 to decline a prototype (a module must be picked). Any phase in which the shop is usable.
+    ActionResult TryPickTraitChoice(PlayerId player, int index);
 
     // ---- Snapshot / restore (see Snapshot.h) ----
     // The whole match as bytes. Call between ticks / actions (which is the only time anything can call it).
@@ -177,7 +225,7 @@ public:
                                                  const ChampionDatabase& database, std::unique_ptr<ICombatSimulator> simulator,
                                                  std::string* error = nullptr, const ItemDatabase* items = nullptr,
                                                  const EncounterDatabase* encounters = nullptr, const MotherNatureDatabase* motherNature = nullptr,
-                                                 const RestoreOptions& options = RestoreOptions{});
+                                                 const RestoreOptions& options = RestoreOptions{}, const TraitDatabase* traits = nullptr);
 
     // ---- Diagnostics ----
     // Every champion copy must be in exactly one of: pool, a shop slot, a unit (a star-N unit
@@ -191,7 +239,20 @@ public:
 private:
     MatchManager(const GameConfig& config, const ChampionDatabase& database, std::uint64_t seed,
                  std::unique_ptr<ICombatSimulator> simulator, const ItemDatabase* items, const EncounterDatabase* encounters,
-                 const MotherNatureDatabase* motherNature);
+                 const MotherNatureDatabase* motherNature, const TraitDatabase* traits);
+
+    // ---- trait system v2 (MatchTraits.cpp) ----
+    void ChooseTraitPaths();
+    std::vector<TraitCountUnit> BoardUnits(const PlayerState& player) const;
+    int TierFor(const PlayerState& player, const TraitDefinition& trait, int* countOut) const;
+    void AfterRosterChange(PlayerId player);   // plants, module offers, the Queen
+    void SyncPlants(PlayerState& player);
+    void OfferQueen(PlayerState& player);
+    void OfferModules(PlayerState& player);
+    void OfferPrototype(PlayerState& player);
+    void GrantTraitRewards(PlayerState& player, const CombatOutcome& outcome, bool home, bool lost);
+    ActionResult ResolveTraitChoice(PlayerId player, int index, bool automatic);
+    void SettleTraitChoices();   // a Combat begins: every open choice is settled (a module: the first; a prototype: declined)
 
     int PhaseDuration(MatchPhase phase) const;
     void BeginRound();
@@ -236,6 +297,7 @@ private:
     const ItemDatabase* items_;
     const EncounterDatabase* encounters_;
     const MotherNatureDatabase* motherNature_;
+    const TraitDatabase* traits_;
     std::uint64_t seed_;
     Rng rng_;
     std::vector<IMatchListener*> listeners_;
@@ -257,6 +319,8 @@ private:
         bool settled = false;
     };
     std::vector<PlayerGifts> gifts_;
+    std::vector<std::pair<std::uint32_t, int>> traitPaths_;   // derived from the seed at creation (so not stored in a snapshot)
+    std::vector<TraitChoice> choices_;                         // per seat
 
     // Derived, not authoritative: never part of a snapshot or of StateHash().
     std::vector<std::uint8_t> autoSnapshot_;

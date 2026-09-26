@@ -340,6 +340,31 @@
    ],
    "additionalProperties": false,
    "description": "(revision 3) lock or unlock the shop: a locked shop keeps its current offer through the next round's automatic refresh (rerolling and buying still work). Answered with `result` and the new `state`"
+  },
+  {
+   "type": "object",
+   "description": "(revision 5) answer the pending trait choice: an option index, or -1 to decline a prototype",
+   "properties": {
+    "action": {
+     "const": "pick_trait_choice"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "index": {
+     "type": "integer",
+     "minimum": -1,
+     "maximum": 7
+    }
+   },
+   "required": [
+    "action",
+    "index"
+   ],
+   "additionalProperties": false
   }
  ]
 }

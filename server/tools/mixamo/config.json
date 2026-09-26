@@ -1,0 +1,3182 @@
+{
+ "_doc": "Mixamo stand-in heroes. Read by tools/mixamo/build_heroes.py (Blender) and, through the unit_visuals.json it writes, by AW2FArena in UE. Casting and the reasons: docs/models/mixamo-casting.md. Paths are relative to docs/examples (models) and docs/animations (clips); both folders are git-ignored (Mixamo files may not be redistributed).",
+ "clips": {
+  "_doc": "Shared clip library. file = path under docs/animations. impact = seconds into the clip where the blow lands / the spell releases (omitted = found automatically from the fastest hand or foot). start / end trim the clip (seconds). loop = cycles (idle, run). hold = freeze on the last frame (a held block).",
+  "idle_sword": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield idle (4).fbx",
+   "loop": true
+  },
+  "idle_magic": {
+   "file": "_unzipped/Pro Magic Pack/standing idle.fbx",
+   "loop": true
+  },
+  "idle_fight": {
+   "file": "Bouncing Fight Idle.fbx",
+   "loop": true
+  },
+  "idle_bow": {
+   "file": "_unzipped/Longbow Locomotion Pack/standing idle 01.fbx",
+   "loop": true
+  },
+  "idle_mutant": {
+   "file": "_unzipped/Creature NPC Pack/mutant breathing idle.fbx",
+   "loop": true
+  },
+  "idle_zombie": {
+   "file": "_unzipped/Scary Zombie Pack/zombie idle.fbx",
+   "loop": true
+  },
+  "run_sword": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield run.fbx",
+   "loop": true
+  },
+  "run_magic": {
+   "file": "_unzipped/Pro Magic Pack/Standing Run Forward.fbx",
+   "loop": true
+  },
+  "run_bow": {
+   "file": "_unzipped/Longbow Locomotion Pack/standing run forward.fbx",
+   "loop": true
+  },
+  "run_mutant": {
+   "file": "_unzipped/Creature NPC Pack/mutant run.fbx",
+   "loop": true
+  },
+  "run_zombie": {
+   "file": "_unzipped/Scary Zombie Pack/zombie run.fbx",
+   "loop": true
+  },
+  "hit_small": {
+   "file": "_unzipped/Pro Magic Pack/Standing React Small From Front.fbx"
+  },
+  "hit_block": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield impact.fbx"
+  },
+  "death_sword": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield death.fbx"
+  },
+  "death_magic": {
+   "file": "_unzipped/Pro Magic Pack/Standing React Death Backward.fbx"
+  },
+  "death_mutant": {
+   "file": "_unzipped/Creature NPC Pack/mutant dying.fbx"
+  },
+  "death_zombie": {
+   "file": "_unzipped/Scary Zombie Pack/zombie dying.fbx"
+  },
+  "death_fall": {
+   "file": "Dying.fbx"
+  },
+  "atk_sword": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield attack (4).fbx"
+  },
+  "atk_slash": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield slash.fbx"
+  },
+  "atk_heavy": {
+   "file": "Standing Melee Attack Downward.fbx"
+  },
+  "atk_stab": {
+   "file": "Stabbing.fbx"
+  },
+  "atk_punch": {
+   "file": "Mutant Punch.fbx"
+  },
+  "atk_swipe": {
+   "file": "Mutant Swiping.fbx"
+  },
+  "atk_zombie": {
+   "file": "_unzipped/Scary Zombie Pack/zombie attack.fbx"
+  },
+  "atk_bow": {
+   "file": "Standing Aim Recoil.fbx"
+  },
+  "atk_rifle": {
+   "file": "Firing Rifle.fbx",
+   "impact": 0.05
+  },
+  "atk_magic": {
+   "file": "_unzipped/Pro Magic Pack/Standing 1H Magic Attack 01.fbx"
+  },
+  "atk_magic2": {
+   "file": "_unzipped/Pro Magic Pack/Standing 1H Magic Attack 02.fbx"
+  },
+  "cast_block": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield block.fbx",
+   "hold": true
+  },
+  "cast_powerup": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield power up.fbx"
+  },
+  "cast_raise": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield casting.fbx"
+  },
+  "cast_rend": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield slash (4).fbx"
+  },
+  "cast_sweep": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield slash (5).fbx"
+  },
+  "cast_cleave": {
+   "file": "Standing Melee Attack Horizontal.fbx"
+  },
+  "cast_leap": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield attack.fbx"
+  },
+  "cast_dash": {
+   "file": "_unzipped/Sword and Shield Pack/sword and shield attack (2).fbx"
+  },
+  "cast_daggers": {
+   "file": "Double Dagger Stab.fbx"
+  },
+  "cast_headbutt": {
+   "file": "Headbutt.fbx"
+  },
+  "cast_slam": {
+   "file": "_unzipped/Creature NPC Pack/mutant jumping.fbx"
+  },
+  "cast_roar": {
+   "file": "Mutant Roaring.fbx",
+   "end": 3.0
+  },
+  "cast_scream": {
+   "file": "_unzipped/Scary Zombie Pack/zombie scream.fbx"
+  },
+  "cast_arrow": {
+   "file": "Shooting Arrow.fbx",
+   "end": 2.4
+  },
+  "cast_1h": {
+   "file": "_unzipped/Pro Magic Pack/standing 1H cast spell 01.fbx"
+  },
+  "cast_1h_kneel": {
+   "file": "_unzipped/Pro Magic Pack/Standing 1H Magic Attack 03.fbx"
+  },
+  "cast_2h": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Magic Attack 01.fbx"
+  },
+  "cast_2h_push": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Magic Attack 02.fbx"
+  },
+  "cast_channel": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Magic Attack 03.fbx"
+  },
+  "cast_drain": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Magic Attack 04.fbx"
+  },
+  "cast_area": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Magic Area Attack 01.fbx"
+  },
+  "cast_wave": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Magic Area Attack 02.fbx"
+  },
+  "cast_summon": {
+   "file": "_unzipped/Pro Magic Pack/Standing 2H Cast Spell 01.fbx"
+  },
+  "victory": {
+   "file": "Taunt.fbx",
+   "loop": true
+  },
+  "victory_flex": {
+   "file": "_unzipped/Creature NPC Pack/mutant flexing muscles.fbx",
+   "loop": true
+  },
+  "cast_combo": {
+   "file": "Standing Melee Combo Attack Ver. 3.fbx"
+  }
+ },
+ "sets": {
+  "_doc": "Locomotion / reaction bundles a hero starts from; a hero lists its own attack and cast.",
+  "sword": {
+   "idle": "idle_sword",
+   "run": "run_sword",
+   "hit": "hit_block",
+   "death": "death_sword",
+   "victory": "victory"
+  },
+  "magic": {
+   "idle": "idle_magic",
+   "run": "run_magic",
+   "hit": "hit_small",
+   "death": "death_magic",
+   "victory": "victory"
+  },
+  "fight": {
+   "idle": "idle_fight",
+   "run": "run_magic",
+   "hit": "hit_small",
+   "death": "death_fall",
+   "victory": "victory"
+  },
+  "bow": {
+   "idle": "idle_bow",
+   "run": "run_bow",
+   "hit": "hit_small",
+   "death": "death_magic",
+   "victory": "victory"
+  },
+  "mutant": {
+   "idle": "idle_mutant",
+   "run": "run_mutant",
+   "hit": "hit_small",
+   "death": "death_mutant",
+   "victory": "victory_flex"
+  },
+  "zombie": {
+   "idle": "idle_zombie",
+   "run": "run_zombie",
+   "hit": "hit_small",
+   "death": "death_zombie",
+   "victory": "victory_flex"
+  }
+ },
+ "heroes": {
+  "_doc": "height = metres the hero stands at 1 star (the game scales it). look = edits baked in Blender (build_heroes.py): recolour (metal | tint), swaps (a colour family -> a new hue), glow (a colour family -> emissive), scale_bones, props (the weapon / trinket library, placed by slot: right_hand, left_hand, left_arm, right_arm, head, behind_head, crown, over_left_palm, right_shoulder).",
+  "9001": {
+   "name": "Alesk",
+   "model": "Vanguard By T. Choonyung.fbx",
+   "height": 2.3,
+   "set": "sword",
+   "attack": "atk_sword",
+   "cast": "cast_block",
+   "look": {
+    "recolour": {
+     "mode": "metal",
+     "tint": [
+      0.2,
+      0.22,
+      0.25
+     ],
+     "keep": 0.12,
+     "value": 0.3
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.1,
+      0.95,
+      0.85
+     ],
+     "strength": 4.0
+    },
+    "scale_bones": {
+     "LeftShoulder": 1.12,
+     "RightShoulder": 1.12,
+     "LeftArm": 1.08,
+     "RightArm": 1.08,
+     "Spine2": 1.06
+    },
+    "props": [
+     {
+      "kind": "tower_shield",
+      "slot": "left_arm",
+      "colour": [
+       0.09,
+       0.1,
+       0.11
+      ],
+      "glow": [
+       0.1,
+       0.95,
+       0.85
+      ]
+     }
+    ]
+   }
+  },
+  "9002": {
+   "name": "Baira",
+   "model": "Nightshade J Friedrich.fbx",
+   "height": 1.9,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_wave",
+   "look": {
+    "swaps": [
+     {
+      "from": "yellow",
+      "to": [
+       0.15,
+       0.55,
+       0.65
+      ]
+     }
+    ],
+    "glow": {
+     "from": "green",
+     "colour": [
+      0.35,
+      0.6,
+      1.0
+     ]
+    },
+    "props": [
+     {
+      "kind": "trident",
+      "slot": "right_hand",
+      "colour": [
+       0.3,
+       0.22,
+       0.35
+      ],
+      "colour2": [
+       0.55,
+       0.22,
+       0.32
+      ],
+      "glow": [
+       0.35,
+       0.6,
+       1.0
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9003": {
+   "name": "Cyla",
+   "model": "Eve By J.Gonzales.fbx",
+   "height": 1.7,
+   "set": "bow",
+   "attack": "atk_rifle",
+   "cast": "atk_rifle",
+   "look": {
+    "glow": {
+     "from": "orange",
+     "colour": [
+      0.1,
+      0.9,
+      0.95
+     ]
+    },
+    "props": [
+     {
+      "kind": "rifle",
+      "slot": "right_hand",
+      "colour": [
+       0.2,
+       0.22,
+       0.25
+      ],
+      "colour2": [
+       0.12,
+       0.12,
+       0.14
+      ],
+      "glow": [
+       0.1,
+       0.9,
+       0.95
+      ],
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "offset": [
+       0.0,
+       -0.04,
+       0.07
+      ]
+     },
+     {
+      "kind": "rocket",
+      "slot": "right_shoulder",
+      "colour": [
+       0.25,
+       0.28,
+       0.3
+      ],
+      "glow": [
+       0.1,
+       0.9,
+       0.95
+      ]
+     }
+    ]
+   }
+  },
+  "9005": {
+   "name": "Faire",
+   "model": "Ch48_nonPBR.fbx",
+   "height": 1.75,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_1h_kneel",
+   "look": {
+    "props": [
+     {
+      "kind": "gauntlet",
+      "slot": "right_arm",
+      "colour": [
+       0.8,
+       0.82,
+       0.85
+      ],
+      "glow": [
+       0.1,
+       0.9,
+       0.95
+      ]
+     }
+    ]
+   }
+  },
+  "9006": {
+   "name": "Les",
+   "model": "Mutant.fbx",
+   "height": 2.5,
+   "set": "mutant",
+   "attack": "atk_swipe",
+   "cast": "cast_roar",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.55,
+      0.55,
+      0.6
+     ],
+     "keep": 0.4
+    },
+    "glow": {
+     "from": "blue",
+     "colour": [
+      1.0,
+      0.9,
+      0.6
+     ]
+    }
+   }
+  },
+  "9007": {
+   "name": "Lum",
+   "model": "Warrok W Kurniawan.fbx",
+   "height": 2.4,
+   "set": "mutant",
+   "attack": "atk_punch",
+   "cast": "cast_slam",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.62,
+      0.6,
+      0.58
+     ],
+     "keep": 0.45
+    },
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.85,
+       0.65,
+       0.25
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "crown",
+      "slot": "crown",
+      "colour": [
+       0.8,
+       0.65,
+       0.3
+      ],
+      "glow": [
+       1.0,
+       0.9,
+       0.6
+      ],
+      "scale": 1.25
+     }
+    ]
+   }
+  },
+  "9008": {
+   "name": "Astra",
+   "model": "Pirate By P. Konstantinov.fbx",
+   "height": 1.75,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_1h",
+   "look": {
+    "swaps": [
+     {
+      "from": "purple",
+      "to": [
+       0.15,
+       0.2,
+       0.55
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "halo",
+      "slot": "head",
+      "glow": [
+       1.0,
+       0.85,
+       0.45
+      ]
+     },
+     {
+      "kind": "staff",
+      "top": "star",
+      "slot": "right_hand",
+      "colour": [
+       0.7,
+       0.72,
+       0.8
+      ],
+      "colour2": [
+       0.2,
+       0.22,
+       0.35
+      ],
+      "glow": [
+       0.7,
+       0.8,
+       1.0
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9009": {
+   "name": "Lunis",
+   "model": "Kachujin G Rosales.fbx",
+   "height": 1.75,
+   "set": "fight",
+   "attack": "atk_slash",
+   "cast": "cast_sweep",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.25,
+       0.4,
+       0.85
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "sword",
+      "slot": "right_hand",
+      "colour": [
+       0.75,
+       0.78,
+       0.85
+      ],
+      "colour2": [
+       0.1,
+       0.12,
+       0.2
+      ],
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9010": {
+   "name": "Soul",
+   "model": "Paladin J Nordstrom.fbx",
+   "height": 2.1,
+   "set": "sword",
+   "attack": "atk_heavy",
+   "cast": "cast_rend",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.42,
+      0.28,
+      0.2
+     ],
+     "keep": 0.55
+    },
+    "glow": {
+     "from": "orange",
+     "colour": [
+      0.45,
+      1.0,
+      0.55
+     ]
+    },
+    "props": [
+     {
+      "kind": "greatsword",
+      "slot": "right_hand",
+      "colour": [
+       0.38,
+       0.24,
+       0.16
+      ],
+      "colour2": [
+       0.15,
+       0.1,
+       0.08
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.55
+      ]
+     }
+    ]
+   }
+  },
+  "9011": {
+   "name": "Myna",
+   "model": "Peasant Girl.fbx",
+   "height": 1.75,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_2h",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.55,
+      0.8
+     ],
+     "keep": 0.4
+    },
+    "props": [
+     {
+      "kind": "staff",
+      "top": "crescent",
+      "slot": "right_hand",
+      "colour": [
+       0.75,
+       0.78,
+       0.85
+      ],
+      "colour2": [
+       0.3,
+       0.35,
+       0.5
+      ],
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9012": {
+   "name": "Vega",
+   "model": "Demon T Wiezzorek.fbx",
+   "height": 2.1,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_channel",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.35,
+       0.2,
+       0.65
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "staff",
+      "top": "star",
+      "slot": "right_hand",
+      "colour": [
+       0.85,
+       0.75,
+       0.4
+      ],
+      "colour2": [
+       0.2,
+       0.15,
+       0.35
+      ],
+      "glow": [
+       0.7,
+       0.8,
+       1.0
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9013": {
+   "name": "Ignis",
+   "model": "Ch15_nonPBR.fbx",
+   "height": 1.9,
+   "set": "sword",
+   "attack": "atk_slash",
+   "cast": "cast_powerup",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.72,
+      0.45,
+      0.25
+     ],
+     "keep": 0.35
+    },
+    "props": [
+     {
+      "kind": "sword",
+      "slot": "right_hand",
+      "colour": [
+       0.7,
+       0.5,
+       0.3
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ]
+     },
+     {
+      "kind": "round_shield",
+      "slot": "left_hand",
+      "colour": [
+       0.55,
+       0.35,
+       0.18
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ],
+      "rotate": [
+       0,
+       0,
+       90
+      ]
+     }
+    ]
+   }
+  },
+  "9014": {
+   "name": "Pyra",
+   "model": "Erika Archer With Bow Arrow.fbx",
+   "height": 1.75,
+   "set": "bow",
+   "attack": "atk_bow",
+   "cast": "cast_arrow",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.8,
+      0.5,
+      0.32
+     ],
+     "keep": 0.55
+    }
+   }
+  },
+  "9015": {
+   "name": "Vex",
+   "model": "Arissa.fbx",
+   "height": 1.75,
+   "set": "fight",
+   "attack": "atk_stab",
+   "cast": "cast_daggers",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.5,
+       0.2,
+       0.8
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "dagger",
+      "slot": "right_hand",
+      "colour": [
+       0.3,
+       0.25,
+       0.35
+      ],
+      "glow": [
+       0.6,
+       0.22,
+       1.0
+      ]
+     },
+     {
+      "kind": "dagger",
+      "slot": "left_hand",
+      "colour": [
+       0.3,
+       0.25,
+       0.35
+      ],
+      "glow": [
+       0.6,
+       0.22,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9016": {
+   "name": "Null",
+   "model": "Dreyar By M.Aure.fbx",
+   "height": 1.95,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_2h_push",
+   "look": {
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.6,
+      0.22,
+      1.0
+     ]
+    },
+    "props": [
+     {
+      "kind": "orb",
+      "slot": "over_left_palm",
+      "glow": [
+       0.4,
+       0.1,
+       0.85
+      ],
+      "radius": 0.1
+     }
+    ]
+   }
+  },
+  "9017": {
+   "name": "Bone",
+   "model": "Skeletonzombie T Avelange.fbx",
+   "height": 1.9,
+   "set": "zombie",
+   "attack": "atk_zombie",
+   "cast": "cast_headbutt",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.85,
+      0.8,
+      0.7
+     ],
+     "keep": 0.5
+    },
+    "props": [
+     {
+      "kind": "club",
+      "slot": "right_hand"
+     }
+    ]
+   }
+  },
+  "9018": {
+   "name": "Rot",
+   "model": "Maw J Laygo.fbx",
+   "height": 2.4,
+   "set": "mutant",
+   "attack": "atk_swipe",
+   "cast": "cast_roar",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.32,
+      0.42,
+      0.26
+     ],
+     "keep": 0.5
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.45,
+      1.0,
+      0.2
+     ]
+    }
+   }
+  },
+  "9019": {
+   "name": "Bit",
+   "model": "Exo Gray.fbx",
+   "height": 1.85,
+   "set": "fight",
+   "attack": "atk_sword",
+   "cast": "cast_dash",
+   "look": {
+    "glow": {
+     "from": "blue",
+     "colour": [
+      0.1,
+      0.9,
+      0.95
+     ]
+    },
+    "props": [
+     {
+      "kind": "sword",
+      "slot": "right_hand",
+      "scale": 0.75,
+      "colour": [
+       0.6,
+       0.65,
+       0.7
+      ],
+      "colour2": [
+       0.15,
+       0.15,
+       0.18
+      ],
+      "glow": [
+       0.1,
+       0.9,
+       0.95
+      ]
+     }
+    ]
+   }
+  },
+  "9020": {
+   "name": "Solis",
+   "model": "Maria WProp J J Ong.fbx",
+   "height": 1.85,
+   "set": "sword",
+   "attack": "atk_heavy",
+   "cast": "cast_raise",
+   "look": {
+    "glow": {
+     "from": "yellow",
+     "colour": [
+      1.0,
+      0.78,
+      0.3
+     ],
+     "strength": 0.5
+    }
+   }
+  },
+  "9021": {
+   "name": "Xul",
+   "model": "Ch44_nonPBR.fbx",
+   "height": 1.85,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_1h_kneel",
+   "look": {
+    "glow": {
+     "from": "orange",
+     "colour": [
+      0.6,
+      0.22,
+      1.0
+     ]
+    }
+   }
+  },
+  "9022": {
+   "name": "Grave",
+   "model": "Ganfaul M Aure.fbx",
+   "height": 1.95,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_summon",
+   "look": {
+    "props": [
+     {
+      "kind": "staff",
+      "top": "skull",
+      "slot": "right_hand",
+      "colour2": [
+       0.25,
+       0.2,
+       0.18
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.55
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9023": {
+   "name": "Byte",
+   "model": "Ely By K.Atienza.fbx",
+   "height": 1.8,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_1h",
+   "look": {
+    "glow": {
+     "from": "orange",
+     "colour": [
+      0.1,
+      0.9,
+      0.95
+     ]
+    }
+   }
+  },
+  "9024": {
+   "name": "Orion",
+   "model": "akai_e_espiritu.fbx",
+   "height": 1.8,
+   "set": "bow",
+   "attack": "atk_bow",
+   "cast": "cast_arrow",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.2,
+       0.35,
+       0.8
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "bow",
+      "slot": "left_hand",
+      "colour2": [
+       0.55,
+       0.6,
+       0.75
+      ],
+      "glow": [
+       0.7,
+       0.8,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9025": {
+   "name": "Nyx",
+   "model": "Ch40_nonPBR.fbx",
+   "height": 2.0,
+   "set": "sword",
+   "attack": "atk_heavy",
+   "cast": "cast_cleave",
+   "look": {
+    "swaps": [
+     {
+      "from": "yellow",
+      "to": [
+       0.55,
+       0.25,
+       0.85
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "axe",
+      "slot": "right_hand",
+      "scale": 1.1,
+      "colour": [
+       0.3,
+       0.28,
+       0.35
+      ],
+      "colour2": [
+       0.15,
+       0.1,
+       0.1
+      ],
+      "glow": [
+       0.6,
+       0.22,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9026": {
+   "name": "Flare",
+   "model": "Medea By M. Arrebola.fbx",
+   "height": 1.75,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_area",
+   "look": {
+    "swaps": [
+     {
+      "from": "green",
+      "to": [
+       0.95,
+       0.7,
+       0.25
+      ]
+     },
+     {
+      "from": "red",
+      "to": [
+       0.95,
+       0.55,
+       0.2
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "staff",
+      "top": "sun",
+      "slot": "right_hand",
+      "colour": [
+       0.9,
+       0.75,
+       0.4
+      ],
+      "colour2": [
+       0.9,
+       0.85,
+       0.75
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9027": {
+   "name": "Lich",
+   "model": "Vampire A Lusth.fbx",
+   "height": 2.0,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_drain",
+   "look": {
+    "glow": {
+     "from": "blue",
+     "colour": [
+      0.45,
+      1.0,
+      0.55
+     ]
+    },
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.15,
+       0.35,
+       0.22
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "staff",
+      "top": "skull",
+      "slot": "right_hand",
+      "colour2": [
+       0.2,
+       0.18,
+       0.2
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.55
+      ],
+      "scale": 0.85
+     }
+    ]
+   }
+  },
+  "9028": {
+   "name": "Raa",
+   "model": "Ch24_nonPBR.fbx",
+   "height": 1.85,
+   "set": "fight",
+   "attack": "atk_stab",
+   "cast": "cast_leap",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.85,
+      0.62,
+      0.28
+     ],
+     "keep": 0.3
+    },
+    "props": [
+     {
+      "kind": "dagger",
+      "slot": "right_hand",
+      "colour": [
+       0.85,
+       0.65,
+       0.3
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ]
+     },
+     {
+      "kind": "dagger",
+      "slot": "left_hand",
+      "colour": [
+       0.85,
+       0.65,
+       0.3
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ]
+     }
+    ]
+   }
+  },
+  "9029": {
+   "name": "Kryx",
+   "model": "Pumpkinhulk L Shaw.fbx",
+   "height": 2.4,
+   "set": "mutant",
+   "attack": "atk_heavy",
+   "cast": "cast_roar",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.58,
+      0.38,
+      0.62
+     ],
+     "keep": 0.5
+    },
+    "props": [
+     {
+      "kind": "axe",
+      "slot": "right_hand",
+      "scale": 1.3,
+      "colour": [
+       0.25,
+       0.22,
+       0.28
+      ],
+      "colour2": [
+       0.18,
+       0.1,
+       0.08
+      ],
+      "glow": [
+       0.6,
+       0.22,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9030": {
+   "name": "Mortis",
+   "model": "Warzombie F Pedroso.fbx",
+   "height": 1.9,
+   "set": "zombie",
+   "attack": "atk_rifle",
+   "cast": "cast_scream",
+   "look": {
+    "props": [
+     {
+      "kind": "rifle",
+      "slot": "right_hand",
+      "colour": [
+       0.3,
+       0.3,
+       0.3
+      ],
+      "colour2": [
+       0.3,
+       0.22,
+       0.15
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.55
+      ],
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "offset": [
+       0.0,
+       -0.04,
+       0.07
+      ]
+     }
+    ]
+   }
+  },
+  "9031": {
+   "name": "Umbra",
+   "model": "Ch25_nonPBR.fbx",
+   "height": 2.4,
+   "set": "mutant",
+   "attack": "atk_swipe",
+   "cast": "cast_area",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.28,
+      0.33,
+      0.6
+     ],
+     "keep": 0.3
+    },
+    "props": [
+     {
+      "kind": "crescent",
+      "slot": "behind_head",
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ],
+      "scale": 1.8,
+      "offset": [
+       0.0,
+       0.22,
+       -0.3
+      ]
+     }
+    ]
+   }
+  },
+  "9101": {
+   "name": "Skeleton",
+   "model": "Ch30_nonPBR.fbx",
+   "height": 1.8,
+   "set": "zombie",
+   "attack": "atk_zombie",
+   "cast": "atk_zombie",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.85,
+      0.8,
+      0.7
+     ],
+     "keep": 0.45
+    }
+   }
+  },
+  "9102": {
+   "name": "LostSoul",
+   "model": "Ch36_nonPBR.fbx",
+   "height": 1.6,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "atk_magic",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.7,
+      1.0
+     ],
+     "keep": 0.0
+    },
+    "glow": {
+     "from": "all",
+     "colour": [
+      0.25,
+      0.55,
+      1.0
+     ],
+     "strength": 1.0
+    }
+   }
+  },
+  "9032": {
+   "name": "Tide",
+   "model": "Brute.fbx",
+   "height": 2.1,
+   "set": "sword",
+   "attack": "atk_punch",
+   "cast": "cast_powerup",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.2,
+       0.4,
+       0.8
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "round_shield",
+      "slot": "left_hand",
+      "rotate": [
+       0,
+       0,
+       90
+      ],
+      "colour": [
+       0.15,
+       0.3,
+       0.5
+      ],
+      "glow": [
+       0.25,
+       0.6,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9033": {
+   "name": "Sunna",
+   "model": "Lola B Styperek.fbx",
+   "height": 1.75,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_1h",
+   "look": {
+    "swaps": [
+     {
+      "from": "orange",
+      "to": [
+       0.95,
+       0.72,
+       0.3
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "staff",
+      "top": "sun",
+      "slot": "right_hand",
+      "scale": 0.85,
+      "colour": [
+       0.9,
+       0.78,
+       0.45
+      ],
+      "colour2": [
+       0.95,
+       0.9,
+       0.8
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ]
+     },
+     {
+      "kind": "halo",
+      "slot": "head",
+      "glow": [
+       1.0,
+       0.78,
+       0.3
+      ]
+     }
+    ]
+   }
+  },
+  "9034": {
+   "name": "Kael",
+   "model": "exo_red.fbx",
+   "height": 2.0,
+   "set": "sword",
+   "attack": "atk_heavy",
+   "cast": "cast_slam",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.9,
+       0.6,
+       0.2
+      ]
+     }
+    ],
+    "glow": {
+     "from": "blue",
+     "colour": [
+      1.0,
+      0.78,
+      0.3
+     ],
+     "strength": 2.0
+    },
+    "props": [
+     {
+      "kind": "hammer",
+      "slot": "right_hand",
+      "scale": 1.15,
+      "colour": [
+       0.75,
+       0.6,
+       0.3
+      ],
+      "colour2": [
+       0.25,
+       0.18,
+       0.12
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ]
+     }
+    ]
+   }
+  },
+  "9035": {
+   "name": "Aphel",
+   "model": "Ch47_nonPBR.fbx",
+   "height": 1.8,
+   "set": "bow",
+   "attack": "atk_bow",
+   "cast": "cast_arrow",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.3,
+       0.45,
+       0.85
+      ]
+     }
+    ],
+    "props": [
+     {
+      "kind": "bow",
+      "slot": "left_hand",
+      "colour2": [
+       0.8,
+       0.85,
+       0.95
+      ],
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ]
+     },
+     {
+      "kind": "crescent",
+      "slot": "behind_head",
+      "scale": 0.8,
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9036": {
+   "name": "Sola",
+   "model": "Ch45_nonPBR.fbx",
+   "height": 1.85,
+   "set": "fight",
+   "attack": "atk_slash",
+   "cast": "cast_combo",
+   "look": {
+    "glow": {
+     "from": "bright",
+     "colour": [
+      0.5,
+      0.7,
+      1.0
+     ],
+     "strength": 1.5
+    },
+    "props": [
+     {
+      "kind": "sword",
+      "slot": "right_hand",
+      "colour": [
+       0.8,
+       0.85,
+       0.95
+      ],
+      "colour2": [
+       0.1,
+       0.1,
+       0.2
+      ],
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ]
+     },
+     {
+      "kind": "dagger",
+      "slot": "left_hand",
+      "colour": [
+       0.8,
+       0.85,
+       0.95
+      ],
+      "glow": [
+       0.5,
+       0.7,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9037": {
+   "name": "Morrah",
+   "model": "Ch39_nonPBR.fbx",
+   "height": 1.85,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_area",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.45,
+      0.3,
+      0.65
+     ],
+     "keep": 0.35
+    },
+    "props": [
+     {
+      "kind": "staff",
+      "top": "orb",
+      "slot": "right_hand",
+      "scale": 0.9,
+      "colour": [
+       0.25,
+       0.2,
+       0.3
+      ],
+      "colour2": [
+       0.15,
+       0.1,
+       0.2
+      ],
+      "glow": [
+       0.6,
+       0.22,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9038": {
+   "name": "Aureon",
+   "model": "Ch20_nonPBR.fbx",
+   "height": 2.1,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_area",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.95,
+       0.7,
+       0.25
+      ]
+     }
+    ],
+    "glow": {
+     "from": "bright",
+     "colour": [
+      1.0,
+      0.78,
+      0.3
+     ],
+     "strength": 1.2
+    },
+    "props": [
+     {
+      "kind": "staff",
+      "top": "sun",
+      "slot": "right_hand",
+      "colour": [
+       0.95,
+       0.8,
+       0.4
+      ],
+      "colour2": [
+       0.9,
+       0.85,
+       0.7
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ]
+     },
+     {
+      "kind": "crown",
+      "slot": "crown",
+      "colour": [
+       0.9,
+       0.7,
+       0.3
+      ],
+      "glow": [
+       1.0,
+       0.78,
+       0.3
+      ],
+      "scale": 1.1
+     },
+     {
+      "kind": "halo",
+      "slot": "head",
+      "glow": [
+       1.0,
+       0.55,
+       0.12
+      ],
+      "scale": 1.4
+     }
+    ]
+   }
+  },
+  "9039": {
+   "name": "Nihila",
+   "model": "Ch34_nonPBR.fbx",
+   "height": 1.9,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_channel",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.2,
+      0.6
+     ],
+     "keep": 0.25
+    },
+    "glow": {
+     "from": "green",
+     "colour": [
+      0.6,
+      0.22,
+      1.0
+     ]
+    },
+    "props": [
+     {
+      "kind": "crown",
+      "slot": "crown",
+      "colour": [
+       0.2,
+       0.1,
+       0.3
+      ],
+      "glow": [
+       0.6,
+       0.22,
+       1.0
+      ],
+      "scale": 1.2
+     },
+     {
+      "kind": "orb",
+      "slot": "over_left_palm",
+      "glow": [
+       0.35,
+       0.05,
+       0.8
+      ],
+      "radius": 0.12
+     }
+    ]
+   }
+  },
+  "9040": {
+   "name": "Rivet",
+   "model": "Ch33_nonPBR.fbx",
+   "height": 1.85,
+   "set": "bow",
+   "attack": "atk_rifle",
+   "cast": "cast_2h_push",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.36,
+      0.26,
+      0.18
+     ],
+     "keep": 0.35
+    },
+    "props": [
+     {
+      "kind": "gatling",
+      "slot": "right_hand",
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "offset": [
+       0,
+       -0.04,
+       0.07
+      ],
+      "colour": [
+       0.28,
+       0.28,
+       0.3
+      ],
+      "colour2": [
+       0.35,
+       0.22,
+       0.12
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.15
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "left_shoulder",
+      "colour": [
+       0.3,
+       0.2,
+       0.12
+      ],
+      "colour2": [
+       0.55,
+       0.55,
+       0.58
+      ],
+      "scale": 0.8
+     }
+    ]
+   }
+  },
+  "9045": {
+   "name": "Hexa",
+   "model": "Ch11_nonPBR.fbx",
+   "height": 2.6,
+   "set": "sword",
+   "attack": "atk_rifle",
+   "cast": "cast_channel",
+   "look": {
+    "recolour": {
+     "mode": "metal",
+     "tint": [
+      0.55,
+      0.6,
+      0.7
+     ],
+     "keep": 0.05,
+     "value": 0.6
+    },
+    "glow": {
+     "from": "blue",
+     "colour": [
+      0.2,
+      0.85,
+      1.0
+     ],
+     "strength": 3.0
+    },
+    "props": [
+     {
+      "kind": "gauntlet",
+      "slot": "right_arm",
+      "colour": [
+       0.35,
+       0.38,
+       0.42
+      ],
+      "glow": [
+       0.2,
+       0.85,
+       1.0
+      ],
+      "scale": 1.3
+     },
+     {
+      "kind": "gauntlet",
+      "slot": "left_arm",
+      "offset": [
+       0,
+       0,
+       0
+      ],
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "colour": [
+       0.35,
+       0.38,
+       0.42
+      ],
+      "glow": [
+       0.2,
+       0.85,
+       1.0
+      ],
+      "scale": 1.3
+     },
+     {
+      "kind": "mech_pack",
+      "slot": "back",
+      "colour": [
+       0.3,
+       0.32,
+       0.36
+      ],
+      "colour2": [
+       0.5,
+       0.52,
+       0.58
+      ],
+      "glow": [
+       0.2,
+       0.85,
+       1.0
+      ]
+     },
+     {
+      "kind": "rocket",
+      "slot": "right_shoulder",
+      "colour": [
+       0.5,
+       0.52,
+       0.58
+      ],
+      "glow": [
+       1.0,
+       0.5,
+       0.15
+      ],
+      "scale": 0.8
+     }
+    ]
+   }
+  },
+  "9046": {
+   "name": "Moss",
+   "model": "Parasite L Starkie.fbx",
+   "height": 2.05,
+   "set": "mutant",
+   "attack": "atk_punch",
+   "cast": "cast_powerup",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.3,
+      0.45,
+      0.22
+     ],
+     "keep": 0.1,
+     "value": 1.1
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.45,
+      1.0,
+      0.35
+     ],
+     "strength": 2.0
+    },
+    "props": [
+     {
+      "kind": "pauldron",
+      "slot": "right_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.25,
+       0.55,
+       0.18
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "left_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.25,
+       0.55,
+       0.18
+      ]
+     },
+     {
+      "kind": "round_shield",
+      "slot": "left_hand",
+      "rotate": [
+       0,
+       0,
+       90
+      ],
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.35
+      ]
+     }
+    ]
+   }
+  },
+  "9047": {
+   "name": "Thorn",
+   "model": "Zombiegirl W Kurniawan.fbx",
+   "height": 1.75,
+   "set": "bow",
+   "attack": "atk_bow",
+   "cast": "cast_arrow",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.5,
+      0.25
+     ],
+     "keep": 0.2,
+     "value": 1.2
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.45,
+      1.0,
+      0.35
+     ],
+     "strength": 1.5
+    },
+    "props": [
+     {
+      "kind": "bow",
+      "slot": "left_hand",
+      "colour2": [
+       0.35,
+       0.25,
+       0.14
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.35
+      ]
+     },
+     {
+      "kind": "leaf_crown",
+      "slot": "crown",
+      "colour": [
+       0.25,
+       0.55,
+       0.18
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.35
+      ]
+     }
+    ]
+   }
+  },
+  "9048": {
+   "name": "Briar",
+   "model": "Yaku J Ignite.fbx",
+   "height": 1.9,
+   "set": "sword",
+   "attack": "atk_slash",
+   "cast": "cast_sweep",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.35,
+      0.42,
+      0.22
+     ],
+     "keep": 0.2,
+     "value": 1.1
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.9,
+      0.25,
+      0.3
+     ],
+     "strength": 1.5
+    },
+    "props": [
+     {
+      "kind": "sword",
+      "slot": "right_hand",
+      "colour": [
+       0.3,
+       0.45,
+       0.2
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "glow": [
+       0.6,
+       1.0,
+       0.3
+      ]
+     },
+     {
+      "kind": "dagger",
+      "slot": "left_hand",
+      "colour": [
+       0.3,
+       0.45,
+       0.2
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "glow": [
+       0.6,
+       1.0,
+       0.3
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "right_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.5,
+       0.7,
+       0.3
+      ],
+      "scale": 0.8
+     }
+    ]
+   }
+  },
+  "9049": {
+   "name": "Fern",
+   "model": "Ch22_nonPBR.fbx",
+   "height": 1.7,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_raise",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.35,
+      0.65,
+      0.35
+     ],
+     "keep": 0.25
+    },
+    "props": [
+     {
+      "kind": "staff",
+      "top": "flower",
+      "slot": "right_hand",
+      "colour": [
+       0.95,
+       0.75,
+       0.85
+      ],
+      "colour2": [
+       0.35,
+       0.24,
+       0.14
+      ],
+      "glow": [
+       0.6,
+       1.0,
+       0.55
+      ]
+     },
+     {
+      "kind": "leaf_crown",
+      "slot": "crown",
+      "colour": [
+       0.3,
+       0.65,
+       0.25
+      ],
+      "glow": [
+       1.0,
+       0.8,
+       0.9
+      ]
+     }
+    ]
+   }
+  },
+  "9050": {
+   "name": "Oakheart",
+   "model": "Ch10_nonPBR.fbx",
+   "height": 2.4,
+   "set": "mutant",
+   "attack": "atk_heavy",
+   "cast": "cast_slam",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.45,
+      0.34,
+      0.2
+     ],
+     "keep": 0.05,
+     "value": 1.4
+    },
+    "props": [
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.35
+      ],
+      "spread": 1.2
+     },
+     {
+      "kind": "club",
+      "slot": "right_hand",
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "scale": 1.2
+     },
+     {
+      "kind": "pauldron",
+      "slot": "left_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.25,
+       0.55,
+       0.18
+      ]
+     }
+    ]
+   }
+  },
+  "9051": {
+   "name": "Willow",
+   "model": "Eve By J.Gonzales.fbx",
+   "height": 1.8,
+   "set": "magic",
+   "attack": "atk_magic2",
+   "cast": "cast_area",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.55,
+      0.4
+     ],
+     "keep": 0.2
+    },
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.3,
+       0.6,
+       0.35
+      ]
+     }
+    ],
+    "glow": {
+     "from": "green",
+     "colour": [
+      0.5,
+      1.0,
+      0.6
+     ],
+     "strength": 1.5
+    },
+    "props": [
+     {
+      "kind": "staff",
+      "top": "leaf",
+      "slot": "right_hand",
+      "colour": [
+       0.3,
+       0.6,
+       0.25
+      ],
+      "colour2": [
+       0.35,
+       0.24,
+       0.14
+      ],
+      "glow": [
+       0.55,
+       1.0,
+       0.6
+      ]
+     },
+     {
+      "kind": "leaf_crown",
+      "slot": "crown",
+      "leaves": 14,
+      "colour": [
+       0.35,
+       0.55,
+       0.3
+      ],
+      "glow": [
+       0.55,
+       1.0,
+       0.6
+      ]
+     }
+    ]
+   }
+  },
+  "9052": {
+   "name": "Sylva",
+   "model": "Erika Archer With Bow Arrow.fbx",
+   "height": 1.8,
+   "set": "bow",
+   "attack": "atk_bow",
+   "cast": "cast_arrow",
+   "look": {
+    "swaps": [
+     {
+      "from": "red",
+      "to": [
+       0.25,
+       0.55,
+       0.3
+      ]
+     },
+     {
+      "from": "blue",
+      "to": [
+       0.3,
+       0.5,
+       0.25
+      ]
+     }
+    ],
+    "glow": {
+     "from": "yellow",
+     "colour": [
+      0.75,
+      0.85,
+      1.0
+     ],
+     "strength": 1.5
+    },
+    "props": [
+     {
+      "kind": "bow",
+      "slot": "left_hand",
+      "colour2": [
+       0.35,
+       0.28,
+       0.2
+      ],
+      "glow": [
+       0.8,
+       0.9,
+       1.0
+      ]
+     },
+     {
+      "kind": "halo",
+      "slot": "head",
+      "glow": [
+       0.8,
+       0.9,
+       1.0
+      ],
+      "scale": 0.8
+     },
+     {
+      "kind": "leaf_crown",
+      "slot": "crown",
+      "colour": [
+       0.3,
+       0.55,
+       0.25
+      ],
+      "glow": [
+       0.8,
+       0.9,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9053": {
+   "name": "Talon",
+   "model": "copzombie_l_actisdato.fbx",
+   "height": 1.95,
+   "set": "zombie",
+   "attack": "atk_swipe",
+   "cast": "cast_leap",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.38,
+      0.2
+     ],
+     "keep": 0.08,
+     "value": 1.2
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.7,
+      1.0,
+      0.3
+     ],
+     "strength": 2.0
+    },
+    "scale_bones": {
+     "LeftHand": 1.2,
+     "RightHand": 1.2
+    },
+    "props": [
+     {
+      "kind": "claws",
+      "slot": "right_hand",
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "offset": [
+       0,
+       0.02,
+       0
+      ],
+      "glow": [
+       0.7,
+       1.0,
+       0.3
+      ],
+      "colour": [
+       0.8,
+       0.78,
+       0.7
+      ]
+     },
+     {
+      "kind": "claws",
+      "slot": "left_hand",
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "offset": [
+       0,
+       0.02,
+       0
+      ],
+      "glow": [
+       0.7,
+       1.0,
+       0.3
+      ],
+      "colour": [
+       0.8,
+       0.78,
+       0.7
+      ]
+     },
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "spread": 0.7,
+      "scale": 0.7,
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ]
+     }
+    ]
+   }
+  },
+  "9054": {
+   "name": "Yggra",
+   "model": "Warrok W Kurniawan.fbx",
+   "height": 2.9,
+   "set": "mutant",
+   "attack": "atk_heavy",
+   "cast": "cast_roar",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.42,
+      0.36,
+      0.24
+     ],
+     "keep": 0.05,
+     "value": 1.3
+    },
+    "glow": {
+     "from": "saturated",
+     "colour": [
+      0.45,
+      1.0,
+      0.35
+     ],
+     "strength": 2.5
+    },
+    "props": [
+     {
+      "kind": "canopy",
+      "slot": "crown",
+      "radius": 0.45,
+      "colour": [
+       0.22,
+       0.5,
+       0.2
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "glow": [
+       0.95,
+       1.0,
+       0.6
+      ]
+     },
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "spread": 1.5,
+      "scale": 1.3,
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "glow": [
+       0.45,
+       1.0,
+       0.35
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "right_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.25,
+       0.55,
+       0.18
+      ],
+      "scale": 1.3
+     },
+     {
+      "kind": "pauldron",
+      "slot": "left_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.25,
+       0.55,
+       0.18
+      ],
+      "scale": 1.3
+     }
+    ]
+   }
+  },
+  "9041": {
+   "name": "RiftHerald",
+   "model": "Mutant.fbx",
+   "height": 2.5,
+   "set": "mutant",
+   "attack": "atk_heavy",
+   "cast": "cast_headbutt",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.4,
+      0.22,
+      0.55
+     ],
+     "keep": 0.1
+    },
+    "glow": {
+     "from": "bright",
+     "colour": [
+      0.55,
+      0.2,
+      0.85
+     ],
+     "strength": 3.0
+    },
+    "props": [
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "colour": [
+       0.2,
+       0.1,
+       0.25
+      ],
+      "colour2": [
+       0.2,
+       0.1,
+       0.25
+      ],
+      "glow": [
+       0.8,
+       0.3,
+       1.0
+      ],
+      "spread": 1.3
+     }
+    ]
+   }
+  },
+  "9043": {
+   "name": "PhaisaQueen",
+   "model": "Demon T Wiezzorek.fbx",
+   "height": 3.0,
+   "set": "mutant",
+   "attack": "atk_swipe",
+   "cast": "cast_scream",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.45,
+      0.2,
+      0.6
+     ],
+     "keep": 0.1
+    },
+    "glow": {
+     "from": "saturated",
+     "colour": [
+      0.85,
+      0.35,
+      1.0
+     ],
+     "strength": 3.0
+    },
+    "scale_bones": {
+     "Spine2": 1.12,
+     "LeftShoulder": 1.1,
+     "RightShoulder": 1.1
+    },
+    "props": [
+     {
+      "kind": "crown",
+      "slot": "crown",
+      "colour": [
+       0.15,
+       0.08,
+       0.2
+      ],
+      "glow": [
+       0.9,
+       0.4,
+       1.0
+      ],
+      "scale": 1.5
+     },
+     {
+      "kind": "claws",
+      "slot": "right_hand",
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "glow": [
+       0.9,
+       0.4,
+       1.0
+      ],
+      "scale": 1.4
+     },
+     {
+      "kind": "claws",
+      "slot": "left_hand",
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "glow": [
+       0.9,
+       0.4,
+       1.0
+      ],
+      "scale": 1.4
+     }
+    ]
+   }
+  },
+  "9042": {
+   "name": "BaronNashor",
+   "model": "Parasite L Starkie (1).fbx",
+   "height": 3.1,
+   "set": "mutant",
+   "attack": "atk_heavy",
+   "cast": "cast_roar",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.35,
+      0.18,
+      0.5
+     ],
+     "keep": 0.05
+    },
+    "glow": {
+     "from": "red",
+     "colour": [
+      0.75,
+      0.3,
+      1.0
+     ],
+     "strength": 3.0
+    },
+    "scale_bones": {
+     "Spine2": 1.2,
+     "LeftShoulder": 1.2,
+     "RightShoulder": 1.2,
+     "Head": 1.15
+    },
+    "props": [
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "colour": [
+       0.18,
+       0.08,
+       0.22
+      ],
+      "colour2": [
+       0.18,
+       0.08,
+       0.22
+      ],
+      "glow": [
+       0.8,
+       0.3,
+       1.0
+      ],
+      "spread": 1.6,
+      "scale": 1.4
+     }
+    ]
+   }
+  },
+  "9044": {
+   "name": "Invention",
+   "model": "Exo Gray.fbx",
+   "height": 1.5,
+   "set": "fight",
+   "attack": "atk_punch",
+   "cast": "cast_channel",
+   "look": {
+    "recolour": {
+     "mode": "metal",
+     "tint": [
+      0.8,
+      0.65,
+      0.3
+     ],
+     "keep": 0.05,
+     "value": 0.7
+    },
+    "glow": {
+     "from": "bright",
+     "colour": [
+      0.3,
+      0.9,
+      1.0
+     ],
+     "strength": 2.0
+    },
+    "props": [
+     {
+      "kind": "mech_pack",
+      "slot": "back",
+      "colour": [
+       0.55,
+       0.45,
+       0.25
+      ],
+      "colour2": [
+       0.4,
+       0.4,
+       0.45
+      ],
+      "glow": [
+       0.3,
+       0.9,
+       1.0
+      ]
+     },
+     {
+      "kind": "halo",
+      "slot": "head",
+      "glow": [
+       0.3,
+       0.9,
+       1.0
+      ]
+     },
+     {
+      "kind": "rocket",
+      "slot": "right_shoulder",
+      "colour": [
+       0.5,
+       0.5,
+       0.55
+      ],
+      "glow": [
+       1.0,
+       0.55,
+       0.2
+      ],
+      "scale": 0.6
+     }
+    ]
+   }
+  },
+  "9110": {
+   "name": "StonebarkTree",
+   "model": "Pumpkinhulk L Shaw.fbx",
+   "height": 2.5,
+   "set": "zombie",
+   "attack": "atk_heavy",
+   "cast": "cast_slam",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.45,
+      0.38,
+      0.28
+     ],
+     "keep": 0.0,
+     "value": 1.2
+    },
+    "glow": {
+     "from": "orange",
+     "colour": [
+      0.45,
+      1.0,
+      0.35
+     ],
+     "strength": 1.5
+    },
+    "scale_bones": {
+     "Spine2": 1.15,
+     "LeftShoulder": 1.15,
+     "RightShoulder": 1.15
+    },
+    "props": [
+     {
+      "kind": "canopy",
+      "slot": "crown",
+      "radius": 0.5,
+      "colour": [
+       0.25,
+       0.45,
+       0.2
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ]
+     },
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "spread": 1.8,
+      "scale": 1.4,
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.42,
+       0.3,
+       0.18
+      ]
+     }
+    ]
+   }
+  },
+  "9111": {
+   "name": "OmniliumBlossom",
+   "model": "Ch22_nonPBR.fbx",
+   "height": 1.2,
+   "set": "magic",
+   "attack": "atk_magic",
+   "cast": "cast_raise",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.95,
+      0.7,
+      0.85
+     ],
+     "keep": 0.05,
+     "value": 1.3
+    },
+    "glow": {
+     "from": "all",
+     "colour": [
+      1.0,
+      0.7,
+      0.9
+     ],
+     "strength": 0.4
+    },
+    "props": [
+     {
+      "kind": "leaf_crown",
+      "slot": "crown",
+      "leaves": 8,
+      "colour": [
+       1.0,
+       0.75,
+       0.88
+      ],
+      "glow": [
+       0.1,
+       0.95,
+       0.85
+      ],
+      "scale": 1.6
+     },
+     {
+      "kind": "orb",
+      "slot": "over_left_palm",
+      "glow": [
+       0.1,
+       0.95,
+       0.85
+      ],
+      "radius": 0.12
+     }
+    ]
+   }
+  },
+  "9112": {
+   "name": "OmniliumProtector",
+   "model": "Paladin J Nordstrom.fbx",
+   "height": 2.2,
+   "set": "sword",
+   "attack": "atk_sword",
+   "cast": "cast_block",
+   "look": {
+    "recolour": {
+     "mode": "metal",
+     "tint": [
+      0.45,
+      0.55,
+      0.35
+     ],
+     "keep": 0.1,
+     "value": 0.5
+    },
+    "glow": {
+     "from": "saturated",
+     "colour": [
+      0.1,
+      0.95,
+      0.85
+     ],
+     "strength": 2.5
+    },
+    "props": [
+     {
+      "kind": "tower_shield",
+      "slot": "left_arm",
+      "colour": [
+       0.3,
+       0.25,
+       0.15
+      ],
+      "glow": [
+       0.1,
+       0.95,
+       0.85
+      ]
+     },
+     {
+      "kind": "leaf_crown",
+      "slot": "crown",
+      "colour": [
+       0.25,
+       0.55,
+       0.18
+      ],
+      "glow": [
+       0.1,
+       0.95,
+       0.85
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "right_shoulder",
+      "colour": [
+       0.42,
+       0.3,
+       0.18
+      ],
+      "colour2": [
+       0.25,
+       0.55,
+       0.18
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

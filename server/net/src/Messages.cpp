@@ -120,8 +120,36 @@ namespace {
 const char* kStatusNames[] = {"Stun", "Burn", "AttackDamage", "AttackSpeed", "Armor", "MagicResist", "MaxHp", "Wound", "InflictsWound", "DamageAmp", "Root", "Knockup",
                               "CcImmunity", "DamageTakenRegen", "BonusAttackDamage", "Tether", "Untargetable", "AggroDrop", "BonusArmor", "BonusMagicResist", "BonusMaxHp",
                               "BonusAbilityDamage", "BonusCritChance", "AbilityCrit", "CritDamage", "CritDamageTakenReduction", "BonusManaRegen", "AbilityPower", "SpellShield",
-                              "Blind", "DamageTaken", "BonusMaxMana", "ExecuteBelow", "HpPerSecond", "EmpoweredAttack", "Poison", "Bleed", "Drain"};
+                              "Blind", "DamageTaken", "BonusMaxMana", "ExecuteBelow", "HpPerSecond", "EmpoweredAttack", "Poison", "Bleed", "Drain",
+                              "ManaCost", "HealingAmp", "Omnivamp", "Awakened", "Piloting"};   // (revision 5: trait system v2)
+static_assert(sizeof(kStatusNames) / sizeof(kStatusNames[0]) == static_cast<std::size_t>(StatusType::Piloting) + 1, "a StatusType has no name");
 const char* kAreaNames[] = {"None", "Single", "Circle", "CircleSelf", "Line", "Cone", "Row", "All"};
+
+// A trait's pending choice (revision 5): kind "none" when there is none.
+void WriteTraitChoice(JsonWriter& w, const TraitChoice& c) {
+    w.BeginObject();
+    w.Field("kind", c.kind == TraitChoiceKind::Module ? "module" : c.kind == TraitChoiceKind::Prototype ? "prototype" : "none");
+    w.Field("trait", c.trait);
+    w.Field("tier", c.tier);
+    w.Key("options").BeginArray();
+    for (std::uint32_t o : c.options) w.UInt(o);
+    w.EndArray();
+    w.Field("bonus_gold", c.bonusGold);
+    w.Field("can_decline", c.kind == TraitChoiceKind::Prototype);
+    w.EndObject();
+}
+
+// The path the match picked for each trait with paths (public: the same for everyone).
+void WriteTraitPaths(JsonWriter& w, const MatchManager& match) {
+    w.Key("trait_paths").BeginArray();
+    for (const auto& [trait, path] : match.TraitPaths()) {
+        w.BeginObject();
+        w.Field("trait", trait);
+        w.Field("path", path);
+        w.EndObject();
+    }
+    w.EndArray();
+}
 
 void WriteNameList(JsonWriter& w, const char* key, const char* const* names, std::size_t count) {
     w.Key(key).BeginArray();
@@ -160,6 +188,14 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
             w.Field("cost", c.cost);
             w.Field("role", c.role == ChampionRole::Tank ? "tank" : "damage");
             w.Field("summon", c.summon);
+            // (revision 5, trait system v2) plants never go to the bench and take no board slot; special units are given / offered by a trait and never in
+            // the pool; `price` is what the shop charges; `team_slots` the board slots it takes; a stationary unit never walks or attacks; `pilot` = Hexa.
+            w.Field("plant", c.plant);
+            w.Field("special", c.special);
+            w.Field("price", c.Price());
+            w.Field("team_slots", c.teamSlots);
+            w.Field("stationary", c.stationary);
+            w.Field("pilot", c.pilot.enabled);
             w.Key("traits").BeginArray();
             for (const std::string& t : c.traits) w.String(t);
             w.EndArray();
@@ -237,7 +273,30 @@ std::string Catalog(const ChampionDatabase& champions, const ItemDatabase* items
             w.Field("id", t.id);
             w.Field("name", t.name);
             w.Key("breakpoints").BeginArray();
-            for (const TraitBreakpoint& b : t.breakpoints) w.Int(b.count);
+            for (const TraitBreakpoint& b : t.Breakpoints(0)) w.Int(b.count);   // (a trait with paths: every path has the same counts)
+            w.EndArray();
+            // (revision 5) the match picks one path per trait with paths (the `trait_paths` of match_started / public_state); modules; mutations.
+            w.Key("paths").BeginArray();
+            for (const TraitPath& path : t.paths) w.String(path.name);
+            w.EndArray();
+            w.Key("modules").BeginArray();
+            for (const TraitModule& m : t.modules) {
+                w.BeginObject();
+                w.Field("id", m.id);
+                w.Field("name", m.name);
+                w.Field("tier", m.tier);
+                w.EndObject();
+            }
+            w.EndArray();
+            w.Key("mutations").BeginArray();
+            for (const TraitMutation& m : t.mutations) {
+                w.BeginObject();
+                w.Field("name", m.name);
+                w.Key("classes").BeginArray();
+                for (const std::string& c : m.classes) w.String(c);
+                w.EndArray();
+                w.EndObject();
+            }
             w.EndArray();
             w.EndObject();
         }
@@ -358,12 +417,26 @@ std::string PrivateState(const MatchManager& match, PlayerId player) {
     for (std::size_t i = 0; i < offers.size(); ++i) WriteGift(w, static_cast<int>(i), offers[i], match.MotherNature());
     w.EndArray();
     w.Field("gift_settled", match.Phase() == MatchPhase::MotherNature ? match.GiftSettled(player) : true);
+    // (revision 5) trait system v2: what the traits remember for this player, and the decision waiting for them.
+    const TraitProgress& tp = p.Traits();
+    w.Key("traits").BeginObject();
+    w.Field("star_dust", tp.starDust);
+    w.Field("trait_gold", tp.traitGold);
+    w.Field("takedown_counter", tp.takedownCounter);
+    w.Field("unit_granted", tp.unitGranted);
+    w.Key("modules").BeginArray();
+    for (std::uint32_t m : tp.modules) w.UInt(m);
+    w.EndArray();
+    w.EndObject();
+    w.Key("trait_choice");
+    WriteTraitChoice(w, match.PendingTraitChoice(player));
     return Finish(w);
 }
 
 std::string PublicState(const MatchManager& match) {
     JsonWriter w = Start("public_state");
     w.Field("round", match.Round());
+    WriteTraitPaths(w, match);
     w.Key("players").BeginArray();
     for (int i = 0; i < match.Players().PlayerCount(); ++i) {
         const PlayerState& p = *match.Players().Get(static_cast<PlayerId>(i));
@@ -630,6 +703,35 @@ std::string ItemConsumed(const UnitInstance& unit, ItemId consumable, const std:
     w.Key("returned").BeginArray();
     for (ItemId item : returned) w.UInt(item);
     w.EndArray();
+    return Finish(w);
+}
+
+// (revision 5) Trait system v2, private to the player.
+std::string TraitChoiceOffered(const TraitChoice& choice) {
+    JsonWriter w = Start("trait_choice");
+    w.Field("event", "offered");
+    w.Key("choice");
+    WriteTraitChoice(w, choice);
+    return Finish(w);
+}
+
+std::string TraitChoiceResolved(const TraitChoice& choice, int index, bool automatic) {
+    JsonWriter w = Start("trait_choice");
+    w.Field("event", "resolved");
+    w.Key("choice");
+    WriteTraitChoice(w, choice);
+    w.Field("index", index);          // -1: declined (a prototype: the star dust stays banked)
+    w.Field("automatic", automatic);  // the phase ran out
+    return Finish(w);
+}
+
+std::string TraitRewardsMsg(const TraitRewards& rewards, int starDustTotal) {
+    JsonWriter w = Start("trait_rewards");
+    w.Field("xp", rewards.xp);
+    w.Field("gold", rewards.gold);
+    w.Field("star_dust", rewards.starDust);
+    w.Field("star_dust_total", starDustTotal);
+    w.Field("unit", rewards.unit);   // a champion id given to the bench (the Rift Herald), 0 = none
     return Finish(w);
 }
 

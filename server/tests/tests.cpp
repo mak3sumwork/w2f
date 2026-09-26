@@ -1482,7 +1482,15 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                     const int expectedWindup = (c.def->ability.windupTicks >= 0 ? c.def->ability.windupTicks : cfg.defaultCastWindupTicks) / speedAt(e.tick);
                     if (e.windup != expectedWindup || e.shape != static_cast<int>(area.shape) || e.size != std::min(area.size, 255)) return fail("cast: wrong windup / area", e);
                     const bool aroundTarget = area.shape == AreaShape::Circle || area.shape == AreaShape::Line || area.shape == AreaShape::Cone || area.shape == AreaShape::Single;
-                    if (!(e.from == c.pos) || !(e.to == (aroundTarget ? t->second.pos : c.pos))) return fail("cast: from / to are not the caster's hex and the area's centre", e);
+                    bool cluster = false;   // a "largest cluster" spell reports that cluster's centre: some enemy's hex
+                    for (const AbilityEffect& fx : c.def->ability.effects) cluster = cluster || fx.target.mode == TargetMode::AreaAroundDensestEnemy;
+                    if (cluster) {
+                        bool onEnemy = false;
+                        for (const auto& [id, other] : units) onEnemy = onEnemy || (other.alive && other.team != c.team && other.pos == e.to);
+                        if (!(e.from == c.pos) || !onEnemy) return fail("cast: a cluster spell's centre is not an enemy's hex", e);
+                    } else if (!(e.from == c.pos) || !(e.to == (aroundTarget ? t->second.pos : c.pos))) {
+                        return fail("cast: from / to are not the caster's hex and the area's centre", e);
+                    }
                 } else if (!c.def->ability.castOnDeath || c.alive) {
                     return fail("cast-on-death by a living unit or an ability without it", e);
                 }
@@ -1536,6 +1544,10 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
             case CombatEventType::Teleport: {
                 V& v = self->second;
                 if (!v.alive || !(v.pos == e.from)) return fail("teleport: not where the log says", e);
+                if (e.subtype == 2) {   // an AllyStrike blink (Blade Brothers): presentation only, the unit stays on its hex
+                    if (!hex::InBounds(e.to, kArenaColumns, kArenaRows)) return fail("assist blink: out of bounds", e);
+                    break;
+                }
                 if (!hex::InBounds(e.to, kArenaColumns, kArenaRows) || occupied.count({e.to.x, e.to.y})) return fail("teleport: into occupied/out of bounds", e);
                 occupied.erase({e.from.x, e.from.y});
                 occupied[{e.to.x, e.to.y}] = e.unit;
@@ -1920,7 +1932,7 @@ static void TestPresentationContract() {
         d->Finish();
         return d;
     };
-    for (const auto& [id, visual, name] : {std::tuple<ChampionId, StatusType, const char*>{9018, StatusType::Poison, "Rot"}, {9027, StatusType::Drain, "Lich"}, {9002, StatusType::Burn, "Baira"}}) {
+    for (const auto& [id, visual, name] : {std::tuple<ChampionId, StatusType, const char*>{9018, StatusType::Poison, "Rot"}, {9027, StatusType::Drain, "Lich"}, {9038, StatusType::Burn, "Aureon"}}) {
         auto d = duelWith(id);
         const FightResult r = CombatSimulator(cfg, traits.get()).RunFight(d->specs, Seconds(20));
         bool applied = false, ended = false, damageTagged = false, untypedElsewhere = true;
@@ -1934,11 +1946,11 @@ static void TestPresentationContract() {
         CHECK(applied && ended && damageTagged && untypedElsewhere);
         CHECK(ValidateCombatLog(r.log, *d->db, cfg, Seconds(20)));
     }
-    {   // A cast carries its windup and area: Baira's burn covers 3 hexes around her target, Alesk's shield only himself.
-        auto d = duelWith(9002);
+    {   // A cast carries its windup and area: Flare's sunbeam covers 1 hex around her target, Alesk's shield only himself.
+        auto d = duelWith(9026);
         const FightResult r = CombatSimulator(cfg, traits.get()).RunFight(d->specs, Seconds(20));
         const std::vector<CombatEvent> casts = events(r.log, CombatEventType::SpellCast, 1);
-        CHECK(!casts.empty() && casts[0].shape == static_cast<std::uint8_t>(AreaShape::Circle) && casts[0].size == 3 && casts[0].windup == cfg.defaultCastWindupTicks);
+        CHECK(!casts.empty() && casts[0].shape == static_cast<std::uint8_t>(AreaShape::Circle) && casts[0].size == 1 && casts[0].windup == cfg.defaultCastWindupTicks);
         CHECK(casts[0].from == HexCoord({3, 3}) && casts[0].to == HexCoord({3, 4}));   // centred on her target
         auto a = duelWith(9001);
         const FightResult ra = CombatSimulator(cfg, traits.get()).RunFight(a->specs, Seconds(20));
@@ -3332,6 +3344,11 @@ static void TestDisplayText() {
             need(id + ".passive.name", &c.passive.name);
             if (mustDescribe) need(id + ".passive.desc", nullptr); else optional(id + ".passive.desc");
         }
+        for (const w2f::AbilityDefinition& hook : c.triggers) {   // hooks (Cyla's Fishbones, the plants'): optional, but a name must match
+            const std::string key = id + ".trigger." + std::to_string(hook.id);
+            if (text->Find(key + ".name") != nullptr) need(key + ".name", &hook.name);
+            optional(key + ".desc");
+        }
     };
     for (const w2f::ChampionDefinition& c : champions->All()) champion(c, true);
     for (const w2f::ChampionDefinition& c : encounters->Monsters().All()) champion(c, false);
@@ -3340,6 +3357,16 @@ static void TestDisplayText() {
         need(id + ".name", &t.name);
         optional(id + ".tagline");
         for (const w2f::TraitBreakpoint& b : t.breakpoints) need(id + ".bp" + std::to_string(b.count), nullptr);
+        for (std::size_t p = 0; p < t.paths.size(); ++p) {   // trait system v2: a trait with paths describes each path
+            const std::string path = id + ".path" + std::to_string(p);
+            need(path + ".name", nullptr);
+            for (const w2f::TraitBreakpoint& b : t.paths[p].breakpoints) need(path + ".bp" + std::to_string(b.count), nullptr);
+        }
+        for (const w2f::TraitModule& m : t.modules) {
+            need(id + ".module." + std::to_string(m.id) + ".name", &m.name);
+            need(id + ".module." + std::to_string(m.id) + ".desc", nullptr);
+        }
+        for (std::size_t m = 0; m < t.mutations.size(); ++m) need(id + ".mutation." + std::to_string(m) + ".name", &t.mutations[m].name);
     }
     for (const w2f::ItemDefinition& item : items->All()) {
         const std::string id = "item." + std::to_string(item.id);
@@ -3398,7 +3425,8 @@ static void TestProductionDataKeepsTheDesignerStructure() {
     CHECK(specTraits->All().size() == prodTraits->All().size());
     for (const TraitDefinition& a : specTraits->All()) {
         const TraitDefinition* b = prodTraits->FindById(a.id);
-        CHECK(b != nullptr && b->name == a.name && b->breakpoints.size() == a.breakpoints.size());
+        CHECK(b != nullptr && b->name == a.name && b->breakpoints.size() == a.breakpoints.size() && b->paths.size() == a.paths.size() &&
+              b->mutations.size() == a.mutations.size() && b->modules.size() == a.modules.size() && b->invention == a.invention);
         if (!b || b->breakpoints.size() != a.breakpoints.size()) continue;
         for (std::size_t i = 0; i < a.breakpoints.size(); ++i) {
             CHECK(a.breakpoints[i].count == b->breakpoints[i].count && a.breakpoints[i].effects.size() == b->breakpoints[i].effects.size() &&
@@ -3414,15 +3442,29 @@ static void TestProductionDataMatchesDesignerSpec() {
     auto db = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath(), &err);
     CHECK(db != nullptr);
     if (!db) { std::printf("  %s\n", err.c_str()); return; }
-    {   // The whole roster of the design doc: 30 champions (8 / 7 / 6 / 5 / 4 per cost tier) plus the two summons (Skeleton, Lost Soul).
-        int perTier[kMaxCostTier + 1] = {}, summons = 0;
+    {   // The whole roster of the design doc: 49 champions (11 / 10 / 10 / 10 / 8 per cost tier; Sept. 2026: + Tide, Sunna, Kael, Aphel, Sola, Morrah, Aureon,
+        // Nihila; trait system v2: + Rivet, Hexa and the 9 Nature champions), 4 summons (Skeleton, Lost Soul, Baron Nashor, the Invention), 3 plants and
+        // 2 special units (the Rift Herald and the Phaisa Queen).
+        int perTier[kMaxCostTier + 1] = {}, summons = 0, plants = 0, specials = 0;
         for (const ChampionDefinition& c : db->All()) {
             if (c.summon) ++summons;
+            else if (c.plant) ++plants;
+            else if (c.special) ++specials;
             else ++perTier[c.cost];
         }
-        CHECK(db->All().size() == 32 && summons == 2);
-        CHECK(perTier[1] == 8 && perTier[2] == 7 && perTier[3] == 6 && perTier[4] == 5 && perTier[5] == 4);
+        CHECK(db->All().size() == 58 && summons == 4 && plants == 3 && specials == 2);
+        CHECK(perTier[1] == 11 && perTier[2] == 10 && perTier[3] == 10 && perTier[4] == 10 && perTier[5] == 8);
         CHECK(db->Find(9101) && db->Find(9101)->summon && db->Find(9102) && db->Find(9102)->summon && db->Find(9102)->stats.attackType == DamageType::Magic);
+        const ChampionDefinition* queen = db->Find(9043);
+        CHECK(queen && queen->special && queen->Price() == 7 && queen->teamSlots == 2 && !queen->IsPooled());
+        const ChampionDefinition* hexa = db->Find(9045);
+        CHECK(hexa && hexa->pilot.enabled && hexa->pilot.hpPercent == 80 && hexa->pilot.bonuses.size() == 5);
+        for (ChampionId plant : {9110u, 9111u, 9112u}) CHECK(db->Find(plant) && db->Find(plant)->plant && db->Find(plant)->teamSlots == 0);
+        // TFT-style: every champion has an origin and one or two classes (Rivet: only Gunslinger).
+        for (const ChampionDefinition& c : db->All()) {
+            if (!c.IsPooled()) continue;
+            CHECK(c.traits.size() >= (c.id == 9040 ? 1u : 2u) && c.traits.size() <= 3);
+        }
     }
     CHECK(db->Find(kChampionDyno) == nullptr);
 
@@ -3433,7 +3475,7 @@ static void TestProductionDataMatchesDesignerSpec() {
     const ChampionDefinition* alesk = db->Find(kChampionAlesk);
     CHECK(alesk && alesk->name == "Alesk" && alesk->cost == 4 && alesk->role == ChampionRole::Tank && alesk->stats.attackRange == 1);
     if (alesk) {
-        CHECK((alesk->traits == std::vector<std::string>{"Helios"}));
+        CHECK((alesk->traits == std::vector<std::string>{"Helios", "Bastion"}));
         CHECK(alesk->stats.maxHp == StarValue({{325, 475, 650}}) && alesk->stats.armor == StarValue({{31, 45, 63}}));
         CHECK(alesk->stats.magicResist == StarValue({{17, 24, 29}}) && alesk->stats.attackDamage == StarValue({{30, 35, 40}}));
         CHECK(alesk->stats.maxMana == 60 && alesk->stats.manaRegenMilli == 10000 && alesk->stats.attackSpeedMilli == 1000);   // 100-scale
@@ -3446,37 +3488,35 @@ static void TestProductionDataMatchesDesignerSpec() {
         CHECK(alesk->passive.trigger == CastTrigger::StartOfCombat && alesk->passive.effects.size() == 3);
     }
 
-    const ChampionDefinition* baira = db->Find(kChampionBaira);
+    const ChampionDefinition* baira = db->Find(kChampionBaira);   // Sept. 2026: moved to Selini as a mage (Crashing Tide)
     CHECK(baira && baira->name == "Baira" && baira->cost == 3 && baira->role == ChampionRole::Damage && baira->stats.attackRange == 4);
     if (baira) {
-        CHECK((baira->traits == std::vector<std::string>{"Phaisa"}));
-        CHECK(baira->stats.maxHp == StarValue({{100, 150, 200}}) && baira->stats.armor == StarValue({{10, 15, 20}}));
-        CHECK(baira->stats.magicResist == StarValue({{5, 9, 13}}) && baira->stats.attackDamage == StarValue({{20, 25, 29}}));
-        CHECK(baira->stats.abilityDamage == StarValue({{15, 21, 40}}) && baira->stats.maxMana == 0 && baira->stats.attackSpeedMilli == 500);
-        CHECK(baira->ability.trigger == CastTrigger::EveryNthAttack && baira->ability.attackCount == 5 && baira->ability.resetCountOnTargetChange);
-        CHECK(baira->ability.effects.size() == 2);
-        const auto* burn = std::get_if<DotEffect>(&baira->ability.effects[0].payload);
-        // The burn total now SCALES WITH AP: 100% / 100% / 90% of abilityDamage 15 / 21 / 40 = 15 / 21 / 36.
-        CHECK(burn && burn->amountIsTotal && burn->amount.flat == Same(0) && burn->amount.terms.size() == 1 &&
-              burn->amount.terms[0].source == StatSource::SelfAbilityDamage && burn->amount.terms[0].percent == StarValue({{100, 100, 90}}));
-        CHECK(burn && burn->duration.flat == StarValue({{75, 60, 53}}) && burn->stackBonusPercent == StarValue({{25, 35, 45}}));
-        CHECK(baira->ability.effects[0].target.mode == TargetMode::AreaAroundTarget && baira->ability.effects[0].target.radius == 3);
-        const auto* wound = baira->passive.effects.empty() ? nullptr : std::get_if<StatusEffect>(&baira->passive.effects[0].payload);
-        CHECK(wound && wound->status == StatusType::InflictsWound && wound->percent == Same(30) && wound->permanent);
+        CHECK((baira->traits == std::vector<std::string>{"Selini", "Sorcerer"}));
+        CHECK(baira->stats.maxHp == StarValue({{600, 1080, 1944}}) && baira->stats.armor == Same(25) && baira->stats.magicResist == Same(25));
+        CHECK(baira->stats.abilityDamage == Same(55) && baira->stats.maxMana == 80 && baira->stats.attackSpeedMilli == 700);
+        CHECK(baira->ability.trigger == CastTrigger::Mana && baira->ability.effects.size() == 2 && baira->passive.effects.empty());
+        CHECK(baira->ability.effects[0].target.mode == TargetMode::AreaAroundDensestEnemy && baira->ability.effects[0].target.radius == 1 &&
+              baira->ability.effects[0].repeatCount == 3);
+    }
+    {   // the Blade Brothers: Sola's ability calls Lunis in
+        const ChampionDefinition* sola = db->Find(9036);
+        CHECK(sola && sola->ability.effects.size() == 3);
+        const auto* strike = sola && sola->ability.effects.size() == 3 ? std::get_if<AllyStrikeEffect>(&sola->ability.effects[2].payload) : nullptr;
+        CHECK(strike && strike->ally == kChampionLunis && strike->percentOfAllyAttackDamage == Same(120));
     }
 
     const ChampionDefinition* cyla = db->Find(kChampionCyla);
     CHECK(cyla && cyla->name == "Cyla" && cyla->cost == 2 && cyla->role == ChampionRole::Damage && cyla->stats.attackRange == 4);
-    if (cyla) {
-        CHECK((cyla->traits == std::vector<std::string>{"Hexagon"}));
-        CHECK(cyla->stats.critChance == StarValue({{15, 25, 50}}) && cyla->stats.maxMana == 60 && cyla->stats.attackSpeedMilli == 780);
-        CHECK(cyla->ability.castLockTicks == 0 && cyla->ability.effects.size() == 2);
-        const auto* main = std::get_if<DamageEffect>(&cyla->ability.effects[0].payload);
-        const auto* splash = std::get_if<DamageEffect>(&cyla->ability.effects[1].payload);
-        // Her rocket is AD-based: PHYSICAL (this was Magic before the designer's correction). Both hits can crit.
-        CHECK(main && main->type == DamageType::Physical && main->canCrit && main->multiplierPercent == 100 &&
-              main->amount.terms[0].source == StatSource::DamageDealtInWindow && main->amount.terms[0].windowTicks == 60);
-        CHECK(splash && splash->type == DamageType::Physical && splash->canCrit && splash->multiplierPercent == 25);
+    if (cyla) {   // September 2026: Fishbones (no mana; after 18/18/16 attacks each attack is 3 rockets at random enemies)
+        CHECK((cyla->traits == std::vector<std::string>{"Hexagon", "Gunslinger"}));
+        CHECK(!cyla->ability.HasAbility() && cyla->stats.maxMana == 0 && cyla->stats.attackSpeedMilli == 750 && cyla->triggers.size() == 2);
+        if (cyla->triggers.size() == 2) {
+            const AbilityDefinition& swap = cyla->triggers[0];
+            const AbilityDefinition& rockets = cyla->triggers[1];
+            CHECK(swap.trigger == EventTrigger::OnBasicAttack && swap.maxTriggers == 1 && swap.afterAttacks == StarValue({{17, 17, 15}}));
+            CHECK(rockets.trigger == EventTrigger::OnBasicAttack && rockets.afterAttacks == StarValue({{18, 18, 16}}) && rockets.effects.size() == 1 &&
+                  rockets.effects[0].repeatCount == 3 && rockets.effects[0].target.mode == TargetMode::RandomEnemy);
+        }
     }
 
     const ChampionDefinition* faire = db->Find(kChampionFaire);
@@ -3645,7 +3685,7 @@ static void TestPassivesAtStartOfCombat() {
 
 static void TestBairaWoundAndNewBurn() {
     CombatConfig cfg;
-    auto prod = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath());
+    auto prod = w2f::LoadChampionDatabaseFromFile(sample::OldBairaPath());
     CHECK(prod != nullptr);
     if (!prod) return;
     const ChampionDefinition baira = *prod->Find(kChampionBaira);
@@ -3873,8 +3913,8 @@ static void TestManaBarEvents() {
         CHECK(events.size() >= 3 && Pairs(events.begin(), events.begin() + 3) == (Pairs{{0, 1000}, {30, 2000}, {60, 3000}}));
         CheckValid(r, d, 100, cfg);
     }
-    {   // Units with no mana bar never produce mana events (and their Spawn says so).
-        auto prod = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    {   // Units with no mana bar never produce mana events (and their Spawn says so). (The legacy roster's Baira has no mana; the production one does since Sept. 2026.)
+        auto prod = w2f::LoadChampionDatabaseFromFile(sample::LegacyRosterPath());
         Duel d;
         d.defs.push_back(*prod->Find(kChampionBaira));
         d.specDef.push_back(kChampionBaira);
@@ -4466,10 +4506,10 @@ static void TestProtectorSynergy() {
     CombatConfig cfg;
     auto prod = ProdDb();
     std::string err;
-    auto traits = w2f::LoadTraitDatabaseFromFile(sample::ProductionTraitsPath(), &err);
+    // (The pre-v2 synergy file: the same Protector, without the classes Les / Alesk (Bastion) and Lum (Bruiser) now also activate.)
+    auto traits = w2f::LoadTraitDatabaseFromFile(sample::LegacyTraitsPath(), &err);
     CHECK(prod != nullptr && traits != nullptr);
     if (!prod || !traits) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(w2f::ValidateChampionTraits(*prod, *traits, &err));
 
     auto fight = [&](std::vector<ChampionId> team0, const TraitDatabase* tdb) {
         Duel d;
@@ -4762,8 +4802,11 @@ static void TestFaireStunAndCylaRocketPhase6() {
         CHECK(stun[2] == main && stun[3] == main * 60 / 100 && stun.count(4) == 0);
         std::printf("  Faire on tick %d: %lld damage dealt to the target in the last 5 s -> stun %d ticks, neighbour %d\n", tc, dealt, main, main * 60 / 100);
     }
-    {   // Cyla: her rocket is PHYSICAL now, 100% of her damage in the last 2 s on the target and 25% on its neighbours.
-        ChampionDefinition cyla = *prod->Find(kChampionCyla);
+    {   // Cyla (her pre-Fishbones rocket): PHYSICAL, 100% of her damage in the last 2 s on the target and 25% on its neighbours.
+        auto oldCyla = w2f::LoadChampionDatabaseFromFile(sample::OldCylaPath());
+        CHECK(oldCyla != nullptr);
+        if (!oldCyla) return;
+        ChampionDefinition cyla = *oldCyla->Find(kChampionCyla);
         cyla.stats.critChance = Same(0);   // exact numbers
         Duel d;
         d.Add(cyla, 1, 0, {3, 0});
@@ -4787,7 +4830,7 @@ static void TestFaireStunAndCylaRocketPhase6() {
 
 static void TestBairaBurnScalesWithAP() {
     CombatConfig cfg;
-    auto prod = ProdDb();
+    auto prod = w2f::LoadChampionDatabaseFromFile(sample::OldBairaPath());   // her pre-Sept-2026 design (the burn mechanics stay tested)
     CHECK(prod != nullptr);
     if (!prod) return;
     auto total = [&](int abilityPower, int star) {
@@ -4838,7 +4881,8 @@ static void TestFullRosterBrawlWithSynergies() {
         ++count[e.type];
         if (e.type == CombatEventType::StatusApplied) ++statuses[e.subtype];
     }
-    CHECK(count[CombatEventType::TraitActivated] == 4);   // per team: Protector (Les + Lum) and Hexagon 2 (Faire + Cyla)
+    // Per team: Protector (Les + Lum), Hexagon 2 (Faire + Cyla), Bastion 2 (Les + Alesk) and Sorcerer 2 (Faire + Baira); trait system v2 added the classes.
+    CHECK(count[CombatEventType::TraitActivated] == 8);
     CHECK(count[CombatEventType::SpellCast] > 0 && count[CombatEventType::Heal] >= 0);
     auto st = [&](StatusType t) { return statuses[static_cast<int>(t)]; };
     CHECK(st(StatusType::DamageAmp) == 6 * 2 + 2 * 2 * 0 + 0 || st(StatusType::DamageAmp) > 0);
@@ -4900,6 +4944,137 @@ static void TestConeGeometry() {
         int n = 0;
         for (int y = -10; y <= 20; ++y) for (int x = -10; x <= 20; ++x) n += hex::InCone({5, 5}, 2, {x, y}, length) ? 1 : 0;
         CHECK(n == (length == 1 ? 3 : length == 2 ? 8 : 15));
+    }
+}
+
+// Sept. 2026 primitives (the new Selini / Helios / Phaisa champions): AreaAroundDensestEnemy, LowestHpAlly with a count, bounceOnCritPercent,
+// Displace TowardAreaCenter, the AllyStrike effect (Blade Brothers) and the OnEnemyDeath hook.
+static void TestSeptember2026Primitives() {
+    CombatConfig cfg;
+    cfg.manaPerAttackMilli = 0;
+    auto caster = [&](AbilityId id, std::vector<AbilityEffect> effects) {
+        ChampionDefinition c = Fighter(1, 100000, 0, 1, 1000, 30);
+        SetAbility(c, id, CastTrigger::EveryNthAttack, 1, 0, std::move(effects));
+        return c;
+    };
+    const TargetSpec densest1{TargetMode::AreaAroundDensestEnemy, 1, true, TargetSide::Enemies};
+    {   // the largest cluster, not the cast target: 10 stands alone in front, 11 / 12 / 13 huddle together further back
+        Duel d;
+        d.Add(caster(60, {Eff(densest1, Dmg(DamageType::True, 5))}), 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 100000000), 11, 1, {0, 6});
+        d.Add(Dummy(12, 100000000), 12, 1, {1, 6});
+        d.Add(Dummy(13, 100000000), 13, 1, {0, 7});
+        d.Finish();
+        CHECK(hex::Distance({0, 6}, {1, 6}) == 1 && hex::Distance({0, 6}, {0, 7}) == 1 && hex::Distance({3, 4}, {0, 6}) > 2);
+        const FightResult r = CombatSimulator(cfg).RunFight(d.specs, 3);
+        CHECK((AbilityHitTargets(r, 0) == std::set<UnitId>{11, 12, 13}));
+        CheckValid(r, d, 3, cfg);
+    }
+    {   // LowestHpAlly with a count: the two lowest, nearest-first ties by UnitId
+        Duel d;
+        d.Add(caster(61, {Eff(TargetSpec{TargetMode::LowestHpAlly, 0, true, TargetSide::Allies, 2}, Dmg(DamageType::True, 5))}), 1, 0, {3, 3});
+        d.Add(Dummy(2, 300), 2, 0, {2, 3});
+        d.Add(Dummy(3, 400), 3, 0, {4, 3});
+        d.Add(Dummy(4, 900000), 4, 0, {1, 3});
+        d.Add(Dummy(10, 100000000), 10, 1, {3, 4});
+        d.Finish();
+        CHECK((AbilityHitTargets(CombatSimulator(cfg).RunFight(d.specs, 3), 0) == std::set<UnitId>{2, 3}));
+    }
+    {   // bounceOnCritPercent: a crit bounces to the victim's nearest other enemy for that %, a normal hit does not
+        auto run = [&](int critChance) {
+            DamageEffect hit = Dmg(DamageType::True, 100);
+            hit.canCrit = true;
+            hit.bounceOnCritPercent = 50;
+            ChampionDefinition c = caster(62, {Eff(TargetSpec::CurrentTarget(), hit)});
+            c.stats.critChance = Same(critChance);
+            Duel d;
+            d.Add(c, 1, 0, {3, 3});
+            d.Add(Dummy(10, 100000000), 10, 1, {3, 4});
+            d.Add(Dummy(11, 100000000), 11, 1, {3, 5});
+            d.Add(Dummy(12, 100000000), 12, 1, {3, 7});
+            d.Finish();
+            const FightResult r = CombatSimulator(cfg).RunFight(d.specs, 3);
+            CheckValid(r, d, 3, cfg);
+            return r;
+        };
+        const FightResult crit = run(100);
+        CHECK((AbilityHitTargets(crit, 0) == std::set<UnitId>{10, 11}));
+        int main = 0, bounced = 0;
+        for (const CombatEvent& e : Events(crit.log, CombatEventType::Damage)) {
+            if (e.tick != 0 || (e.flags & kFlagAbility) == 0) continue;
+            if (e.unit == 10) main = e.amount;
+            if (e.unit == 11) bounced = e.amount;
+        }
+        CHECK(main > 100 && bounced == main / 2);
+        CHECK((AbilityHitTargets(run(0), 0) == std::set<UnitId>{10}));
+    }
+    {   // Displace TowardAreaCenter: every pulled unit ends closer to the centre the area picked
+        DisplaceEffect pull;
+        pull.direction = DisplaceDirection::TowardAreaCenter;
+        Duel d;
+        d.Add(caster(63, {Eff(TargetSpec{TargetMode::AreaAroundDensestEnemy, 2, true, TargetSide::Enemies}, pull)}), 1, 0, {3, 0});
+        d.Add(Dummy(11, 100000000), 11, 1, {3, 5});
+        d.Add(Dummy(12, 100000000), 12, 1, {3, 7});
+        d.Add(Dummy(13, 100000000), 13, 1, {5, 5});
+        d.Finish();
+        const FightResult r = CombatSimulator(cfg).RunFight(d.specs, 3);
+        // 11 has both others within 2 hexes, so it is the centre: 12 and 13 step toward it, 11 stays
+        CHECK(hex::Distance({3, 5}, {3, 7}) == 2 && hex::Distance({3, 5}, {5, 5}) == 2);
+        const auto moves = Events(r.log, CombatEventType::Teleport);
+        CHECK(moves.size() == 2);
+        for (const CombatEvent& e : moves) CHECK(e.subtype == 1 && e.unit != 11 && hex::Distance(e.to, {3, 5}) < hex::Distance(e.from, {3, 5}));
+        CheckValid(r, d, 3, cfg);
+    }
+    {   // AllyStrike: the named ally blinks in (a presentation-only Teleport, subtype 2) and strikes for % of ITS attack damage; no ally, no strike
+        auto run = [&](bool withAlly) {
+            AllyStrikeEffect strike;
+            strike.ally = 77;
+            strike.type = DamageType::True;
+            strike.percentOfAllyAttackDamage = Same(200);
+            strike.canCrit = false;
+            Duel d;
+            d.Add(caster(64, {Eff(TargetSpec::CurrentTarget(), strike)}), 1, 0, {3, 3});
+            if (withAlly) d.Add(Fighter(77, 100000, 0, 40, 100, 1), 2, 0, {0, 0});   // far away, slow: it never reaches the dummy by itself
+            d.Add(Dummy(10, 100000000), 10, 1, {3, 4});
+            d.Finish();
+            const FightResult r = CombatSimulator(cfg).RunFight(d.specs, 3);
+            CheckValid(r, d, 3, cfg);
+            return r;
+        };
+        const FightResult with = run(true);
+        const auto blinks = Events(with.log, CombatEventType::Teleport, 2);
+        CHECK(blinks.size() >= 1 && blinks[0].subtype == 2 && blinks[0].to == HexCoord({3, 4}) && blinks[0].tick == 0);   // (from = wherever the ally stands; it may have stepped already)
+        bool struck = false;
+        for (const CombatEvent& e : Events(with.log, CombatEventType::Damage, 10)) struck = struck || (e.tick == 0 && e.other == 2 && e.amount == 80 && (e.flags & kFlagAbility));
+        CHECK(struck);
+        const FightResult without = run(false);
+        CHECK(Events(without.log, CombatEventType::Teleport).empty());
+    }
+    {   // OnEnemyDeath: fires once per ENEMY death, not for allies
+        ChampionDefinition holder = Fighter(1, 100000, 0, 50, 1000, 30);
+        AbilityDefinition hunger;
+        hunger.id = 170;
+        hunger.name = "hunger";
+        hunger.trigger = CastTrigger::OnEnemyDeath;
+        StatusEffect ap;
+        ap.status = StatusType::BonusAbilityDamage;
+        ap.value = FlatAmount(Same(8));
+        ap.permanent = true;
+        hunger.effects = {Eff(TargetSpec::Self(), ap)};
+        holder.triggers = {hunger};
+        Duel d;
+        d.Add(holder, 1, 0, {3, 3});
+        d.Add(Dummy(2, 1), 2, 0, {0, 3});            // an ally that dies at once to the enemy below
+        d.Add(Fighter(9, 100000000, 0, 30, 1000, 30), 9, 1, {0, 5});
+        d.Add(Dummy(10, 40), 10, 1, {3, 4});         // an enemy that dies to the holder's first hit
+        d.Finish();
+        const FightResult r = CombatSimulator(cfg).RunFight(d.specs, 60);
+        int fired = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, 1)) fired += e.subtype == static_cast<std::uint8_t>(StatusType::BonusAbilityDamage) ? 1 : 0;
+        CHECK(Events(r.log, CombatEventType::Death, 2).size() == 1 && Events(r.log, CombatEventType::Death, 10).size() == 1);
+        CHECK(fired == 1);
+        CheckValid(r, d, 60, cfg);
     }
 }
 
@@ -5425,7 +5600,8 @@ static void TestItemData() {
     auto prod = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
     CHECK(prod != nullptr);
     if (!prod) { std::printf("  %s\n", err.c_str()); return; }
-    {   // The design doc's whole item system: 8 components + the Seed, 28 legendaries, 8 emblems.
+    {   // The design doc's whole item system: 8 components + the Seed and the Orb, 28 legendaries, 16 emblems (Sept. 2026: Selini replaced Omnilium,
+        // + Nature; the Orb's 7 class emblems).
         int components = 0, seeds = 0, legendaries = 0, emblems = 0, consumables = 0;
         for (const ItemDefinition& item : prod->All()) {
             if (item.IsConsumable()) ++consumables;
@@ -5433,15 +5609,29 @@ static void TestItemData() {
             else if (!item.grantsTraits.empty()) ++emblems;
             else ++legendaries;
         }
-        CHECK(prod->All().size() == 46 && components == 8 && seeds == 1 && legendaries == 28 && emblems == 8 && consumables == 1);   // ... + the Item Remover
+        CHECK(prod->All().size() == 55 && components == 8 && seeds == 2 && legendaries == 28 && emblems == 16 && consumables == 1);   // ... + the Item Remover
+        // Every trait with a synergy has an emblem (Omnilium has none of its own; Hexa and Plant are tags).
+        auto traits = sample::LoadProductionTraits();
+        CHECK(traits != nullptr);
+        if (traits) {
+            for (const TraitDefinition& t : traits->All()) {
+                if (t.breakpoints.empty() && t.paths.empty()) continue;
+                bool found = false;
+                for (const ItemDefinition& item : prod->All()) found = found || (item.grantsTraits.size() == 1 && item.grantsTraits[0] == t.name);
+                if (!found) std::printf("  no emblem for %s\n", t.name.c_str());
+                CHECK(found);
+            }
+        }
+        // Class emblems come from the Omnilium Orb (51).
+        for (ItemId id = 52; id <= 58; ++id) CHECK(prod->Find(id) && prod->Find(id)->components[0] == 51);
     }
     const ItemDefinition* sword = prod->Find(3);
     const ItemDefinition* heart = prod->Find(8);
     CHECK(sword && sword->name == "Coregons Sword" && sword->stats.attackDamage == 15 && sword->grantsTraits.empty());
     CHECK(heart && heart->stats.maxHp == 180 && heart->stats.attackDamage == 0);
     // Emblems are "+1 to the trait" and nothing else (the old placeholder carried +300 HP / +25 AD).
-    const char* emblemTraits[8] = {"Coregons", "Helios", "Najmi", "Omnilium", "Phaisa", "Hexagon", "Assassin", "Protector"};
-    for (int i = 0; i < 8; ++i) {
+    const char* emblemTraits[9] = {"Coregons", "Helios", "Najmi", "Selini", "Phaisa", "Hexagon", "Assassin", "Protector", "Nature"};
+    for (int i = 0; i < 9; ++i) {
         const ItemDefinition* emblem = prod->Find(static_cast<ItemId>(40 + i));
         CHECK(emblem && emblem->stats.IsEmpty() && emblem->IsCombined() && emblem->grantsTraits == std::vector<std::string>{emblemTraits[i]} && emblem->components[0] == 9);
     }
@@ -9028,7 +9218,7 @@ static void TestPhase10Loader() {
     };
     struct Bad { std::string json; const char* mention; };
     const std::vector<Bad> bad = {
-        {trig(R"("trigger": "OnDeath")"), "OnDeath"},
+        {trig(R"("trigger": "OnRespawn")"), "OnRespawn"},
         {trig(R"("trigger": "OnDealDamage", "thresholdPercent": 30)"), "thresholdPercent only applies"},
         {trig(R"("trigger": "OnHpDropBelowPercent")"), "thresholdPercent must be 1..99"},
         {trig(R"("trigger": "OnHpDropBelowPercent", "thresholdPercent": 100)"), ".thresholdPercent"},
@@ -9646,7 +9836,8 @@ static void TestBotEconomyRerollsAndLevels() {
         AIBotController bot(0, 1);
         bot.Tick(*match);
         CHECK(me->Level() >= 5);
-        CHECK(me->Gold() >= 10 && me->Gold() < 30);   // the savings survive; the rest was spent
+        if (!(me->Gold() >= 10 && me->Gold() <= 30)) std::printf("  stage 2 bot kept %d gold\n", me->Gold());
+        CHECK(me->Gold() >= 10 && me->Gold() <= 30);   // the savings survive; at least half of the 60 was spent (with 38 champions in the pool it finds fewer copies worth a reroll)
         CHECK(me->Roster().Count() > me->Shop().Slots().size());   // more units than one shop holds: it rerolled
         CHECK(match->VerifyPoolIntegrity());
     }
@@ -10442,7 +10633,7 @@ static std::vector<CombatEvent> TraitEvents(const FightResult& r, TraitId trait,
 
 static void TestHeliosPhaisaHexagonSeliniNajmi() {
     auto prod = ProdDb();
-    auto traits = sample::LoadSpecTraits();
+    auto traits = sample::LoadLegacyTraits();
     CHECK(prod != nullptr && traits != nullptr);
     if (!prod || !traits) return;
     ChampionDefinition wall = Dummy(9999, 1000000);   // an enemy nothing can kill
@@ -10545,7 +10736,7 @@ static const std::vector<ChampionId> kSixCoregons = {9017, 9018, 9022, 9027, 901
 
 static void TestCoregonsFromTheDesignDoc() {
     auto prod = ProdDb();
-    auto traits = sample::LoadSpecTraits();
+    auto traits = sample::LoadLegacyTraits();
     CHECK(prod != nullptr && traits != nullptr);
     if (!prod || !traits) return;
     std::string err;
@@ -10784,8 +10975,8 @@ static void TestShopPoolExhaustionFallback() {
         std::vector<std::unique_ptr<PlayerState>> players;
         for (int i = 0; i < kMaxPlayers; ++i) players.push_back(std::make_unique<PlayerState>(static_cast<PlayerId>(i), cfg.player, cfg.shop, pool, 100 + i));
         int totalCopies = 0;
-        for (const ChampionDefinition& c : roster->All()) totalCopies += c.summon ? 0 : 1;
-        CHECK(totalCopies == 30);
+        for (const ChampionDefinition& c : roster->All()) totalCopies += c.IsPooled() ? 1 : 0;
+        CHECK(totalCopies == 49);   // one copy of each of the 49 champions (trait system v2 roster; summons, plants and special units are never in the pool)
         Rng chooser(9);
         bool conserved = true, noStarvation = true;
         for (int step = 0; step < 600; ++step) {
@@ -10806,11 +10997,11 @@ static void TestShopPoolExhaustionFallback() {
         CHECK(conserved && noStarvation);
         int shownAtEnd = 0;
         for (const auto& q : players) for (const ChampionDefinition* slot : q->Shop().Slots()) shownAtEnd += slot != nullptr ? 1 : 0;
-        CHECK(shownAtEnd == 30);   // 8 shops x 5 slots = 40 slots for 30 copies: all of them are out on display
+        CHECK(shownAtEnd == 40);   // 8 shops x 5 slots = 40 slots for 49 copies: every slot is filled
         for (auto& q : players) q->Shop().ReturnShopToPool();
         int back = 0;
         for (int tier = 1; tier <= kMaxCostTier; ++tier) back += pool.RemainingInTier(tier);
-        CHECK(back == 30);
+        CHECK(back == 49);
     }
     {   // A whole match with a pool this small (1 copy each): bots buy out tiers all game long, shops keep falling back, and the match still finishes
         // with every integrity check holding and a replay that is identical tick for tick.
@@ -10993,7 +11184,7 @@ static void TestTwinSnipersEverySecond() {
 static void TestFishscaleOmnivampAndAssassin() {
     auto items = P10Items();
     auto prod = ProdDb();
-    auto traits = sample::LoadSpecTraits();
+    auto traits = sample::LoadLegacyTraits();
     CHECK(items != nullptr && prod != nullptr && traits != nullptr);
     if (!items || !prod || !traits) return;
     CombatConfig cfg;
@@ -11078,7 +11269,10 @@ static void TestProductionItemsAreTheWholeDesignDoc() {
         {3, 3, "Soul's Sword"}, {3, 4, "Deadbeat"}, {3, 5, "Gunfire"}, {3, 6, "Electroblade"}, {3, 8, "HeartBroke"}, {3, 7, "Full Kit"},
         {5, 5, "Twin Snipers"}, {5, 6, "Phaisa's Magic"}, {5, 8, "Betrayed Heart"}, {5, 7, "Guardian Destroyer"},
         {6, 6, "Magic Stick"}, {6, 8, "Omnilium's Book"}, {6, 7, "Resist Puncher"},
-        {9, 3, "Coregons Emblem"}, {9, 1, "Helios Emblem"}, {9, 2, "Najmi Emblem"}, {9, 4, "Omnilium Emblem"}, {9, 5, "Phaisa Emblem"}, {9, 6, "Hexagon Emblem"}, {9, 7, "Assassin Emblem"}, {9, 8, "Protector Emblem"},
+        {9, 3, "Coregons Emblem"}, {9, 1, "Helios Emblem"}, {9, 2, "Najmi Emblem"}, {9, 4, "Selini Emblem"}, {9, 5, "Phaisa Emblem"}, {9, 6, "Hexagon Emblem"}, {9, 7, "Assassin Emblem"}, {9, 8, "Protector Emblem"},
+        {9, 9, "Nature Emblem"},
+        {51, 4, "Bastion Emblem"}, {51, 8, "Bruiser Emblem"}, {51, 6, "Sorcerer Emblem"}, {51, 5, "Marksman Emblem"}, {51, 2, "Mystic Emblem"}, {51, 3, "Duelist Emblem"},
+        {51, 7, "Gunslinger Emblem"},
     };
     int good = 0;
     for (const Recipe& r : recipes) {
@@ -11088,7 +11282,7 @@ static void TestProductionItemsAreTheWholeDesignDoc() {
         else std::printf("  recipe %u + %u should make %s\n", r.a, r.b, r.name);
     }
     CHECK(good == static_cast<int>(sizeof(recipes) / sizeof(recipes[0])));
-    CHECK(sizeof(recipes) / sizeof(recipes[0]) == 28 + 8);
+    CHECK(sizeof(recipes) / sizeof(recipes[0]) == 28 + 16);
     // Numbers of the latest doc.
     CHECK(items->Find(13)->abilities[0].effects.size() == 1);   // Gylachster (permanent immunity: see the hook test)
     const auto* tick = std::get_if<DamageEffect>(&items->Find(30)->abilities[1].effects[0].payload);   // Twin Snipers' 3% a second
@@ -11100,7 +11294,8 @@ static void TestProductionItemsAreTheWholeDesignDoc() {
     CHECK(items->Find(18)->abilities[0].effects[1].condition == EffectCondition::NoDamageTakenSinceCast);
     // The data hash sees the new shapes.
     CHECK(items->ContentHash() != 0);
-    CHECK(prod->Find(9015)->traits == std::vector<std::string>({"Phaisa", "Assassin"}) && prod->Find(9009)->traits.back() == "Assassin" && prod->Find(9028)->traits.back() == "Assassin");
+    const auto hasTrait = [&](ChampionId id, const char* t) { const auto& v = prod->Find(id)->traits; return std::find(v.begin(), v.end(), t) != v.end(); };
+    CHECK(prod->Find(9015)->traits == std::vector<std::string>({"Phaisa", "Assassin"}) && hasTrait(9009, "Assassin") && hasTrait(9028, "Assassin"));
 }
 
 
@@ -11197,7 +11392,7 @@ static void TestMotherNatureDataFile() {
     const auto legendaries = w2f::GiftItemChoices(gift, *items);
     CHECK(legendaries.size() == 28 && legendaries.front() == 10 && legendaries.back() == 37);
     gift.itemClass = ItemClass::Emblem;
-    CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({40, 41, 42, 43, 44, 45, 46, 47})));
+    CHECK((w2f::GiftItemChoices(gift, *items) == std::vector<ItemId>({40, 41, 42, 43, 44, 45, 46, 47, 48, 52, 53, 54, 55, 56, 57, 58})));
     gift.itemClass = ItemClass::Any;
     CHECK(w2f::GiftItemChoices(gift, *items).size() == items->All().size() - 1);   // "any" never means the Item Remover
     gift.items = {3, 4};
@@ -11454,15 +11649,15 @@ static void TestMotherNatureEarlyEndAndDeterminism() {
         const auto a = trace(11), b = trace(11), c = trace(12);
         CHECK(!a.second.empty() && a == b && a.first != c.first);
     }
-    {   // Unit gifts are checked out of the pool one player at a time: with a pool of ONE copy per champion and only 5-cost gifts (4 champions),
-        // 8 players cannot all be offered a unit -- nobody is offered a copy that is not there, nothing crashes, and every copy is accounted for.
+    {   // Unit gifts are checked out of the pool one player at a time: with a pool of ONE copy per champion and only 5-cost gifts (8 champions),
+        // 8 players cannot all be offered a unit when they take 2 options each -- nobody is offered a copy that is not there, nothing crashes, and every copy is accounted for.
         auto m = MnMatch::Make(*prod, MnDb(MnJson(2, R"({"id": 1, "name": "U", "type": "Unit", "costs": [5]}, {"id": 2, "name": "G", "type": "Gold", "amount": 5})"), items.get()), items.get(), 3,
                                [](GameConfig& cfg) { cfg.match.playerCount = 8; cfg.pool.copiesPerTier = {{1, 1, 1, 1, 1}}; });
         CHECK(m && m->match->Phase() == MatchPhase::MotherNature);
         if (!m) return;
         int unitOffers = 0;
         for (const auto& o : m->log.offered) for (const GiftOffer& g : o.offers) unitOffers += g.type == GiftType::Unit ? 1 : 0;
-        CHECK(unitOffers == 4 && m->log.offered.size() == 8);   // exactly the 4 copies that exist
+        CHECK(unitOffers == 8 && m->log.offered.size() == 8);   // exactly the 8 copies that exist
         CHECK(m->match->VerifyPoolIntegrity());
         for (int i = 0; i < 40 && m->match->Phase() == MatchPhase::MotherNature; ++i) m->match->Tick();
         CHECK(m->match->Phase() == MatchPhase::Planning && m->match->VerifyPoolIntegrity());
@@ -11603,8 +11798,8 @@ static void TestRefreshingBurnAndAssassinCrit() {
           err.find("never stacks") != std::string::npos);
     CHECK(w2f::LoadChampionDatabaseFromJson(head + R"({ "type": "DoT", "target": "CurrentTarget", "damageType": "True", "amount": 5, "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ]})", &err) != nullptr);
 
-    // The production Helios synergy uses it, and the Assassins' synergy now also grants crit CHANCE (+15% at 2, +30% at 4).
-    auto traits = sample::LoadSpecTraits();
+    // The Helios synergy used it until trait system v2, and the Assassins' synergy also grants crit CHANCE (+15% at 2, +30% at 4).
+    auto traits = sample::LoadLegacyTraits();
     CHECK(traits != nullptr);
     if (!traits) return;
     for (const TraitBreakpoint& bp : traits->FindByName("Helios")->breakpoints) {
@@ -11637,6 +11832,480 @@ static void TestRefreshingBurnAndAssassinCrit() {
     for (UnitId u : {UnitId{1}, UnitId{2}}) {
         const auto chance = StatusOn(r, u, StatusType::BonusCritChance);
         CHECK(chance.size() == 1 && chance[0].amount == 15 && chance[0].duration == 0);
+    }
+}
+
+// ==== Trait system v2 (September 2026): classes, Helios Rally, Phaisa mutations, Selini paths, Hexagon's Invention, Hexa's pilot, Nature's plants,
+// Cyla's Fishbones, and the match-level half (plants on the board, modules, star dust, the Rift Herald, snapshots) =============================
+
+namespace {
+
+struct V2 {
+    std::unique_ptr<ChampionDatabase> db;
+    std::unique_ptr<TraitDatabase> traits;
+    std::unique_ptr<ItemDatabase> items;
+    CombatConfig cfg;
+    bool ok = false;
+    V2() {
+        std::string err;
+        auto prod = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath(), &err);
+        if (prod) {   // the production roster plus two test dummies (a practice dummy and a brute), so the validator knows every unit
+            std::vector<ChampionDefinition> all = prod->All();
+            all.push_back(Dummy(9999, 100000000));
+            all.push_back(Fighter(9998, 60000, 0, 300, 1500, 1));
+            db = ChampionDatabase::Create(std::move(all), &err);
+        }
+        traits = sample::LoadProductionTraits();
+        items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath(), &err);
+        ok = db && traits && items;
+        if (!ok) std::printf("  v2 data: %s\n", err.c_str());
+    }
+    // Team 0 on the home half (board coordinates), team 1 on the away half.
+    FightUnitSpec Unit(UnitId id, ChampionId champion, int team, int x, int y, int star = 1, std::vector<ItemId> itemIds = {}) const {
+        FightUnitSpec s{id, db->Find(champion), star, team, BoardToArena(x, y, team == 0 ? ArenaSide::Home : ArenaSide::Away), {}};
+        for (ItemId i : itemIds) s.items.push_back(items->Find(i));
+        return s;
+    }
+    FightResult Run(const std::vector<FightUnitSpec>& specs, int ticks, const FightSetup& setup = FightSetup{}, std::uint64_t seed = 3) const {
+        return CombatSimulator(cfg, traits.get(), items.get(), db.get()).RunFight(specs, ticks, seed, setup);
+    }
+    bool Valid(const FightResult& r, int ticks) const {
+        std::string why;
+        const bool good = ValidateCombatLog(r.log, *db, cfg, ticks, &why);
+        if (!good) std::printf("  validator: %s\n", why.c_str());
+        return good;
+    }
+};
+
+std::vector<CombatEvent> TraitsOf(const FightResult& r, std::uint32_t trait, int team) {
+    std::vector<CombatEvent> out;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::TraitActivated)) {
+        if (e.traitId == trait && e.team == team) out.push_back(e);
+    }
+    return out;
+}
+
+// A stand-in for the combat simulator: every fight is won by the away side (the home player loses), and the home side's first unit scored
+// `takedowns` takedowns. Lets the match-level trait rewards be tested without depending on who would really win.
+class AwayWinsSimulator : public ICombatSimulator {
+public:
+    explicit AwayWinsSimulator(int takedowns) : takedowns_(takedowns) {}
+    std::vector<CombatOutcome> Simulate(const CombatContext& context) override {
+        std::vector<CombatOutcome> out;
+        for (const Matchup& m : context.matchups) {
+            CombatOutcome o;
+            o.matchup = m;
+            o.winner = CombatWinner::Away;
+            o.winnerSurvivors = 1;
+            const PlayerState* home = context.players.Get(m.home);
+            if (home != nullptr && takedowns_ > 0) {
+                for (const UnitInstance& u : home->Roster().Units()) {
+                    if (u.location == LocationType::Board && !u.champion->plant) { o.log.takedowns.emplace_back(u.id, takedowns_); break; }
+                }
+            }
+            o.log.checksum = o.log.ComputeChecksum();
+            out.push_back(std::move(o));
+        }
+        return out;
+    }
+private:
+    int takedowns_;
+};
+
+struct TraitLog : IMatchListener {
+    std::vector<std::pair<PlayerId, TraitChoice>> offered;
+    std::vector<std::pair<PlayerId, int>> resolved;
+    std::vector<std::pair<PlayerId, TraitRewards>> rewards;
+    void OnTraitChoiceOffered(PlayerId p, const TraitChoice& c) override { offered.emplace_back(p, c); }
+    void OnTraitChoiceResolved(PlayerId p, const TraitChoice&, int index, bool) override { resolved.emplace_back(p, index); }
+    void OnTraitRewards(PlayerId p, const TraitRewards& r) override { rewards.emplace_back(p, r); }
+};
+
+// Puts `champions` on seat `player`'s board, left to right on row `row` (the match must be in Planning).
+void Field(MatchManager& m, PlayerId player, const ChampionDatabase& db, std::vector<ChampionId> champions, int row = 3) {
+    PlayerState* p = m.PlayersMutable().Get(player);
+    int x = 0;
+    for (ChampionId id : champions) {
+        const ChampionDefinition* c = db.Find(id);
+        CHECK(c != nullptr && (!c->IsPooled() || m.PoolMutable().Take(c)) && p->AcquireUnit(c, 0) == ActionResult::Ok);
+        UnitId newest = 0;
+        for (const UnitInstance& u : p->Roster().Units()) {
+            if (u.champion == c && u.location == LocationType::Bench) newest = u.id;
+        }
+        CHECK(m.TryMoveUnit(player, newest, LocationType::Board, x++, row) == ActionResult::Ok);
+    }
+}
+
+int CountOnBoard(const PlayerState& p, ChampionId champion, int* star = nullptr) {
+    int n = 0;
+    for (const UnitInstance& u : p.Roster().Units()) {
+        if (u.champion->id == champion && u.location == LocationType::Board) {
+            ++n;
+            if (star) *star = u.starLevel;
+        }
+    }
+    return n;
+}
+
+}  // namespace
+
+static void TestTraitV2Classes() {
+    V2 v;
+    CHECK(v.ok);
+    if (!v.ok) return;
+    {   // Gunslinger (Rivet + Cyla): +22% AD, every 4th attack 100 bonus physical damage; Cyla switches to Fishbones after 18 attacks.
+        const int ticks = Seconds(40);
+        std::vector<FightUnitSpec> specs = {v.Unit(1, 9040, 0, 3, 2), v.Unit(2, 9003, 0, 4, 2), v.Unit(900, 9101, 1, 3, 3)};
+        specs[2] = v.Unit(900, 9999, 1, 3, 3);   // a practice dummy the whole fight
+        const FightResult r = v.Run(specs, ticks);
+        const auto gun = TraitsOf(r, 16, 0);
+        CHECK(gun.size() == 1 && gun[0].amount == 2 && gun[0].subtype == 1);
+        for (UnitId u : {UnitId{1}, UnitId{2}}) {
+            const auto ad = StatusOn(r, u, StatusType::AttackDamage);
+            CHECK(!ad.empty() && ad[0].amount == 22 && ad[0].tick == 0);
+        }
+        int quickDraws = 0, rockets = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 900)) {
+            if ((e.flags & kFlagTriggered) != 0 && e.amount == 100) ++quickDraws;
+            if (e.other == 2 && (e.flags & kFlagTriggered) != 0 && e.amount == 58) ++rockets;
+        }
+        const int rivetAttacks = static_cast<int>(Events(r.log, CombatEventType::Attack, 1).size());
+        const int cylaAttacks = static_cast<int>(Events(r.log, CombatEventType::Attack, 2).size());
+        CHECK(quickDraws == rivetAttacks / 4 + cylaAttacks / 4);
+        CHECK(cylaAttacks > 20 && rockets >= 3 * (cylaAttacks - 18) - 3 && rockets <= 3 * (cylaAttacks - 18));   // (the last volley may land after the end)
+        const auto fishbones = StatusOn(r, 2, StatusType::AttackDamage);   // +22 (Gunslinger), then -100 (Fishbones) after her 17th attack
+        CHECK(fishbones.size() == 2 && fishbones[1].amount == -100);
+        std::printf("  Rivet %d + Cyla %d attacks: %d quick draws, %d Fishbones rockets\n", rivetAttacks, cylaAttacks, quickDraws, rockets);
+    }
+    {   // Duelist (Bit + Briar): +4% Attack Speed per attack, 12 times at most. Bastion (Moss + Ignis): 20 flat resists on holders, 10 on everyone.
+        std::vector<FightUnitSpec> specs = {v.Unit(1, 9019, 0, 3, 3), v.Unit(2, 9048, 0, 4, 3), v.Unit(3, 9046, 0, 2, 3), v.Unit(4, 9013, 0, 5, 3),
+                                            v.Unit(5, 9032, 0, 1, 1)};   // Tide: no Bastion, no Duelist
+        specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
+        const FightResult r = v.Run(specs, Seconds(30));
+        for (UnitId u : {UnitId{1}, UnitId{2}}) {
+            const auto as = StatusOn(r, u, StatusType::AttackSpeed);
+            CHECK(as.size() == 12);
+            for (const CombatEvent& e : as) CHECK(e.amount == 4);
+        }
+        const auto armor = [&](UnitId u) { int sum = 0; for (const CombatEvent& e : StatusOn(r, u, StatusType::BonusArmor)) if (e.tick == 0) sum += e.amount; return sum; };
+        CHECK(armor(3) == 30 && armor(4) == 30 && armor(5) == 10 && armor(1) == 10);
+    }
+}
+
+static void TestTraitV2HeliosRally() {
+    V2 v;
+    if (!v.ok) return;
+    // 7 Helios (Ignis, Pyra, Solis, Sunna, Flare, Kael, Alesk) against 3 heavy hitters: Rally at 75 / 50 / 25%, each smiting every enemy for 15%.
+    std::vector<FightUnitSpec> specs;
+    const ChampionId helios[7] = {9013, 9014, 9020, 9033, 9026, 9034, 9001};
+    for (int i = 0; i < 7; ++i) specs.push_back(v.Unit(static_cast<UnitId>(1 + i), helios[i], 0, i, i < 4 ? 3 : 2));
+    for (int i = 0; i < 3; ++i) specs.push_back(FightUnitSpec{static_cast<UnitId>(100 + i), v.db->Find(9998), 1, 1, BoardToArena(2 + i, 3, ArenaSide::Away), {}});
+    const int ticks = Seconds(60);
+    const FightResult r = v.Run(specs, ticks);
+    const auto helio = TraitsOf(r, 1, 0);
+    CHECK(helio.size() == 1 && helio[0].amount == 7 && helio[0].subtype == 3);
+    // Rallies: every Helios unit alive at a rally gets a ManaCost -10 status; at most 3 per unit.
+    int rallies = 0;
+    for (UnitId u = 1; u <= 7; ++u) {
+        const auto mc = StatusOn(r, u, StatusType::ManaCost);
+        CHECK(mc.size() <= 3);
+        for (const CombatEvent& e : mc) CHECK(e.amount == -10 && e.duration == 0);
+        rallies = std::max(rallies, static_cast<int>(mc.size()));
+    }
+    CHECK(rallies >= 1);
+    // One smite per rally for the whole team: 15% of each brute's max HP (60000 -> 9000), true damage.
+    int smites = 0;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 100)) smites += (e.flags & kFlagTriggered) != 0 && e.amount == 9000 ? 1 : 0;
+    CHECK(smites >= 1 && smites <= 3);
+    // The first rally comes the tick the team drops below 75% of its total max HP.
+    std::printf("  7 Helios vs 3 brutes: %d rallies, %d smites on the first brute\n", rallies, smites);
+}
+
+static void TestTraitV2PhaisaMutations() {
+    V2 v;
+    if (!v.ok) return;
+    const auto fight = [&](std::vector<ChampionId> team) {
+        std::vector<FightUnitSpec> specs;
+        for (std::size_t i = 0; i < team.size(); ++i) specs.push_back(v.Unit(static_cast<UnitId>(1 + i), team[i], 0, static_cast<int>(i % 7), i < 7 ? 3 : 2));
+        specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
+        return v.Run(specs, 60);
+    };
+    {   // 2 Phaisa (Vex, Kryx): one mutation, on the stronger unit: Kryx (4-cost Bruiser) -> Voidborn Siphon (12% Omnivamp).
+        const FightResult r = fight({9015, 9029});
+        CHECK(TraitsOf(r, 2, 0).size() == 1 && TraitsOf(r, 2, 0)[0].subtype == 1);
+        CHECK(StatusOn(r, 2, StatusType::Omnivamp).size() == 1 && StatusOn(r, 2, StatusType::Omnivamp)[0].amount == 12);
+        CHECK(StatusOn(r, 1, StatusType::Omnivamp).empty() && StatusOn(r, 1, StatusType::BonusCritChance).empty());
+        CHECK(StatusOn(r, 1, StatusType::AttackSpeed).size() == 1 && StatusOn(r, 1, StatusType::AttackSpeed)[0].amount == 8);
+    }
+    {   // 4 Phaisa (Vex, Null, Xul, Kryx): two mutations -- Kryx (Siphon) and Xul (2-cost Sorcerer: Caustic Spores, +20% AP).
+        const FightResult r = fight({9015, 9016, 9021, 9029});
+        CHECK(StatusOn(r, 4, StatusType::Omnivamp).size() == 1);
+        CHECK(StatusOn(r, 3, StatusType::AbilityPower).size() == 1 && StatusOn(r, 3, StatusType::AbilityPower)[0].amount == 20);
+        CHECK(StatusOn(r, 1, StatusType::BonusCritChance).empty() && StatusOn(r, 2, StatusType::BonusMaxHp).empty());
+    }
+    {   // 9 Phaisa (with the Rift Herald and the Queen): everyone mutated and supercharged, and Baron Nashor joins.
+        const FightResult r = fight({9015, 9016, 9021, 9025, 9029, 9037, 9039, 9041, 9043});
+        CHECK(TraitsOf(r, 2, 0).size() == 1 && TraitsOf(r, 2, 0)[0].subtype == 4 && TraitsOf(r, 2, 0)[0].amount == 9);
+        CHECK(StatusOn(r, 1, StatusType::BonusCritChance).size() == 1 && StatusOn(r, 1, StatusType::BonusCritChance)[0].amount == 30);   // Vex: Hyper-Adrenal x2
+        bool shell = false;   // Null: Chitinous Shell x2 (next to Bruiser's +100 for everyone)
+        for (const CombatEvent& e : StatusOn(r, 2, StatusType::BonusMaxHp)) shell = shell || e.amount == 500;
+        CHECK(shell);
+        bool baron = false;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Spawn)) baron = baron || (e.champion == 9042 && (e.flags & kFlagSummon) != 0 && e.tick == 0);
+        CHECK(baron);
+        CHECK(StatusOn(r, 9, StatusType::CcImmunity).size() == 1);   // the Queen's own passive
+        CHECK(v.Valid(r, 60));
+    }
+}
+
+static void TestTraitV2SeliniPaths() {
+    V2 v;
+    if (!v.ok) return;
+    const auto fight = [&](int path, int level, int gold) {
+        std::vector<FightUnitSpec> specs = {v.Unit(1, 9032, 0, 2, 3), v.Unit(2, 9009, 0, 3, 3), v.Unit(3, 9002, 0, 4, 3)};
+        specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
+        FightSetup setup;
+        setup.traitPaths = {{6, path}};
+        setup.teams[0].playerLevel = level;
+        setup.teams[0].traitGold = gold;
+        return v.Run(specs, 30, setup);
+    };
+    const FightResult enlightened = fight(0, 8, 0);   // (production, after the balance pass) +5% +1.5% x level 8 = 17%
+    const FightResult prosperous = fight(1, 8, 5);    // +6% +2% x 5 gold = 16%
+    for (UnitId u = 1; u <= 3; ++u) {
+        CHECK(StatusOn(enlightened, u, StatusType::AttackDamage).size() == 1 && StatusOn(enlightened, u, StatusType::AttackDamage)[0].amount == 17);
+        CHECK(StatusOn(enlightened, u, StatusType::AbilityPower).size() == 1 && StatusOn(enlightened, u, StatusType::AbilityPower)[0].amount == 17);
+        CHECK(StatusOn(prosperous, u, StatusType::AttackDamage).size() == 1 && StatusOn(prosperous, u, StatusType::AttackDamage)[0].amount == 16);
+    }
+    // The match picks one path per trait from its seed: stable for a seed, and both happen.
+    auto db = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    TestGameConfig cfg;
+    std::set<int> seen;
+    for (std::uint64_t seed = 1; seed <= 24; ++seed) {
+        auto a = MatchManager::Create(cfg, *db, seed, nullptr, nullptr, v.items.get(), nullptr, nullptr, v.traits.get());
+        auto b = MatchManager::Create(cfg, *db, seed, nullptr, nullptr, v.items.get(), nullptr, nullptr, v.traits.get());
+        CHECK(a && b && a->TraitPaths().size() == 1 && a->TraitPaths() == b->TraitPaths() && a->TraitPaths()[0].first == 6);
+        if (a) seen.insert(a->TraitPath(6));
+    }
+    CHECK(seen.size() == 2);
+}
+
+static void TestTraitV2HexagonInvention() {
+    V2 v;
+    if (!v.ok) return;
+    {   // 2 Hexagon (Bit, Byte) with Electrical Overload: the Invention appears on the right-most back hex; 8 s in, every enemy takes 100 + 8% max HP.
+        std::vector<FightUnitSpec> specs = {v.Unit(1, 9019, 0, 3, 3), v.Unit(2, 9023, 0, 2, 1)};
+        specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 0, ArenaSide::Away), {}});
+        FightSetup setup;
+        setup.teams[0].modules = {401, 421};   // (a tier-3 module with tier 1 unlocked does nothing)
+        const FightResult r = v.Run(specs, Seconds(20), setup);
+        const CombatEvent* invention = nullptr;
+        for (const CombatEvent& e : r.log.events) {
+            if (e.type == CombatEventType::Spawn && e.champion == 9044) invention = &e;
+        }
+        CHECK(invention != nullptr && invention->tick == 0 && invention->to == BoardToArena(kBoardColumns - 1, 0, ArenaSide::Home));
+        int overloads = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 900)) {
+            if (e.tick == Seconds(8) && e.subtype == static_cast<std::uint8_t>(DamageType::True) && e.amount == 100 + 100000000 * 8 / 100) ++overloads;
+        }
+        CHECK(overloads == 1);
+        CHECK(v.Valid(r, Seconds(20)));
+    }
+    {   // 6 Hexagon (Bit, Byte, Cyla, Faire, Hexa + an emblem on Moss): Echo Engine repeats Overload every 8 s; Superior Lifeform clones the 2 strongest.
+        std::vector<FightUnitSpec> specs = {v.Unit(1, 9019, 0, 1, 3), v.Unit(2, 9023, 0, 2, 3), v.Unit(3, 9003, 0, 3, 3), v.Unit(4, 9005, 0, 4, 3),
+                                            v.Unit(5, 9045, 0, 5, 3), v.Unit(6, 9046, 0, 0, 3, 1, {45})};
+        specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 0, ArenaSide::Away), {}});
+        FightSetup setup;
+        setup.teams[0].modules = {401, 411, 422, 424};
+        const FightResult r = v.Run(specs, Seconds(20), setup);
+        CHECK(TraitsOf(r, 3, 0).size() == 1 && TraitsOf(r, 3, 0)[0].subtype == 3 && TraitsOf(r, 3, 0)[0].amount == 6);
+        std::vector<int> overloadTicks;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 900)) {
+            if (e.subtype == static_cast<std::uint8_t>(DamageType::True) && (e.amount == 100 + 100000000 * 8 / 100)) overloadTicks.push_back(e.tick);
+        }
+        CHECK(overloadTicks.size() >= 2 && overloadTicks[0] == Seconds(8) && overloadTicks[1] == Seconds(16));
+        int clones = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Spawn)) clones += (e.flags & kFlagSummon) != 0 && e.tick == Seconds(8) && e.champion != 9044 ? 1 : 0;
+        CHECK(clones == 2);
+    }
+}
+
+static void TestTraitV2HexaPilot() {
+    V2 v;
+    if (!v.ok) return;
+    // Hexa on (3, 2) and Ignis (Helios / Bastion) right behind it on (3, 1): Ignis climbs in. Hexa gains 80% of Ignis's max HP and 20% Omnivamp.
+    std::vector<FightUnitSpec> specs = {v.Unit(1, 9045, 0, 3, 2), v.Unit(2, 9013, 0, 3, 1)};
+    specs.push_back(FightUnitSpec{900, v.db->Find(9998), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
+    specs.push_back(FightUnitSpec{901, v.db->Find(9998), 1, 1, BoardToArena(2, 3, ArenaSide::Away), {}});
+    const int ticks = Seconds(40);
+    const FightResult r = v.Run(specs, ticks);
+    const auto inside = StatusOn(r, 2, StatusType::Piloting);
+    CHECK(inside.size() == 1 && inside[0].tick == 0 && inside[0].other == 1);
+    const ChampionDefinition* ignis = v.db->Find(9013);
+    const auto hp = StatusOn(r, 1, StatusType::BonusMaxHp);
+    CHECK(!hp.empty() && hp[0].amount == ignis->stats.maxHp[0] * 80 / 100);
+    CHECK(StatusOn(r, 1, StatusType::Omnivamp).size() == 1 && StatusOn(r, 1, StatusType::Omnivamp)[0].amount == 20);
+    // While Hexa stands, Ignis never acts and is never hit; when Hexa falls he ejects (the Piloting status ends that tick) and fights.
+    const auto hexaDeath = Events(r.log, CombatEventType::Death, 1);
+    CHECK(hexaDeath.size() == 1);
+    if (hexaDeath.empty()) return;
+    const int fell = hexaDeath[0].tick;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::Attack, 2)) CHECK(e.tick > fell);
+    for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 2)) CHECK(e.tick >= fell);
+    bool ejected = false;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::StatusEnded, 2)) ejected = ejected || (e.subtype == static_cast<std::uint8_t>(StatusType::Piloting) && e.tick == fell);
+    CHECK(ejected);
+    CHECK(v.Valid(r, ticks));
+    std::printf("  Hexa fell on tick %d; Ignis ejected and attacked %zu times\n", fell, Events(r.log, CombatEventType::Attack, 2).size());
+}
+
+static void TestTraitV2NatureInCombat() {
+    V2 v;
+    if (!v.ok) return;
+    // 3 Nature champions (1-star: Nature star level 3) with a Stonebark Tree, a Blossom and the Protector.
+    std::vector<FightUnitSpec> specs = {v.Unit(1, 9046, 0, 2, 3), v.Unit(2, 9047, 0, 3, 0), v.Unit(3, 9048, 0, 4, 2), v.Unit(10, 9110, 0, 3, 3),
+                                        v.Unit(11, 9111, 0, 5, 0), v.Unit(12, 9112, 0, 1, 3)};
+    specs.push_back(FightUnitSpec{900, v.db->Find(9998), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
+    specs.push_back(FightUnitSpec{901, v.db->Find(9998), 1, 1, BoardToArena(2, 3, ArenaSide::Away), {}});
+    const int ticks = Seconds(40);
+    const FightResult r = v.Run(specs, ticks);
+    CHECK(TraitsOf(r, 17, 0).size() == 1 && TraitsOf(r, 17, 0)[0].amount == 3);   // (plants do not count themselves)
+    for (UnitId plant : {UnitId{10}, UnitId{11}, UnitId{12}}) {
+        const auto hp = StatusOn(r, plant, StatusType::MaxHp);
+        const auto ap = StatusOn(r, plant, StatusType::AbilityPower);
+        CHECK(hp.size() == 1 && hp[0].amount == 75 && ap.size() == 1 && ap[0].amount == 30);   // 25% / 10% per Nature star level
+    }
+    CHECK(StatusOn(r, 1, StatusType::MaxHp).empty());   // champions are not plants
+    // A Stonebark Tree never walks or attacks.
+    CHECK(Events(r.log, CombatEventType::Move, 10).empty() && Events(r.log, CombatEventType::Attack, 10).empty());
+    // The Blossom: +8% AD (after the balance pass) for the 3 Nature champions 4 s in -- not for the plants.
+    for (UnitId u = 1; u <= 3; ++u) {
+        const auto death = Events(r.log, CombatEventType::Death, u);
+        if (!death.empty() && death[0].tick <= Seconds(4)) continue;   // (fell before the bloom)
+        bool bloom = false;
+        for (const CombatEvent& e : StatusOn(r, u, StatusType::AttackDamage)) bloom = bloom || (e.tick == Seconds(4) && e.amount == 8);
+        CHECK(bloom);
+    }
+    CHECK(StatusOn(r, 12, StatusType::AttackDamage).empty());
+    // The tree falls: the 2 nearest enemies are stunned for 1.5 s on that tick.
+    const auto treeDeath = Events(r.log, CombatEventType::Death, 10);
+    if (!treeDeath.empty()) {
+        int stunned = 0;
+        for (UnitId enemy : {UnitId{900}, UnitId{901}}) {
+            for (const CombatEvent& e : StatusOn(r, enemy, StatusType::Stun)) stunned += e.tick == treeDeath[0].tick && e.duration == 45 ? 1 : 0;
+        }
+        CHECK(stunned == 2);
+    }
+    // The Protector answers a Nature ally's death with Attack Speed.
+    int natureDeaths = 0;
+    for (UnitId u = 1; u <= 3; ++u) natureDeaths += static_cast<int>(Events(r.log, CombatEventType::Death, u).size());
+    if (natureDeaths > 0 && Events(r.log, CombatEventType::Death, 12).empty()) CHECK(!StatusOn(r, 12, StatusType::AttackSpeed).empty());
+    CHECK(v.Valid(r, ticks));
+}
+
+static void TestTraitV2MatchLevel() {
+    V2 v;
+    if (!v.ok) return;
+    TestGameConfig cfg;
+    cfg.match.playerCount = 2;
+    cfg.match.planningTicks = 20;
+    cfg.match.combatTicks = 10;
+    cfg.match.resolutionTicks = 2;
+    cfg.player.startingGold = 50;
+    TraitLog log;
+    auto m = MatchManager::Create(cfg, *v.db, 5, std::make_unique<AwayWinsSimulator>(4), nullptr, v.items.get(), nullptr, nullptr, v.traits.get());
+    CHECK(m != nullptr);
+    if (!m) return;
+    m->AddListener(&log);
+    m->Start();
+    CHECK(m->Phase() == MatchPhase::Planning);
+    PlayerState& p0 = *m->PlayersMutable().Get(0);
+    const int slotsBefore = p0.Roster().BoardCount();
+
+    // ---- Nature: 3 on the board grows a Stonebark Tree and a Blossom (no board slots); 5 a second tree; fewer than 3 takes them away.
+    Field(*m, 0, *v.db, {9046, 9047, 9048}, 3);
+    CHECK(CountOnBoard(p0, 9110) == 1 && CountOnBoard(p0, 9111) == 1 && p0.Roster().BoardCount() == slotsBefore + 3);
+    UnitId tree = 0;
+    for (const UnitInstance& u : p0.Roster().Units()) if (u.champion->id == 9110) tree = u.id;
+    CHECK(m->TrySellUnit(0, tree) == ActionResult::InvalidUnit);
+    CHECK(m->TryMoveUnit(0, tree, LocationType::Bench, 8, 0) == ActionResult::InvalidSlot);
+    CHECK(m->TryEquipItem(0, tree, 1) != ActionResult::Ok);
+    Field(*m, 0, *v.db, {9049, 9050}, 2);
+    CHECK(CountOnBoard(p0, 9110) == 2 && CountOnBoard(p0, 9112) == 0);
+    CHECK(m->VerifyPoolIntegrity() && m->VerifyRosterLayouts());
+
+    // ---- Hexagon: 2 on seat 1's board offers 3 tier-1 modules; the choice is recorded.
+    Field(*m, 1, *v.db, {9019, 9023}, 3);
+    const TraitChoice& choice = m->PendingTraitChoice(1);
+    CHECK(choice.kind == TraitChoiceKind::Module && choice.tier == 1 && choice.options.size() == 3);
+    const std::uint32_t firstModule = choice.options.empty() ? 0 : choice.options[0];
+    CHECK(m->TryPickTraitChoice(1, -1) == ActionResult::InvalidSlot);   // a module cannot be declined
+    CHECK(m->TryPickTraitChoice(1, 0) == ActionResult::Ok && m->Players().Get(1)->Traits().modules == std::vector<std::uint32_t>{firstModule});
+    CHECK(!m->PendingTraitChoice(1).Pending());
+
+    // ---- Najmi (seat 0 gets Astra + Orion + Sylva): the home side always loses here -> 20 + 5 x streak star dust, + 2 per takedown.
+    Field(*m, 0, *v.db, {9008, 9024}, 1);   // Sylva (Nature / Najmi) is not fielded: Astra, Orion + ... Faire (Hexagon / Najmi / Sorcerer)
+    Field(*m, 0, *v.db, {9005}, 0);
+    int najmi = 0;
+    CHECK(m->TraitTier(0, *v.traits->FindById(7), &najmi) == 1 && najmi == 3);
+    // Run rounds until the first combat is resolved.
+    const std::uint64_t stateBefore = m->StateHash();
+    for (int i = 0; i < 200 && m->Round() == 1; ++i) m->Tick();
+    CHECK(stateBefore != m->StateHash());
+    const PlayerState* home = nullptr;
+    for (const Matchup& mu : m->CurrentMatchups()) home = m->Players().Get(mu.home);
+    const PlayerState& seat0 = *m->Players().Get(0);
+    if (home == &seat0) {   // seat 0 was the home side: it lost and got star dust (its takedowns were by the first board unit -- not a Najmi)
+        CHECK(seat0.Traits().starDust == 25 || seat0.Traits().starDust == 0);   // (0 once a prototype was taken)
+    }
+    bool dust = false;
+    for (const auto& [player, reward] : log.rewards) dust = dust || (player == 0 && reward.starDust > 0);
+    CHECK(dust == (home == &seat0));
+    // A prototype offer follows star dust (tier 1: a component).
+    bool prototype = false;
+    for (const auto& [player, c] : log.offered) prototype = prototype || (player == 0 && c.kind == TraitChoiceKind::Prototype && c.tier == 1 && c.options.size() == 1);
+    CHECK(prototype == (home == &seat0));
+
+    // ---- Snapshot: the trait state survives a round trip.
+    const std::vector<std::uint8_t> bytes = m->Snapshot();
+    std::string err;
+    auto restored = MatchManager::Restore(bytes, cfg, *v.db, std::make_unique<AwayWinsSimulator>(4), &err, v.items.get(), nullptr, nullptr, RestoreOptions{},
+                                          v.traits.get());
+    CHECK(restored != nullptr);
+    if (!restored) { std::printf("  restore: %s\n", err.c_str()); return; }
+    CHECK(restored->StateHash() == m->StateHash() && restored->Snapshot() == bytes);
+    CHECK(restored->Players().Get(1)->Traits().modules == m->Players().Get(1)->Traits().modules);
+    CHECK(restored->PendingTraitChoice(0) == m->PendingTraitChoice(0));
+}
+
+static void TestTraitV2RiftHerald() {
+    V2 v;
+    if (!v.ok) return;
+    TestGameConfig cfg;
+    cfg.match.playerCount = 2;
+    cfg.match.planningTicks = 10;
+    cfg.match.combatTicks = 5;
+    cfg.match.resolutionTicks = 2;
+    auto m = MatchManager::Create(cfg, *v.db, 9, std::make_unique<AwayWinsSimulator>(0), nullptr, v.items.get(), nullptr, nullptr, v.traits.get());
+    CHECK(m != nullptr);
+    if (!m) return;
+    m->Start();
+    Field(*m, 0, *v.db, {9015, 9016, 9021, 9025, 9029, 9037}, 3);   // 6 different Phaisa
+    for (int i = 0; i < 400 && m->Round() < 4 && !m->IsFinished(); ++i) {
+        if (m->Phase() == MatchPhase::Planning && m->Players().Get(0)->Traits().unitGranted) break;
+        m->Tick();
+    }
+    const PlayerState& p = *m->Players().Get(0);
+    int heralds = 0;
+    for (const UnitInstance& u : p.Roster().Units()) heralds += u.champion->id == 9041 ? 1 : 0;
+    CHECK(p.Traits().unitGranted && heralds == 1 && p.Traits().grantCombats == 2);
+    CHECK(m->VerifyPoolIntegrity());
+    // It sells for its price and returns nothing to the pool.
+    UnitId herald = 0;
+    for (const UnitInstance& u : p.Roster().Units()) if (u.champion->id == 9041) herald = u.id;
+    const int gold = p.Gold();
+    if (m->Phase() == MatchPhase::Planning && herald != 0) {
+        CHECK(m->TrySellUnit(0, herald) == ActionResult::Ok && m->Players().Get(0)->Gold() == gold + 4 && m->VerifyPoolIntegrity());
     }
 }
 
@@ -11731,6 +12400,16 @@ int main(int argc, char** argv) {
         {"12 roster champions + synergies", TestFullRosterBrawlWithSynergies},
         {"Cone geometry", TestConeGeometry},
         {"Targets: highest-damage / lowest-HP / zone / random / cone", TestNewTargetSelectors},
+        {"Sept. 2026 primitives: densest cluster, N lowest allies, crit bounce, pull to centre, ally strike, enemy death", TestSeptember2026Primitives},
+        {"Trait v2: classes (Gunslinger, Duelist, Bastion) + Rivet + Fishbones", TestTraitV2Classes},
+        {"Trait v2: Helios Rally", TestTraitV2HeliosRally},
+        {"Trait v2: Phaisa mutations, supercharge, Baron, Queen", TestTraitV2PhaisaMutations},
+        {"Trait v2: Selini paths", TestTraitV2SeliniPaths},
+        {"Trait v2: Hexagon Invention, modules, echo, clones", TestTraitV2HexagonInvention},
+        {"Trait v2: Hexa pilot", TestTraitV2HexaPilot},
+        {"Trait v2: Nature plants in combat", TestTraitV2NatureInCombat},
+        {"Trait v2: match level (plants, modules, star dust, snapshot)", TestTraitV2MatchLevel},
+        {"Trait v2: Rift Herald", TestTraitV2RiftHerald},
         {"Lunis: teleport, untargetable, aggro drop", TestTeleportAndUntargetable},
         {"Astra: tether redirect", TestAstraTether},
         {"Soul: shield refill, no healing, steal", TestSoulShieldAndSteal},

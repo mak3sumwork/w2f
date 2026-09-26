@@ -23,6 +23,7 @@ bool ValidateAmount(const Amount& amount, const std::string& what, std::string* 
         if (windowed && (term.windowTicks < 1 || term.windowTicks > 600)) {
             return Fail(error, what + ": a windowed source needs a window of 1..600 ticks");
         }
+        if ((term.source == StatSource::TraitStarLevel) != !term.trait.empty()) return Fail(error, what + ": a TraitStarLevel term (and only that) names a \"trait\"");
     }
     return true;
 }
@@ -38,9 +39,14 @@ bool ValidateStatus(const StatusEffect& status, const std::string& name, std::st
         bool hasValue = false;
         for (int f : status.value.flat) hasValue = hasValue || f != 0;
         if (!hasValue && status.value.terms.empty()) return Fail(error, name + ": a flat bonus status needs a \"value\"");
+    } else if (status.percentFromValue) {
+        bool hasValue = !status.value.terms.empty();
+        for (int f : status.value.flat) hasValue = hasValue || f != 0;
+        if (!hasValue) return Fail(error, name + ": a formula percent needs a formula");
     } else if (!status.value.terms.empty()) {
         return Fail(error, name + ": \"value\" only applies to the flat bonus statuses (BonusAttackDamage, BonusArmor, ...)");
     }
+    if (status.status == StatusType::ManaCost && !status.permanent) return Fail(error, name + ": ManaCost must be permanent");
     if (status.status == StatusType::BonusMaxMana && !status.permanent) return Fail(error, name + ": BonusMaxMana must be permanent");
     if (status.status == StatusType::ExecuteBelow) {
         for (int pct : status.percent) {
@@ -94,8 +100,12 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         case CastTrigger::OnHpDropBelowPercent:
         case CastTrigger::OnAllyDealDamage:
         case CastTrigger::OnAnyUnitDeath:
+        case CastTrigger::OnEnemyDeath:
         case CastTrigger::OnShieldBreak:
         case CastTrigger::EveryInterval:
+        case CastTrigger::OnTeamHpLoss:
+        case CastTrigger::OnDeath:
+        case CastTrigger::OnAllyDeath:
             if (ability.castLockTicks != 0 || ability.channelTicks != 0 || ability.castOnDeath || ability.resetCountOnTargetChange) {
                 return Fail(error, name + " is a hook: it cannot have a cast lock, a channel, cast on death, or reset-on-target-change");
             }
@@ -111,11 +121,18 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
     if (ability.shieldFromAbility != kNoAbility && ability.trigger != CastTrigger::OnShieldBreak) {
         return Fail(error, name + ": onlyShieldsFrom only applies to OnShieldBreak");
     }
-    if (ability.trigger == CastTrigger::OnHpDropBelowPercent) {
+    if (ability.trigger == CastTrigger::OnHpDropBelowPercent || ability.trigger == CastTrigger::OnTeamHpLoss) {
         if (ability.thresholdPercent < 1 || ability.thresholdPercent > 99) return Fail(error, name + ": thresholdPercent must be 1..99");
     } else if (ability.thresholdPercent != 0) {
-        return Fail(error, name + ": thresholdPercent only applies to OnHpDropBelowPercent");
+        return Fail(error, name + ": thresholdPercent only applies to OnHpDropBelowPercent and OnTeamHpLoss");
     }
+    for (int n : ability.afterAttacks) {
+        if (n < 0 || n > 1000) return Fail(error, name + ": afterAttacks must be 0..1000");
+        if (n != 0 && ability.trigger != CastTrigger::OnBasicAttack && ability.trigger != CastTrigger::EveryNthAttack) {
+            return Fail(error, name + ": afterAttacks only applies to OnBasicAttack / EveryNthAttack hooks");
+        }
+    }
+    if (!ability.triggerTrait.empty() && ability.trigger != CastTrigger::OnAllyDeath) return Fail(error, name + ": triggerTrait only applies to OnAllyDeath");
     if (ability.damageFilter != DamageFilter::Any && ability.trigger != CastTrigger::OnDealDamage && ability.trigger != CastTrigger::OnAllyDealDamage) {
         return Fail(error, name + ": damageFilter only applies to OnDealDamage and OnAllyDealDamage");
     }
@@ -147,13 +164,25 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
         const bool needsCastTarget = effect.target.mode == TargetMode::CurrentTarget || effect.target.mode == TargetMode::AreaAroundTarget ||
                                      effect.target.mode == TargetMode::LineBehindTarget || effect.target.mode == TargetMode::ConeTowardTarget ||
                                      effect.target.mode == TargetMode::HighestHpEnemyNearTarget;
-        if (ability.trigger == CastTrigger::StartOfCombat && needsCastTarget) {
+        if ((ability.trigger == CastTrigger::StartOfCombat || ability.trigger == CastTrigger::OnDeath || ability.trigger == CastTrigger::OnAllyDeath ||
+             ability.trigger == CastTrigger::OnTeamHpLoss) && needsCastTarget) {
             return Fail(error, name + " is a passive: it has no target to aim at (use Self, AreaAroundSelf, ClosestEnemies or AlliesInStartLine)");
         }
         if (effect.target.mode == TargetMode::ClosestEnemies && (effect.target.count < 1 || effect.target.count > 16)) {
             return Fail(error, name + ": ClosestEnemies needs a count of 1..16");
         }
         if (effect.target.count < 0 || effect.target.count > 16) return Fail(error, name + ": a target count must be 0..16");
+        for (int c : effect.target.countPerStar) {
+            if (c < 0 || c > 16) return Fail(error, name + ": a per-star target count must be 0..16");
+        }
+        if (effect.target.mode == TargetMode::TopDamageEnemies && effect.target.count < 1 && effect.target.countPerStar[0] < 1) {
+            return Fail(error, name + ": TopDamageEnemies needs a count");
+        }
+        if (const auto* clone = std::get_if<CloneEffect>(&effect.payload)) {
+            if (effect.target.mode != TargetMode::Self) return Fail(error, name + ": a Clone effect must target Self");
+            if (clone->trait.empty() || clone->count < 1 || clone->count > 4) return Fail(error, name + ": a Clone copies 1..4 units of a named trait");
+            if (clone->statPercent < 1 || clone->statPercent > 200) return Fail(error, name + ": a Clone's statPercent must be 1..200");
+        }
         if (const auto* displace = std::get_if<DisplaceEffect>(&effect.payload)) {
             if (displace->hexes < 1 || displace->hexes > 8) return Fail(error, name + ": a Displace moves 1..8 hexes");
         }
@@ -207,6 +236,12 @@ bool ValidateAbility(const AbilityDefinition& ability, int maxMana, std::string*
             for (const StatusEffect& k : damage->onKill) {
                 if (!ValidateStatus(k, name + " (on kill)", error)) return false;
             }
+            if (damage->bounceOnCritPercent < 0 || damage->bounceOnCritPercent > 1000) return Fail(error, name + ": bounceOnCritPercent must be 0..1000");
+        } else if (const auto* strike = std::get_if<AllyStrikeEffect>(&effect.payload)) {
+            if (strike->ally == 0) return Fail(error, name + ": an AllyStrike needs the ally's champion id");
+            for (int pct : strike->percentOfAllyAttackDamage) {
+                if (pct < 0 || pct > 10000) return Fail(error, name + ": percentOfAllyAttackDamage must be 0..10000");
+            }
         } else if (const auto* shield = std::get_if<ShieldEffect>(&effect.payload)) {
             if (!ValidateAmount(shield->amount, name, error) || !ValidateAmount(shield->duration, name, error)) return false;
             if (!ValidateAmount(shield->cap, name, error)) return false;
@@ -251,6 +286,11 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
     if (a.requiresCharge) h.Add(0xC4A26Eull);   // (only hashed when set, so data that predates it hashes as before)
     if (a.intervalTicks != 0) h.AddInt(a.intervalTicks);
     if (a.shieldFromAbility != kNoAbility) h.Add(a.shieldFromAbility);
+    for (int n : a.afterAttacks) {   // (the September 2026 fields are only hashed when set)
+        if (n != 0) h.AddInt(0xAF7E00ll + n);
+    }
+    if (!a.triggerTrait.empty()) h.AddString(a.triggerTrait);
+    if (a.stopsOnDeath) h.Add(0x5709DEull);
     h.AddInt(static_cast<std::int64_t>(a.effects.size()));
     for (const AbilityEffect& e : a.effects) {
         h.Add(static_cast<std::uint64_t>(e.payload.index()));
@@ -265,6 +305,16 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
         h.AddInt(e.target.radius);
         h.Add(static_cast<std::uint64_t>(e.target.side));
         h.AddInt(e.target.count);
+        if (!e.target.trait.empty()) h.AddString(e.target.trait);
+        if (e.target.champion != 0) h.Add(e.target.champion);
+        for (int c : e.target.countPerStar) {
+            if (c != 0) h.AddInt(0xC0C0ll + c);
+        }
+        if (const auto* clone = std::get_if<CloneEffect>(&e.payload)) {
+            h.AddString(clone->trait);
+            h.AddInt(clone->count);
+            h.AddInt(clone->statPercent);
+        }
         if (const auto* summon = std::get_if<SummonEffect>(&e.payload)) {
             h.Add(summon->champion);
             h.AddInt(summon->starLevel);
@@ -274,6 +324,15 @@ void HashAbility(Fnv1a& h, const AbilityDefinition& a) {
         if (const auto* displace = std::get_if<DisplaceEffect>(&e.payload)) {
             h.Add(static_cast<std::uint64_t>(displace->direction));
             h.AddInt(displace->hexes);
+        }
+        if (const auto* damage = std::get_if<DamageEffect>(&e.payload)) {
+            if (damage->bounceOnCritPercent != 0) h.AddInt(0xB0C0ll + damage->bounceOnCritPercent);   // (only hashed when set)
+        }
+        if (const auto* strike = std::get_if<AllyStrikeEffect>(&e.payload)) {
+            h.Add(strike->ally);
+            h.Add(static_cast<std::uint64_t>(strike->type));
+            for (int pct : strike->percentOfAllyAttackDamage) h.AddInt(pct);
+            h.Add(strike->canCrit ? 1 : 0);
         }
     }
 }
@@ -299,6 +358,7 @@ AreaDescription DescribeArea(const AbilityDefinition& ability) {
         switch (t.mode) {
             case TargetMode::Self: break;
             case TargetMode::AreaAroundTarget:
+            case TargetMode::AreaAroundDensestEnemy:
             case TargetMode::HighestHpEnemyNearTarget: here = {AreaShape::Circle, t.radius}; break;
             case TargetMode::AreaAroundSelf: here = {AreaShape::CircleSelf, t.radius}; break;
             case TargetMode::LineBehindTarget: here = {AreaShape::Line, t.radius}; break;
@@ -307,6 +367,7 @@ AreaDescription DescribeArea(const AbilityDefinition& ability) {
             case TargetMode::AllEnemies:
             case TargetMode::AllAllies: here = {AreaShape::All, 0}; break;
             case TargetMode::ClosestEnemies: here = {t.count > 1 ? AreaShape::Circle : AreaShape::Single, 0}; break;
+            case TargetMode::TopDamageEnemies: here = {AreaShape::Single, 0}; break;
             case TargetMode::CurrentTarget:
             case TargetMode::HighestDamageAlly:
             case TargetMode::LowestHpAlly:

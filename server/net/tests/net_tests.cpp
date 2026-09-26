@@ -1394,7 +1394,8 @@ static void TestNetworkedMatchEqualsBareEngine() {
     GameConfig gc = r.data.config;
     gc.match.playerCount = 2;
     std::string err;
-    auto bare = MatchManager::Create(gc, *r.champions, r.cfg.seed, std::make_unique<CombatSimulator>(gc.combat, r.traits.get(), r.items.get()), &err, r.items.get(), r.encounters.get());
+    auto bare = MatchManager::Create(gc, *r.champions, r.cfg.seed, std::make_unique<CombatSimulator>(gc.combat, r.traits.get(), r.items.get()), &err, r.items.get(), r.encounters.get(),
+                                     nullptr, r.traits.get());
     CHECK(bare != nullptr);
     if (!bare) return;
     bare->Start();
@@ -1413,6 +1414,7 @@ static void TestNetworkedMatchEqualsBareEngine() {
                 case CommandType::MoveUnit: res = bare->TryMoveUnit(l.player, c.unit, c.location, c.x, c.y); break;
                 case CommandType::EquipItem: res = bare->TryEquipItem(l.player, c.unit, c.item); break;
                 case CommandType::UnequipItem: res = bare->TryUnequipItem(l.player, c.unit, c.slot); break;
+                case CommandType::PickTraitChoice: res = bare->TryPickTraitChoice(l.player, c.choiceIndex); break;
                 default: break;
             }
             sameResults = sameResults && res == l.result;
@@ -2881,6 +2883,16 @@ static void TestCombineItemsAndPublicBenchOverTheProtocol() {
     r.Say(a, R"({"action": "set_shop_lock", "locked": 1})");
     CHECK(Str(r.Last(a, "error"), "code") == "wrong_type");
 
+    // Trait system v2 (revision 5): pick_trait_choice. Nothing is pending here, so the engine answers AlreadyPicked; the grammar is checked too.
+    r.Say(a, R"({"action": "pick_trait_choice", "index": 0, "id": 9})");
+    CHECK(Str(r.Last(a, "result"), "result") == "AlreadyPicked" && Num(r.Last(a, "result"), "id") == 9);
+    r.Say(a, R"({"action": "pick_trait_choice", "index": 8})");
+    CHECK(Str(r.Last(a, "error"), "code") == "out_of_range");
+    r.Say(a, R"({"action": "pick_trait_choice"})");
+    CHECK(Str(r.Last(a, "error"), "code") == "missing_field");
+    r.Say(a, R"({"action": "get_state"})");
+    CHECK(Str(*r.Last(a, "state").Find("trait_choice"), "kind") == "none" && r.Last(a, "state").Find("traits")->Find("star_dust") != nullptr);
+
     // The fighters' items travel with the fight: combat.unit_items maps a unit id to its item ids.
     const UnitId unit = player->Roster().Units()[0].id;
     CHECK(player->AddItemToBag(4));
@@ -2910,7 +2922,7 @@ static void TestCatalog() {
     bool alesk = false, sword = false, soulsSword = false, helios = false, monster = false;
     for (const json::Value& c : champions->Items()) {
         if (Num(c, "id") == 10001) monster = Str(c, "name") == "Gloop" && c.Find("monster") && c.Find("monster")->IsBool();
-        if (Num(c, "id") == 9001) alesk = Str(c, "name") == "Alesk" && Num(c, "cost") == 4 && Str(c, "role") == "tank" && c.Find("traits")->Items().size() == 1 && c.Find("hp")->Items().size() == 3;
+        if (Num(c, "id") == 9001) alesk = Str(c, "name") == "Alesk" && Num(c, "cost") == 4 && Str(c, "role") == "tank" && c.Find("traits")->Items().size() == 2 && c.Find("hp")->Items().size() == 3;
     }
     for (const json::Value& i : items->Items()) {
         if (Num(i, "id") == 3) sword = Str(i, "name") == "Coregons Sword" && i.Find("components")->Items().empty() && Num(*i.Find("stats"), "attack_damage") == 15;

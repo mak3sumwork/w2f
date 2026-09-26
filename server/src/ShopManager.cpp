@@ -34,12 +34,12 @@ ActionResult ShopManager::TryBuy(std::size_t slot) {
     // Room is checked before gold so a rejected purchase changes nothing. A full roster still
     // accepts a copy that completes a merge.
     if (!owner_.CanAcquire(champion)) return owner_.AcquireBlockedReason(champion);
-    if (owner_.Gold() < champion->cost) return ActionResult::NotEnoughGold;
+    if (owner_.Gold() < champion->Price()) return ActionResult::NotEnoughGold;
 
-    const bool paid = owner_.TrySpendGold(champion->cost);
+    const bool paid = owner_.TrySpendGold(champion->Price());
     assert(paid);
     (void)paid;
-    const ActionResult acquired = owner_.AcquireUnit(champion, champion->cost);
+    const ActionResult acquired = owner_.AcquireUnit(champion, champion->Price());
     assert(acquired == ActionResult::Ok);
     (void)acquired;
     slots_[slot] = nullptr;  // The copy stays checked out of the pool; it is now a unit (or part of a merged one).
@@ -53,9 +53,25 @@ bool ShopManager::RestoreState(const std::vector<const ChampionDefinition*>& slo
     return true;
 }
 
+bool ShopManager::OfferSpecial(const ChampionDefinition* champion) {
+    if (champion == nullptr || champion->IsPooled() || slots_.empty()) return false;
+    for (const ChampionDefinition* slot : slots_) {
+        if (slot == champion) return false;   // already on offer
+    }
+    if (slots_[0] != nullptr && slots_[0]->IsPooled()) {
+        const bool returned = pool_.Return(slots_[0], 1);
+        assert(returned);
+        (void)returned;
+    }
+    slots_[0] = champion;
+    return true;
+}
+
 void ShopManager::ReturnShopToPool() {
     for (auto& slot : slots_) {
-        if (slot != nullptr) {
+        if (slot != nullptr && !slot->IsPooled()) {   // a special offer (the Queen) simply goes
+            slot = nullptr;
+        } else if (slot != nullptr) {
             const bool returned = pool_.Return(slot, 1);
             assert(returned);
             (void)returned;

@@ -9,59 +9,203 @@
 //   "scope": "Team"         -> applied ONCE for the whole team (cast by its lowest-id holder), aimed by the effect's own "target"
 //                              ("Self" by default; "AllEnemies" / "AllAllies" to change a whole side, e.g. the Coregons zone)
 // A breakpoint may also hand hooks ("triggers") to its units. See docs/champions-json.md and docs/content-notes.md.
+//
+// TRAIT SYSTEM v2 (September 2026, W2F_GameDesignDocument.md section 2B). Every champion has an ORIGIN (Helios, Selini, Phaisa, Coregons, Hexagon,
+// Najmi, Nature, Omnilium) and one or two CLASSES (Bastion, Bruiser, Sorcerer, Marksman, Mystic, Duelist, Assassin, Gunslinger, Protector). The
+// match-level keys ("paths", "xpAfterCombat", "takedownsPerGold", "starDust", "grantUnit", "plants", "moduleTier", "queen") are read by the MatchManager;
+// the rest acts inside fights. Triggers with scope "Team" fire once per team (OnTeamHpLoss only).
 {
   "version": 1,
   "traits": [
 
-    // Synergies from W2F_GameDesignDocument.md section 2. A breakpoint REPLACES the lower ones (only the highest reached applies), so each one lists
-    // everything it does. "Count" = different champions with the trait on the board. Values the doc leaves open are marked ASSUMED.
+    // ================================ ORIGINS ================================
 
-    // HELIOS (3/6) "The Sun's Wrath": Helios units' basic attacks burn their target for 2% / 5% of its MAX HP as true damage over 3 s.
-    // Every attack RE-LIGHTS the burn: it refreshes its duration instead of stacking, so a target has at most one Helios burn at a time
-    // (whoever lit it last gets the credit). A tick every second: ASSUMED.
+    // HELIOS (3/5/7/11) "The Sun's Wrath": Helios units gain 12 / 35 / 35 / 150 Armor and Magic Resist. RALLY: each time the team has lost another quarter
+    // of its total max HP (below 75, 50 and 25 percent), every Helios unit's mana bar gets 10 percent shorter. (7): each Rally also smites every enemy for 15
+    // percent of its max HP as true damage. (11): each Rally also executes the enemies left below 25 percent of their max HP. (Aureon's own trigger: +30 mana.)
     {
       "id": 1, "name": "Helios",
       "breakpoints": [
-        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 201, "name": "The Sun's Wrath", "trigger": "OnBasicAttack",
-            "effects": [ { "type": "DoT", "target": "CurrentTarget", "damageType": "True",
-                           "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 2 } ] }, "amountIsTotal": true,
-                           "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ] },
-        { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 202, "name": "The Sun's Wrath", "trigger": "OnBasicAttack",
-            "effects": [ { "type": "DoT", "target": "CurrentTarget", "damageType": "True",
-                           "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 5 } ] }, "amountIsTotal": true,
-                           "durationSeconds": 3, "intervalSeconds": 1, "refreshes": true } ] } } ] }
+        { "count": 3, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 12, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 12, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } } ] },
+        { "count": 5, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 35, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 35, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } } ] },
+        { "count": 7, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 35, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 35, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } }, { "scope": "Team", "ability": { "id": 262, "name": "Solar Smite", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 15 } ] } } ] } } ] },
+        { "count": 11, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 150, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 150, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } }, { "scope": "Team", "ability": { "id": 262, "name": "Solar Smite", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 15 } ] } } ] } }, { "scope": "Team", "ability": { "id": 263, "name": "Judgment of the Sun", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow", "percent": 25, "durationTicks": 3, "delayTicks": 1 } ] } } ] }
       ]
     },
 
-    // PHAISA (3/6) "The Void's Hunger": whenever ANY unit dies on the board, every Phaisa unit gains 4% / 10% bonus Attack Damage and
-    // Ability Power (of its base; it stacks with every death, for the rest of the fight).
+    // PHAISA (2/4/6/9) "The Void's Hunger": Phaisa units gain 8 / 18 / 33 / 40 percent Attack Speed, and 1 / 2 / 3 / all of them carry a MUTATION (the
+    // strongest first: cost, then star), chosen by the unit's class; (9) supercharges them (x2). (6): after 2 combats with Phaisa (6)+ the player is given
+    // the Rift Herald (once per match). (9): Baron Nashor joins every fight. The Queen: 7 different Phaisa on the board at level 10 -> she is offered in the
+    // shop (7 gold, 2 board slots).
     {
       "id": 2, "name": "Phaisa",
+      "mutations": [
+        { "name": "Hyper-Adrenal", "classes": ["Assassin", "Marksman", "Duelist", "Gunslinger"],
+          "effects": [ { "type": "Status", "target": "Self", "status": "BonusCritChance", "value": 15, "permanent": true } ],
+          "triggers": [ { "id": 211, "name": "Hyper-Adrenal", "trigger": "OnDealDamage",
+            "effects": [ { "type": "Damage", "target": "TriggerVictim", "damageType": "True", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 10 } ] } } ] } ],
+          "superEffects": [ { "type": "Status", "target": "Self", "status": "BonusCritChance", "value": 30, "permanent": true } ],
+          "superTriggers": [ { "id": 212, "name": "Hyper-Adrenal", "trigger": "OnDealDamage",
+            "effects": [ { "type": "Damage", "target": "TriggerVictim", "damageType": "True", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 20 } ] } } ] } ] },
+        { "name": "Chitinous Shell", "classes": ["Bastion", "Protector"],
+          "effects": [ { "type": "Status", "target": "Self", "status": "BonusMaxHp", "value": 250, "permanent": true },
+                       { "type": "Status", "target": "Self", "status": "BonusArmor", "value": 30, "permanent": true },
+                       { "type": "Status", "target": "Self", "status": "BonusMagicResist", "value": 30, "permanent": true } ],
+          "superEffects": [ { "type": "Status", "target": "Self", "status": "BonusMaxHp", "value": 500, "permanent": true },
+                            { "type": "Status", "target": "Self", "status": "BonusArmor", "value": 60, "permanent": true },
+                            { "type": "Status", "target": "Self", "status": "BonusMagicResist", "value": 60, "permanent": true } ] },
+        { "name": "Caustic Spores", "classes": ["Sorcerer", "Mystic"],
+          "effects": [ { "type": "Status", "target": "Self", "status": "AbilityPower", "percent": 20, "permanent": true } ],
+          "triggers": [ { "id": 213, "name": "Caustic Spores", "trigger": "OnDealDamage", "damageFilter": "Ability",
+            "effects": [ { "type": "Status", "target": "TriggerVictim", "status": "MagicResist", "percent": -15, "durationSeconds": 4, "stacking": "refresh" } ] } ],
+          "superEffects": [ { "type": "Status", "target": "Self", "status": "AbilityPower", "percent": 40, "permanent": true } ],
+          "superTriggers": [ { "id": 214, "name": "Caustic Spores", "trigger": "OnDealDamage", "damageFilter": "Ability",
+            "effects": [ { "type": "Status", "target": "TriggerVictim", "status": "MagicResist", "percent": -30, "durationSeconds": 4, "stacking": "refresh" } ] } ] },
+        { "name": "Voidborn Siphon",
+          "effects": [ { "type": "Status", "target": "Self", "status": "Omnivamp", "percent": 12, "permanent": true } ],
+          "superEffects": [ { "type": "Status", "target": "Self", "status": "Omnivamp", "percent": 24, "permanent": true } ] }
+      ],
+      "queen": { "champion": 9043, "uniqueHolders": 7, "level": 10 },
       "breakpoints": [
-        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 211, "name": "The Void's Hunger", "trigger": "OnAnyUnitDeath",
-            "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 6, "permanent": true },
-                         { "type": "Status", "target": "Self", "status": "AbilityPower",  "percent": 6, "permanent": true } ] } } ] },
-        { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 212, "name": "The Void's Hunger", "trigger": "OnAnyUnitDeath",
-            "effects": [ { "type": "Status", "target": "Self", "status": "AttackDamage", "percent": 10, "permanent": true },
-                         { "type": "Status", "target": "Self", "status": "AbilityPower",  "percent": 10, "permanent": true } ] } } ] }
+        { "count": 2, "mutationSlots": 1, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 8, "permanent": true } ] },
+        { "count": 4, "mutationSlots": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 25, "permanent": true } ] },
+        { "count": 6, "mutationSlots": 3, "grantUnit": { "champion": 9041, "afterCombats": 2 },
+          "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 33, "permanent": true } ] },
+        { "count": 9, "mutationSlots": -1, "supercharge": true, "grantUnit": { "champion": 9041, "afterCombats": 2 },
+          "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 40, "permanent": true },
+                       { "scope": "Team", "type": "Summon", "champion": 9042, "star": 1, "count": 1 } ] }
       ]
     },
 
-    // HEXAGON (2/4) "The Perfect Equation": Hexagon units start the fight with a 300 / 600 shield. At 4, the first time one of their shields is
-    // broken it explodes for 200 magic damage to the enemies adjacent to it. ("The shield" is read as once per unit: the first shield to break.)
+    // HEXAGON (2/4/6) "The Perfect Equation": an INVENTION stands on the team's right-most back hex (untargetable; it neither moves nor attacks). 8 s into
+    // every fight it fires the modules the player chose. Reaching (2), (4), (6) for the first time offers 3 random modules of tier 1 / 2 / 3 (pick 1;
+    // bots and the timer take the first). A module works while the trait is at (or above) its tier.
     {
-      "id": 3, "name": "Hexagon",
+      "id": 3, "name": "Hexagon", "invention": 9044,
+      "modules": [
+        { "id": 401, "name": "Electrical Overload", "tier": 1, "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "delaySeconds": 8,
+            "amount": { "flat": 100, "terms": [ { "source": "TargetMaxHp", "percent": 8 } ] } } ] },
+        { "id": 402, "name": "Blast Shield", "tier": 1, "effects": [ { "type": "Shield", "target": "AllAllies", "delaySeconds": 8, "durationSeconds": 6,
+            "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 20 } ] } } ] },
+        { "id": 403, "name": "90 Caliber Nets", "tier": 1, "effects": [ { "type": "Status", "target": { "mode": "TopDamageEnemies", "count": 3 }, "status": "Stun",
+            "durationSeconds": 2, "delaySeconds": 8 } ] },
+        { "id": 404, "name": "E.M.P.", "tier": 1, "effects": [ { "type": "Mana", "target": "AllEnemies", "amount": -30, "delaySeconds": 8 } ] },
+        { "id": 405, "name": "Continuum Cogs", "tier": 1, "effects": [
+            { "type": "Status", "target": "AllAllies", "status": "BonusManaRegen", "value": 2000, "permanent": true, "delaySeconds": 8 },
+            { "type": "Status", "target": "AllAllies", "status": "AbilityPower", "percent": 20, "permanent": true, "delaySeconds": 8 } ] },
+        { "id": 406, "name": "Overclocked Capacitors", "tier": 1, "effects": [ { "type": "Status", "target": "AllAllies", "status": "AttackSpeed", "percent": 25,
+            "permanent": true, "delaySeconds": 8 } ] },
+        { "id": 407, "name": "Tuned Oscillator", "tier": 1, "effects": [ { "type": "Status", "target": "AllAllies", "status": "HealingAmp", "percent": 25,
+            "permanent": true, "delaySeconds": 8 } ] },
+        { "id": 411, "name": "Magnetron Coil", "tier": 2, "effects": [ { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "DamageAmp",
+            "permanent": true, "delaySeconds": 8, "percent": { "terms": [ { "source": "TargetCastCount", "percent": 500 } ] } } ] },
+        { "id": 412, "name": "Gigantification Ray", "tier": 2, "effects": [ { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "MaxHp",
+            "percent": 40, "permanent": true, "delaySeconds": 8 } ] },
+        { "id": 413, "name": "Micro-Rockets", "tier": 2, "effects": [ { "type": "Damage", "target": "RandomEnemy", "damageType": "Magic", "amount": 90,
+            "delaySeconds": 8, "repeat": { "count": 12, "everyTicks": 2 } } ] },
+        { "id": 414, "name": "Kinetic Barrier", "tier": 2, "effects": [
+            { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "BonusArmor", "value": 40, "permanent": true, "delaySeconds": 8 },
+            { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "BonusMagicResist", "value": 40, "permanent": true, "delaySeconds": 8 } ] },
+        { "id": 415, "name": "Acceleration Gate", "tier": 2, "effects": [ { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" },
+            "status": "BonusManaRegen", "value": 10000, "durationSeconds": 4, "delaySeconds": 8 } ] },
+        { "id": 421, "name": "Mining Drill", "tier": 3, "goldAfterCombat": 4 },
+        { "id": 422, "name": "Superior Lifeform", "tier": 3, "effects": [ { "type": "Clone", "target": "Self", "trait": "Hexagon", "count": 2, "statPercent": 60,
+            "delaySeconds": 8 } ] },
+        { "id": 423, "name": "Upgrade!", "tier": 3, "effects": [
+            { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "AttackSpeed", "percent": 40, "permanent": true, "delaySeconds": 8 },
+            { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "MaxHp", "percent": 30, "permanent": true, "delaySeconds": 8 } ] },
+        { "id": 424, "name": "Echo Engine", "tier": 3, "echoEverySeconds": 8 },
+        { "id": 425, "name": "Armor Nullifier", "tier": 3, "effects": [ { "type": "Status", "target": { "mode": "AllAllies", "trait": "Hexagon" }, "status": "DamageAmp",
+            "percent": 25, "permanent": true, "delaySeconds": 8 } ] }
+      ],
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 300, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Shield", "amount": 300, "permanent": true } ],
-          "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 221, "name": "Shield Detonation", "trigger": "OnShieldBreak", "maxTriggers": 1,
-            "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false },
-                           "damageType": "Magic", "amount": 120 } ] } } ] }
+        { "count": 2, "moduleTier": 1 },
+        { "count": 4, "moduleTier": 2 },
+        { "count": 6, "moduleTier": 3 }
+      ]
+    },
+
+    // SELINI (3/5/7) "The Moon's Shadow": every match, ONE path is chosen at random from the match seed (the same for every player).
+    //   Enlightenment: Selini units gain +5/12/18 percent AD and AP, plus 1.5/2.5/3.5 per player level (balance pass; the sheet: 10/15/20 plus 2/3/4); the
+//   player gains 1/2/4 XP after every combat.
+    //   Prosperity: Selini units gain +6/20/40 percent AD and AP (balance pass; the sheet: 10/25/40), plus 2 per gold the path has paid; 1 gold per 4 takedowns by Selini units (the count
+    //   carries over between rounds).
+    {
+      "id": 6, "name": "Selini",
+      "paths": [
+        { "name": "Enlightenment", "breakpoints": [
+          { "count": 3, "xpAfterCombat": 1, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 150 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 150 } ] } } ] },
+          { "count": 5, "xpAfterCombat": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } } ] },
+          { "count": 7, "xpAfterCombat": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 18, "terms": [ { "source": "PlayerLevel", "percent": 350 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 18, "terms": [ { "source": "PlayerLevel", "percent": 350 } ] } } ] }
+        ] },
+        { "name": "Prosperity", "breakpoints": [
+          { "count": 3, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 6, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 6, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
+          { "count": 5, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 20, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 20, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
+          { "count": 7, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 40, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 40, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] }
+        ] }
+      ]
+    },
+
+    // NAJMI (3/5/6) "The Cosmic Link": whenever a Najmi unit casts, the allies next to it gain 15 / 25 / 25 mana. STAR DUST: after a lost player combat the
+    // player gains 20 + 5 x the loss streak, and 2 per Najmi takedown; (6) is prismatic: all star dust x2. Each time star dust comes in, a prototype
+    // from the bank's tier is offered: take it (the bank is spent) or decline (it keeps growing). Below 35 a component, 35+ a completed item, 70+ a
+    // choice of 3 completed items, 100+ "cash out": a completed item and 10 gold.
+    {
+      "id": 7, "name": "Najmi",
+      "breakpoints": [
+        { "count": 3, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
+            "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 15 } ] } } ] },
+        { "count": 5, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 242, "name": "The Cosmic Link", "trigger": "OnCast",
+            "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 25 } ] } } ] },
+        { "count": 6, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2, "multiplier": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 243, "name": "The Cosmic Link", "trigger": "OnCast",
+            "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 25 } ] } } ] }
+      ]
+    },
+
+    // NATURE (3/5/7/9/11) "The First Forest": the player gains PLANTS on the board (no board slot; they stay where they are put). (3) a Stonebark Tree and an
+    // Omnilium Blossom; (5) a second Stonebark Tree, and Stonebark Trees gain 200 HP; (7) the Omnilium Protector; (9) plants are 2-star; (11) plants are
+    // 3-star and the forest comes to life (the trees walk and fight). Plants gain 25 percent max HP and 10 percent Ability Power per Nature star level (the
+    // stars of the Nature champions on the board, added up).
+    {
+      "id": 17, "name": "Nature",
+      "breakpoints": [
+        { "count": 3, "plants": [ { "champion": 9110, "count": 1 }, { "champion": 9111, "count": 1 } ], "effects": [ { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "MaxHp", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
+          { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 1000 } ] } } ] },
+        { "count": 5, "plants": [ { "champion": 9110, "count": 2 }, { "champion": 9111, "count": 1 } ], "effects": [ { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "MaxHp", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
+          { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 1000 } ] } }, { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "champion": 9110 }, "status": "BonusMaxHp", "value": 200, "permanent": true } ] },
+        { "count": 7, "plants": [ { "champion": 9110, "count": 2 }, { "champion": 9111, "count": 1 }, { "champion": 9112, "count": 1 } ],
+          "effects": [ { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "MaxHp", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
+          { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 1000 } ] } }, { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "champion": 9110 }, "status": "BonusMaxHp", "value": 200, "permanent": true } ] },
+        { "count": 9, "plantStar": 2, "plants": [ { "champion": 9110, "count": 2 }, { "champion": 9111, "count": 1 }, { "champion": 9112, "count": 1 } ],
+          "effects": [ { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "MaxHp", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
+          { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 1000 } ] } }, { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "champion": 9110 }, "status": "BonusMaxHp", "value": 200, "permanent": true } ] },
+        { "count": 11, "plantStar": 3, "plants": [ { "champion": 9110, "count": 2 }, { "champion": 9111, "count": 1 }, { "champion": 9112, "count": 1 } ],
+          "effects": [ { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "MaxHp", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
+          { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
+            "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 1000 } ] } }, { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "champion": 9110 }, "status": "BonusMaxHp", "value": 200, "permanent": true },
+                       { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "Awakened", "permanent": true } ] }
       ]
     },
 
@@ -82,28 +226,6 @@
 
     // OMNILIUM: the origin of Les and Lum; the doc gives it no synergy of its own (Protector is theirs).
     { "id": 4, "name": "Omnilium" },
-
-    // SELINI (3) "The Moon's Shadow": once per fight, the first time a Selini unit falls below 50% HP it drops aggro for 2 s (enemies stop
-    // auto-targeting it: "invisible") and heals 20% of its max HP.
-    {
-      "id": 6, "name": "Selini",
-      "breakpoints": [
-        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 231, "name": "The Moon's Shadow", "trigger": "OnHpDropBelowPercent", "thresholdPercent": 50, "maxTriggers": 1,
-            "effects": [ { "type": "Status", "target": "Self", "status": "AggroDrop", "durationSeconds": 2 },
-                         { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 6 } ] } } ] } } ] }
-      ]
-    },
-
-    // NAJMI (3) "The Cosmic Link": whenever a Najmi unit casts, every ally adjacent to it gains 15 mana.
-    {
-      "id": 7, "name": "Najmi",
-      "breakpoints": [
-        { "count": 3, "triggers": [ { "scope": "TraitHolders", "ability": {
-            "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
-            "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 15 } ] } } ] }
-      ]
-    },
 
     // COREGONS (3/6/8) "The Lost Life". Every breakpoint: Coregons units heal for 7 / 15 / 25% of the damage they deal, and the team gets
     // 3 untargetable Lost Souls (champion 9102). Their max HP is 14 / 40 / 60% of your TANKIEST ally's max HP (read when the fight starts);
@@ -171,7 +293,89 @@
           { "scope": "TraitHolders", "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true }
         ] }
       ]
-    }
+    },
 
+    // ================================ CLASSES ================================
+
+    // BASTION (2/4/6): Bastions gain 20 / 45 / 80 Armor and Magic Resist; every ally gains 10.
+    {
+      "id": 10, "name": "Bastion",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 20, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 20, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 45, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 45, "permanent": true } ] },
+        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 80, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 80, "permanent": true } ] }
+      ]
+    },
+
+    // BRUISER (2/4/6): every ally gains 60 max HP; Bruisers gain 12 / 40 / 65 percent max HP. (Balance pass: the sheet says 100 and 20 / 40 / 65.)
+    {
+      "id": 11, "name": "Bruiser",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 12, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 40, "permanent": true } ] },
+        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 65, "permanent": true } ] }
+      ]
+    },
+
+    // SORCERER (2/4/6/8): every ally gains 10 percent Ability Power; Sorcerers gain 15 / 30 / 50 / 80 percent more.
+    {
+      "id": 12, "name": "Sorcerer",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 15, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 30, "permanent": true } ] },
+        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 50, "permanent": true } ] },
+        { "count": 8, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 80, "permanent": true } ] }
+      ]
+    },
+
+    // MARKSMAN (2/4): Marksmen gain 8 / 30 percent Attack Speed and deal 6 / 20 percent more damage. (Balance pass: the sheet says 12 / 30 and 10 / 20.)
+    {
+      "id": 13, "name": "Marksman",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 8, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 6, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 30, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 20, "permanent": true } ] }
+      ]
+    },
+
+    // MYSTIC (2/4): every ally gains 20 / 50 Magic Resist and 1 / 2 mana per second.
+    {
+      "id": 14, "name": "Mystic",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 20, "permanent": true },
+                                   { "scope": "AllAllies", "type": "Status", "status": "BonusManaRegen", "value": 1000, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 50, "permanent": true },
+                                   { "scope": "AllAllies", "type": "Status", "status": "BonusManaRegen", "value": 2000, "permanent": true } ] }
+      ]
+    },
+
+    // DUELIST (2/4/6): each basic attack gives a Duelist 4 / 7 / 10 percent Attack Speed for the rest of the fight, up to 12 times.
+    {
+      "id": 15, "name": "Duelist",
+      "breakpoints": [
+        { "count": 2, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 271, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 4, "permanent": true } ] } } ] },
+        { "count": 4, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 272, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 7, "permanent": true } ] } } ] },
+        { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 273, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 10, "permanent": true } ] } } ] }
+      ]
+    },
+
+    // GUNSLINGER (2/4): Gunslingers gain 22 / 45 percent Attack Damage; every 4th attack deals 100 / 220 bonus physical damage.
+    {
+      "id": 16, "name": "Gunslinger",
+      "breakpoints": [
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "percent": 22, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 281, "name": "Quick Draw", "trigger": "EveryNthAttack", "attackCount": 4,
+            "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 100 } ] } } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "percent": 45, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 282, "name": "Quick Draw", "trigger": "EveryNthAttack", "attackCount": 4,
+            "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 220 } ] } } ] }
+      ]
+    },
+
+    // HEXA: Hexa's own tag (its cockpit is the champion's "pilot" data). PLANT: the tag of the Nature trait's plants (effects find them by it). No synergy.
+    { "id": 18, "name": "Hexa" },
+    { "id": 19, "name": "Plant" }
   ]
 }

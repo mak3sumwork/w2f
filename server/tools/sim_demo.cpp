@@ -68,6 +68,11 @@ struct PrintSink : ICombatEventSink {
             case StatusType::Poison: return "POISON";
             case StatusType::Bleed: return "BLEED";
             case StatusType::Drain: return "DRAIN";
+            case StatusType::ManaCost: return "MANA-COST%";
+            case StatusType::HealingAmp: return "HEAL-AMP%";
+            case StatusType::Omnivamp: return "OMNIVAMP%";
+            case StatusType::Awakened: return "AWAKENED";
+            case StatusType::Piloting: return "PILOTING";
         }
         return "?";
     }
@@ -198,7 +203,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     std::printf("Loaded Mother Nature: %zu tiers, %d options a round, from %s\n", motherNature->Tiers().size(), motherNature->Options(), naturePath.c_str());
-    auto match = MatchManager::Create(cfg, *db, seed, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get());
+    auto match = MatchManager::Create(cfg, *db, seed, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get(), traits.get());
     if (!match) {
         std::fprintf(stderr, "Cannot start: %s\n", loadError.c_str());
         return 2;
@@ -234,7 +239,7 @@ int main(int argc, char** argv) {
             // "The process crashed during round 10's fight." Rebuild everything from the safety net alone.
             drilled = true;
             const std::vector<std::uint8_t> safetyNet = match->LastPlanningSnapshot();
-            auto recovered = MatchManager::Restore(safetyNet, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get());
+            auto recovered = MatchManager::Restore(safetyNet, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get(), RestoreOptions{}, traits.get());
             if (!recovered) {
                 std::fprintf(stderr, "Crash drill FAILED: %s\n", loadError.c_str());
                 return 3;
@@ -252,7 +257,7 @@ int main(int argc, char** argv) {
         // Every 2000 ticks: snapshot the whole match, restore it, and check the copy is the same match down to the byte.
         if (tick % 2000 == 0) {
             const std::vector<std::uint8_t> bytes = match->Snapshot();
-            auto copy = MatchManager::Restore(bytes, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get());
+            auto copy = MatchManager::Restore(bytes, cfg, *db, makeSimulator(), &loadError, items.get(), encounters.get(), motherNature.get(), RestoreOptions{}, traits.get());
             snapshotsOk = snapshotsOk && copy != nullptr && copy->StateHash() == match->StateHash() && copy->Snapshot() == bytes;
             ++snapshotsChecked;
         }

@@ -101,14 +101,18 @@ def import_icons():
     return count
 
 
-def crafted_parent_material():
+def crafted_parent_material(with_normal=False):
     """M_CraftedPBR: base colour and emissive from two textures (parameters BaseColorTexture / EmissiveTexture), constant roughness / metallic. Used by the crafted models instead of the
-    material Interchange makes from the glTF (that one is a Substrate material which rendered plain white in game mode)."""
-    path = "%s/M_CraftedPBR" % MAT_DIR
+    material Interchange makes from the glTF (that one is a Substrate material which rendered plain white in game mode). M_CraftedPBR_N adds a tangent-space NormalTexture (the
+    high-to-low baked models). Rebuilt on every run."""
+    name = "M_CraftedPBR_N" if with_normal else "M_CraftedPBR"
+    path = "%s/%s" % (MAT_DIR, name)
     lib = unreal.MaterialEditingLibrary
     if unreal.EditorAssetLibrary.does_asset_exist(path):
-        return unreal.EditorAssetLibrary.load_asset(path)
-    mat = unreal.AssetToolsHelpers.get_asset_tools().create_asset("M_CraftedPBR", MAT_DIR, unreal.Material, unreal.MaterialFactoryNew())
+        mat = unreal.EditorAssetLibrary.load_asset(path)
+        lib.delete_all_material_expressions(mat)
+    else:
+        mat = unreal.AssetToolsHelpers.get_asset_tools().create_asset(name, MAT_DIR, unreal.Material, unreal.MaterialFactoryNew())
     albedo = lib.create_material_expression(mat, unreal.MaterialExpressionTextureSampleParameter2D, -600, -100)
     albedo.set_editor_property("parameter_name", "BaseColorTexture")
     emit = lib.create_material_expression(mat, unreal.MaterialExpressionTextureSampleParameter2D, -600, 250)
@@ -122,11 +126,26 @@ def crafted_parent_material():
     metal.set_editor_property("parameter_name", "Metallic"); metal.set_editor_property("default_value", 0.1)
     ok = lib.connect_material_property(albedo, "RGB", unreal.MaterialProperty.MP_BASE_COLOR)
     ok = lib.connect_material_expressions(emit, "RGB", times, "A") and lib.connect_material_expressions(boost, "", times, "B") and ok
-    ok = lib.connect_material_property(times, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR) and ok
+    # hit flash: the game sets Flash (0..1) for a moment when the unit is struck, in FlashColour (white by default)
+    flash = lib.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -600, 600)
+    flash.set_editor_property("parameter_name", "Flash"); flash.set_editor_property("default_value", 0.0)
+    flash_colour = lib.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -600, 700)
+    flash_colour.set_editor_property("parameter_name", "FlashColour"); flash_colour.set_editor_property("default_value", unreal.LinearColor(1.0, 0.95, 0.85, 1))
+    flash_mul = lib.create_material_expression(mat, unreal.MaterialExpressionMultiply, -350, 650)
+    emit_sum = lib.create_material_expression(mat, unreal.MaterialExpressionAdd, -120, 400)
+    ok = lib.connect_material_expressions(flash_colour, "", flash_mul, "A") and lib.connect_material_expressions(flash, "", flash_mul, "B") and ok
+    ok = lib.connect_material_expressions(times, "", emit_sum, "A") and lib.connect_material_expressions(flash_mul, "", emit_sum, "B") and ok
+    ok = lib.connect_material_property(emit_sum, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR) and ok
     ok = lib.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS) and ok
     ok = lib.connect_material_property(metal, "", unreal.MaterialProperty.MP_METALLIC) and ok
+    if with_normal:
+        normal = lib.create_material_expression(mat, unreal.MaterialExpressionTextureSampleParameter2D, -600, 700)
+        normal.set_editor_property("parameter_name", "NormalTexture")
+        normal.set_editor_property("texture", unreal.load_object(None, "/Engine/EngineMaterials/DefaultNormal.DefaultNormal"))   # the default must be a normal map or the material fails to compile
+        normal.set_editor_property("sampler_type", unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
+        ok = lib.connect_material_property(normal, "RGB", unreal.MaterialProperty.MP_NORMAL) and ok
     if not ok:
-        unreal.log_error("W2F: some connections of M_CraftedPBR failed")
+        unreal.log_error("W2F: some connections of %s failed" % name)
     lib.recompile_material(mat)
     unreal.EditorAssetLibrary.save_loaded_asset(mat)
     return mat
@@ -137,7 +156,8 @@ def apply_crafted_materials():
     names = crafted_names()
     if not names:
         return
-    parent = crafted_parent_material()
+    parent_plain = crafted_parent_material(False)
+    parent_normal = crafted_parent_material(True)
     lib = unreal.MaterialEditingLibrary
     tools = unreal.AssetToolsHelpers.get_asset_tools()
     for name in sorted(names):
@@ -146,8 +166,21 @@ def apply_crafted_materials():
         for asset_path in unreal.EditorAssetLibrary.list_assets(base + "/Textures", recursive=True, include_folder=False):
             texture = unreal.EditorAssetLibrary.load_asset(asset_path)
             if isinstance(texture, unreal.Texture2D):
-                textures[texture.get_name().rsplit("_", 1)[-1]] = texture
+                kind = texture.get_name().rsplit("_", 1)[-1]
+                textures[kind] = texture
+                if kind == "normal":                       # tangent-space normal map from Blender (OpenGL, +Y up): flip green for UE
+                    texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
+                    texture.set_editor_property("srgb", False)
+                    texture.set_editor_property("flip_green_channel", True)
+                    unreal.EditorAssetLibrary.save_loaded_asset(texture)
         mesh = unreal.EditorAssetLibrary.load_asset("%s/StaticMeshes/%s" % (base, name))
+        if mesh is not None and not textures:              # a vertex-coloured model (e.g. SM_ArenaTrees: colour and AO baked into the vertices)
+            vc = unreal.EditorAssetLibrary.load_asset("%s/%s" % (MAT_DIR, MAT_NAME)) or vertex_colour_material()
+            for slot in range(len(mesh.static_materials)):
+                mesh.set_material(slot, vc)
+            unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
+            unreal.log("W2F: %s uses the vertex colours (%s)" % (name, MAT_NAME))
+            continue
         if mesh is None or "albedo" not in textures:
             unreal.log_warning("W2F: crafted model %s has no mesh or albedo texture" % name)
             continue
@@ -156,15 +189,60 @@ def apply_crafted_materials():
         if unreal.EditorAssetLibrary.does_asset_exist("%s/%s" % (inst_dir, inst_name)):
             unreal.EditorAssetLibrary.delete_asset("%s/%s" % (inst_dir, inst_name))
         inst = tools.create_asset(inst_name, inst_dir, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
-        inst.set_editor_property("parent", parent)
+        inst.set_editor_property("parent", parent_normal if "normal" in textures else parent_plain)
         lib.set_material_instance_texture_parameter_value(inst, "BaseColorTexture", textures["albedo"])
+        if "normal" in textures:
+            lib.set_material_instance_texture_parameter_value(inst, "NormalTexture", textures["normal"])
         if "emit" in textures:
             lib.set_material_instance_texture_parameter_value(inst, "EmissiveTexture", textures["emit"])
-        unreal.EditorAssetLibrary.save_loaded_asset(inst)
+        stage = name.startswith(("SM_Arena", "SM_HexTile", "SM_BenchSlot")) and not name.endswith("_Space")
+        if stage:                                          # the classic stage is painted stone and grass: matte, no metal sheen
+            lib.set_material_instance_scalar_parameter_value(inst, "Roughness", 0.95)
+            lib.set_material_instance_scalar_parameter_value(inst, "Metallic", 0.0)
+        if name.startswith("SM_Backdrop"):                 # the sky domes: no specular (their faceted rings showed as bands), a dark gradient needs BC7 or it bands too
+            lib.set_material_instance_scalar_parameter_value(inst, "Roughness", 1.0)
+            lib.set_material_instance_scalar_parameter_value(inst, "Metallic", 0.0)
+            if "emit" in textures:
+                textures["emit"].set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_BC7)
+                unreal.EditorAssetLibrary.save_loaded_asset(textures["emit"], only_if_is_dirty=False)
+        unreal.EditorAssetLibrary.save_loaded_asset(inst, only_if_is_dirty=False)
         for slot in range(len(mesh.static_materials)):
             mesh.set_material(slot, inst)
         unreal.EditorAssetLibrary.save_loaded_asset(mesh)
         unreal.log("W2F: %s uses %s" % (name, inst_name))
+
+
+def import_hero_portraits():
+    """The portraits rendered from the Mixamo heroes (tools/mixamo/build_heroes.py -> <project>/SourceArt/Mixamo/<id>_<Name>/T_Portrait_<id>.png) replace the generated
+    busts of the same name that import_icons() just brought in from docs/icons. Without this, re-running setup_viewer.py puts the old busts back on the shop cards."""
+    import json
+    src = os.environ.get("W2F_MIXAMO_OUT") or os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()), "SourceArt", "Mixamo")
+    index_path = os.path.join(src, "unit_visuals.json")
+    if not os.path.exists(index_path):
+        return 0
+    with open(index_path) as f:
+        units = json.load(f)["units"]
+    tasks = []
+    designer = {f for f in os.listdir(ICONS_SRC) if f.startswith("T_Splash_")} if os.path.isdir(ICONS_SRC) else set()
+    pngs = []
+    for hid, entry in sorted(units.items()):
+        pngs.append(os.path.join(src, entry["folder"], "T_Portrait_%s.png" % hid))
+        if "T_Splash_%s.png" % hid not in designer:        # tools/mixamo/render_art.py; the designer's own splash art (docs/icons) wins
+            pngs.append(os.path.join(src, entry["folder"], "T_Splash_%s.png" % hid))
+    for png in pngs:
+        if not os.path.exists(png):
+            continue
+        t = unreal.AssetImportTask()
+        t.set_editor_property("filename", png)
+        t.set_editor_property("destination_path", ICONS_DEST)
+        t.set_editor_property("automated", True)
+        t.set_editor_property("replace_existing", True)
+        t.set_editor_property("save", True)
+        tasks.append(t)
+    if tasks:
+        unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+    unreal.log("W2F: %d hero portraits / splash arts over the generated busts" % len(tasks))
+    return len(tasks)
 
 
 def vertex_colour_material():
@@ -180,6 +258,9 @@ def vertex_colour_material():
     colour = lib.create_material_expression(material, unreal.MaterialExpressionVertexColor, -400, 0)
     if not lib.connect_material_property(colour, "", unreal.MaterialProperty.MP_BASE_COLOR):
         unreal.log_error("W2F: could not connect the vertex colour to Base Color")
+    rough = lib.create_material_expression(material, unreal.MaterialExpressionConstant, -400, 200)   # matte: painted leaves and stone, no plastic sheen
+    rough.set_editor_property("r", 0.9)
+    lib.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
     lib.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material)
     unreal.log("W2F: %s rebuilt" % path)

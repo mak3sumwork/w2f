@@ -143,11 +143,22 @@ def g_seed(c, t, base):
     c.circle(t(0.5, 0.6)[0], t(0.5, 0.6)[1], 0.2 * k, base, ry=0.27 * k); c.circle(t(0.44, 0.52)[0], t(0.44, 0.52)[1], 0.05 * k, (1, 1, 0.9), 0.7)
     c.poly([t(0.5, 0.36), t(0.72, 0.2), t(0.66, 0.4)], (0.35, 0.75, 0.3)); c.poly([t(0.5, 0.36), t(0.3, 0.16), t(0.36, 0.38)], (0.3, 0.65, 0.28))
 
+def g_orb(c, t, base):
+    k = t(1, 0)[0] - t(0, 0)[0]
+    c.circle(t(0.5, 0.52)[0], t(0.5, 0.52)[1], 0.3 * k, base)
+    c.circle(t(0.5, 0.52)[0], t(0.5, 0.52)[1], 0.2 * k, (0.75, 0.97, 1.0), 0.55)
+    c.circle(t(0.42, 0.42)[0], t(0.42, 0.42)[1], 0.07 * k, (1, 1, 1), 0.85)
+    ln(c, t, (0.12, 0.62), (0.88, 0.42), 0.05, (0.95, 0.85, 0.45))   # an orbit ring
+
 def g_remove(c, t, base):
     ln(c, t, (0.22, 0.22), (0.78, 0.78), 0.13, base); ln(c, t, (0.78, 0.22), (0.22, 0.78), 0.13, base)
 
 GLYPHS = {1: (g_helmet, "8FA6BF"), 2: (g_water, "49A3F2"), 3: (g_sword, "D4D9E2"), 4: (g_vest, "AEB8C9"), 5: (g_bow, "A06A35"), 6: (g_stick, "A56BE0"),
-          7: (g_glove, "E4A25C"), 8: (g_heart, "E5566A"), 9: (g_seed, "CDB544")}
+          7: (g_glove, "E4A25C"), 8: (g_heart, "E5566A"), 9: (g_seed, "CDB544"), 51: (g_orb, "3FC8E0")}
+
+# Emblem colours for the traits make_blockouts.py does not colour (trait system v2: Nature and the classes).
+EMBLEM_COLOURS = {"Nature": "4FAF45", "Bastion": "7F8C9B", "Bruiser": "C0563B", "Sorcerer": "5E6BEF", "Marksman": "D9A441", "Mystic": "46B7A8",
+                  "Duelist": "D6477A", "Gunslinger": "B7793A"}
 
 
 def frame(c, border, top, bottom):
@@ -170,12 +181,13 @@ def item_icon(item, items_by_id):
         g, colour = GLYPHS[iid]
         frame(c, col("8899AA"), col("39445A"), col("1B2130"))
         g(c, T(0.1, 0.1, 0.8), col(colour))
-    elif 40 <= iid <= 47:
-        trait = (item.get("grantsTraits") or [""])[0]
-        tc = col(mb.TRAIT_COLOURS.get(trait, "8A8F99"))
+    elif item.get("grantsTraits"):   # an emblem: the Seed (origins) or the Orb (classes) on its trait's colour
+        trait = item["grantsTraits"][0]
+        tc = col(mb.TRAIT_COLOURS.get(trait, EMBLEM_COLOURS.get(trait, "8A8F99")))
         frame(c, light(tc, 0.2), dark(tc, 0.2), dark(tc, 0.6))
         c.circle(0.5, 0.5, 0.33, dark(tc, 0.3)); c.circle(0.5, 0.5, 0.27, tc, 0.9)
-        g_seed(c, T(0.2, 0.2, 0.6), col("F3E7A0"))
+        if 51 in (comps or []): g_orb(c, T(0.2, 0.2, 0.6), col("CFF6FF"))
+        else: g_seed(c, T(0.2, 0.2, 0.6), col("F3E7A0"))
     else:   # a finished item: its two ingredients on a gold frame
         frame(c, col("E2B94A"), col("3B3222"), col("1C1710"))
         a, b = (comps or [1, 2])[0], (comps or [1, 2])[1]

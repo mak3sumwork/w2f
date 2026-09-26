@@ -61,6 +61,19 @@ struct CombatStats {
     }
 };
 
+// Hexa's cockpit: at the start of combat the ally standing on the hex directly BEHIND the unit (toward its own back row) climbs in. It leaves the
+// fight (untargetable, inactive: status Piloting) and the unit gains `hpPercent`% of the pilot's max HP plus the bonuses whose `traits` the pilot
+// carries (the first match only; effects run as the unit's own, at its star). When the unit dies the pilot ejects: it is back, on its hex, as it went in.
+struct PilotBonus {
+    std::vector<std::string> traits;
+    std::vector<AbilityEffect> effects;   // target Self
+};
+struct PilotDefinition {
+    bool enabled = false;
+    int hpPercent = 80;
+    std::vector<PilotBonus> bonuses;
+};
+
 struct ChampionDefinition {
     ChampionId id = kInvalidChampionId;
     std::string name;
@@ -77,6 +90,19 @@ struct ChampionDefinition {
     // A summon is only ever created by a SummonEffect: it is never sold in the shop, is not in the champion pool, and lives only for the
     // fight. It must have no traits. (`cost` is ignored.)
     bool summon = false;
+    // Trait system v2. A PLANT (the Nature trait's) is granted by the synergy: it stands on the board, fights, never goes to the bench, cannot be
+    // sold and takes no board slot. A SPECIAL unit (the Rift Herald, the Phaisa Queen) is owned like a champion but never comes from the pool:
+    // it is granted or offered by a trait and sells for `price` (default: its cost) without returning copies anywhere.
+    bool plant = false;
+    bool special = false;
+    int price = 0;              // special units: what it costs / sells for (0 = `cost`)
+    int teamSlots = 1;          // board slots it takes (plants 0; the Queen 2)
+    bool stationary = false;    // never walks and never basic-attacks (it still casts) unless Awakened
+    PilotDefinition pilot;      // Hexa
+
+    // Sold in the shop and counted in the shared pool.
+    bool IsPooled() const { return !summon && !plant && !special; }
+    int Price() const { return price > 0 ? price : cost; }
 };
 
 // Calls `visit` with the champion id of every SummonEffect in any of the champion's abilities, passives, riders and triggers.

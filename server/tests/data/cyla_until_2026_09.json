@@ -1,0 +1,33 @@
+// Cyla as she was designed until September 2026 (a mana rocket: 100% of the damage she dealt in the last 2 s, 25% splash). She became the
+// Fishbones gunslinger; the mechanics her rocket used (DamageDealtInWindow, castLock 0) stay in the engine, and these tests keep them honest.
+{
+  "version": 1,
+  "champions": [
+    {
+      "id": 9003, "name": "Cyla", "cost": 2, "role": "Damage",
+      "traits": ["Hexagon"],
+      "stats": {
+        "hp": [90, 140, 180], "armor": [10, 15, 25], "magicResist": [5, 9, 13], "attackDamage": [50, 60, 80],
+        "crit": [15, 25, 50],
+        "attackSpeed": 0.78, "range": 4,          // range ASSUMED (marksman)
+        "maxMana": 60, "manaRegen": 10.0
+      },
+      // Rocket: the target takes 100% of the damage Cyla dealt in the last 2 s; adjacent hexes take 25%.
+      // She keeps auto-attacking while casting (castLock 0). Physical damage (her damage is AD, not AP); both hits can crit.
+      "ability": {
+        "id": 3, "name": "Rocket Strike", "trigger": "Mana", "castLockTicks": 0,
+        "effects": [
+          {
+            "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "canCrit": true,
+            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": 100, "windowSeconds": 2 } ] }
+          },
+          {
+            "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false },
+            "damageType": "Physical", "canCrit": true, "multiplierPercent": 25,
+            "amount": { "terms": [ { "source": "DamageDealtInWindow", "percent": 100, "windowSeconds": 2 } ] }
+          }
+        ]
+      }
+    }
+  ]
+}

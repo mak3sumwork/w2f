@@ -189,6 +189,7 @@ public:
             case CommandType::EquipItem: result = match_->TryEquipItem(player, cmd.unit, cmd.item); break;
             case CommandType::UnequipItem: result = match_->TryUnequipItem(player, cmd.unit, cmd.slot); break;
             case CommandType::CombineItems: result = match_->TryCombineItems(player, cmd.item, cmd.item2); break;
+            case CommandType::PickTraitChoice: result = match_->TryPickTraitChoice(player, cmd.choiceIndex); break;
             case CommandType::GetState:
             case CommandType::GetFight:
             case CommandType::GetCatalog:
@@ -261,6 +262,11 @@ public:
     void OnItemsCombined(PlayerId p, const UnitInstance& u, const ItemCombination& c) override { Queue(p, msg::ItemsCombined(u, c)); }
     void OnBagItemsCombined(PlayerId p, ItemId first, ItemId second, ItemId result) override { Queue(p, msg::BagItemsCombined(first, second, result)); }
     void OnItemConsumed(PlayerId p, const UnitInstance& u, ItemId item, const std::vector<ItemId>& returned) override { Queue(p, msg::ItemConsumed(u, item, returned)); }
+    void OnTraitChoiceOffered(PlayerId p, const TraitChoice& c) override { Queue(p, msg::TraitChoiceOffered(c)); }
+    void OnTraitChoiceResolved(PlayerId p, const TraitChoice& c, int index, bool automatic) override { Queue(p, msg::TraitChoiceResolved(c, index, automatic)); }
+    void OnTraitRewards(PlayerId p, const TraitRewards& r) override {
+        Queue(p, msg::TraitRewardsMsg(r, match_ != nullptr ? match_->Players().Get(p)->Traits().starDust : 0));
+    }
 
     // ---- accessors ----------------------------------------------------------------------------
 
@@ -425,7 +431,7 @@ private:
         const std::uint64_t seed = cfg_.seed != 0 ? cfg_.seed : cfg_.entropy();
         std::string error;
         auto simulator = std::make_unique<CombatSimulator>(config_.combat, data_.traits, data_.items);
-        match_ = MatchManager::Create(config_, *data_.champions, seed, std::move(simulator), &error, data_.items, data_.encounters, data_.motherNature);
+        match_ = MatchManager::Create(config_, *data_.champions, seed, std::move(simulator), &error, data_.items, data_.encounters, data_.motherNature, data_.traits);
         if (!match_) {   // a bad configuration is the operator's problem; tell the players and start over
             Broadcast(msg::Error("match_failed", "the server could not start the match: " + error));
             ResetToLobby();
@@ -532,7 +538,8 @@ private:
         config_.match.playerCount = cfg_.seats;
         std::string restoreError;
         auto simulator = std::make_unique<CombatSimulator>(config_.combat, data_.traits, data_.items);
-        auto restored = MatchManager::Restore(snapshot, config_, *data_.champions, std::move(simulator), &restoreError, data_.items, data_.encounters, data_.motherNature);
+        auto restored = MatchManager::Restore(snapshot, config_, *data_.champions, std::move(simulator), &restoreError, data_.items, data_.encounters, data_.motherNature,
+                                              RestoreOptions{}, data_.traits);
         if (!restored) return fail(restoreError);
 
         match_ = std::move(restored);

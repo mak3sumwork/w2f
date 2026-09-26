@@ -24,6 +24,21 @@
 
 namespace w2f {
 
+// What the v2 traits remember about one player across rounds (see Trait.h). Everything here is part of the snapshot and the state hash.
+struct TraitProgress {
+    int traitGold = 0;           // Selini (Prosperity): gold earned through the path so far (its bonus grows with it)
+    int takedownCounter = 0;     // Selini (Prosperity): takedowns toward the next gold
+    int starDust = 0;            // Najmi: banked star dust
+    int grantCombats = 0;        // Phaisa: player combats fought with the Rift Herald breakpoint active
+    bool unitGranted = false;    // Phaisa: the Rift Herald was given (once per match)
+    int moduleTiersOffered = 0;  // Hexagon: the highest module tier already offered
+    std::vector<std::uint32_t> modules;   // Hexagon: chosen module ids, in the order they were chosen
+    bool operator==(const TraitProgress& o) const {
+        return traitGold == o.traitGold && takedownCounter == o.takedownCounter && starDust == o.starDust && grantCombats == o.grantCombats &&
+               unitGranted == o.unitGranted && moduleTiersOffered == o.moduleTiersOffered && modules == o.modules;
+    }
+};
+
 // Everything a snapshot stores about one player (champions already resolved to definitions).
 struct PlayerRestoreData {
     int health = 0;
@@ -39,6 +54,7 @@ struct PlayerRestoreData {
     std::vector<ItemId> itemBag;
     std::vector<const ChampionDefinition*> shopSlots;
     RngState shopRng;
+    TraitProgress traits;
 };
 
 class PlayerState {
@@ -72,6 +88,8 @@ public:
     bool IsAlive() const { return !eliminated_; }
     int Placement() const { return placement_; }  // 0 until eliminated / match won; 1 = winner
     const UnitRoster& Roster() const { return roster_; }
+    const TraitProgress& Traits() const { return traits_; }
+    TraitProgress& TraitsMutable() { return traits_; }
     ShopManager& Shop() { return *shop_; }
     const ShopManager& Shop() const { return *shop_; }
 
@@ -135,6 +153,11 @@ public:
     // in the bag. InvalidItem, and nothing changes, if either is not in the bag, they are not both base components, or no recipe exists.
     ActionResult TryCombineBagItems(ItemId first, ItemId second);
 
+    // ---- Plants (the Nature trait; the MatchManager decides which) ----
+    // Puts a plant on the free board cell (x, y) / takes one away. Reported as a unit bought / sold for 0 gold.
+    bool GrantPlant(const ChampionDefinition* plant, int starLevel, int x, int y);
+    bool RemovePlant(UnitId unit);
+
     // ---- Snapshot ----
     // Overwrites this player with saved state. It does NOT touch the shared pool: the pool's counts are restored
     // separately, and the caller then checks the two agree (MatchManager::VerifyPoolIntegrity). Validates ranges and
@@ -166,6 +189,7 @@ private:
     bool benchOnly_ = false;   // not state: only ever true inside one player action
     UnitRoster roster_;
     std::vector<ItemId> itemBag_;
+    TraitProgress traits_;
     const ItemDatabase* items_;
 
     std::unique_ptr<ShopManager> shop_;  // Declared last: constructed after everything above.
