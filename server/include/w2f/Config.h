@@ -98,9 +98,9 @@ struct MatchConfig {
     int firstStagePveRounds = 3;
     int pveRoundInLaterStages = 7;
 
-    // The opening (TFT's first PvE round): the shop is closed for rounds 1..shopClosedOpeningRounds, and before round 1 every player is dealt one
-    // random unit of each cost in openingUnitCosts (from the shared pool; free). The shop opens with the next round. 0 / empty = no opening.
-    int shopClosedOpeningRounds = 1;
+    // The opening (TFT's first PvE round): before round 1 every player is dealt one random unit of each cost in openingUnitCosts (from the shared
+    // pool; free). The shop can also be kept closed for rounds 1..shopClosedOpeningRounds; FEEDBACK V1 (demo 1.1) opens it in every Planning phase: 0.
+    int shopClosedOpeningRounds = 0;
     std::vector<int> openingUnitCosts = {1};   // ASSUMED: one 1-cost unit (the designer said "a random unit")
 
     bool IsMotherNatureRound(int round) const { return motherNatureEveryRounds > 0 && round >= 1 && round % motherNatureEveryRounds == 0; }
@@ -123,7 +123,8 @@ struct MatchConfig {
 // (PvE rounds never hurt the player.)
 struct DamageConfig {
     // baseDamageByStage[stage-1]; stages beyond the table use the last entry. Stage 1 is all PvE by default, so its entry is unused.
-    std::vector<int> baseDamageByStage = {0, 2, 3, 5, 8, 12};
+    // FEEDBACK V1 (demo 1.1): losing hurts more as the game goes on, closer to TFT (was {0, 2, 3, 5, 8, 12}).
+    std::vector<int> baseDamageByStage = {0, 2, 5, 8, 11, 14, 18};
     int perSurvivingUnit = 1;
 };
 

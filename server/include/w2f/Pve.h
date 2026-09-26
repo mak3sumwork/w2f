@@ -38,6 +38,7 @@ struct PveDropEntry {
     int maxGold = 0;
     std::vector<int> tiers;                 // Champion: cost tiers it may come from (drawn from the shared pool)
     std::vector<ItemId> items;              // Item: which items (empty = any item in items.json)
+    int count = 1;                          // guaranteed drops only: how many times this line pays out
 };
 
 struct EncounterDefinition {
@@ -48,6 +49,8 @@ struct EncounterDefinition {
     int round = 0;
     std::vector<MonsterPlacement> units;
     std::vector<PveDropEntry> drops;   // empty = the file's default drops
+    // Always paid, win or lose, before the weighted drop (TFT's loot from the creeps): every line `count` times, weights ignored.
+    std::vector<PveDropEntry> guaranteed;
 };
 
 class EncounterDatabase {

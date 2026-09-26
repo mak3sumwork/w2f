@@ -75,6 +75,7 @@ std::unique_ptr<EncounterDatabase> EncounterDatabase::Create(std::vector<Champio
         }
         if (e.drops.empty() && defaultDrops.empty()) return fail(where + " has no drops and there are no default drops");
         if (!ValidateDrops(e.drops, where, items, &inner)) return fail(inner);
+        if (!ValidateDrops(e.guaranteed, where + " (guaranteed drops)", items, &inner)) return fail(inner);
     }
     std::unique_ptr<EncounterDatabase> db(new EncounterDatabase());
     db->monsters_ = std::move(monsterDb);
@@ -120,6 +121,7 @@ std::uint64_t EncounterDatabase::ContentHash() const {
             for (int t : d.tiers) h.AddInt(t);
             h.AddInt(static_cast<std::int64_t>(d.items.size()));
             for (ItemId i : d.items) h.Add(i);
+            if (d.count != 1) h.AddInt(d.count);   // only when used, so older data keeps its hash
         }
     };
     h.AddInt(static_cast<std::int64_t>(encounters_.size()));
@@ -136,6 +138,10 @@ std::uint64_t EncounterDatabase::ContentHash() const {
             h.AddInt(u.y);
         }
         addDrops(e.drops);
+        if (!e.guaranteed.empty()) {
+            h.AddString("guaranteed");
+            addDrops(e.guaranteed);
+        }
     }
     addDrops(defaultDrops_);
     return h.value;

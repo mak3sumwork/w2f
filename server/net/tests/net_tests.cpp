@@ -917,7 +917,7 @@ static void TestMotherNatureOverTheProtocol() {
     r.Say(b, R"({"action": "pick_gift", "gift_index": 9})");
     CHECK(Str(r.Last(b, "error"), "code") == "out_of_range");
 
-    // b picks; the phase ends at once and the round's Planning has no shop.
+    // b picks; the phase ends at once and (demo 1.1) the round's Planning has its shop like any other.
     r.Say(b, R"({"action": "pick_gift", "gift_index": 0})");
     CHECK(Str(r.Last(b, "result"), "result") == "Ok");
     r.Tick(2);
@@ -927,15 +927,14 @@ static void TestMotherNatureOverTheProtocol() {
     r.Say(a, R"({"action": "get_state"})");
     const json::Value shopState = r.Last(a, "state");
     CHECK(shopState.Find("shop")->Items().size() == static_cast<std::size_t>(r.data.config.shop.slotCount));
-    for (const json::Value& slot : shopState.Find("shop")->Items()) {   // every slot empty (0)
+    for (const json::Value& slot : shopState.Find("shop")->Items()) {   // every slot filled
         long long id = -1;
-        CHECK(slot.ToInt(id) && id == 0);
+        CHECK(slot.ToInt(id) && id != 0);
     }
+    CHECK(!planning.Find("shop_closed")->AsBool());
     r.net.sent.clear();
-    r.Say(a, R"({"action": "buy_unit", "shop_index": 0, "id": 7})");
-    CHECK(Str(r.Last(a, "result"), "result") == "ShopClosed" && Num(r.Last(a, "result"), "id") == 7);
-    r.Say(a, R"({"action": "reroll_shop"})");
-    CHECK(Str(r.Last(a, "result"), "result") == "ShopClosed");
+    r.Say(a, R"({"action": "reroll_shop", "id": 7})");
+    CHECK(Num(r.Last(a, "result"), "id") == 7 && Str(r.Last(a, "result"), "result") != "ShopClosed");
     r.Say(a, R"({"action": "pick_gift", "gift_index": 0})");
     CHECK(Str(r.Last(a, "result"), "result") == "WrongPhase");
     CHECK(r.Match().VerifyPoolIntegrity());
@@ -1317,6 +1316,7 @@ static void TestPrivacyAndDelivery() {
         if (m.Phase() == MatchPhase::Resolution && m.TicksInPhase() == 0) {
             for (const CombatOutcome& o : m.CurrentCombatOutcomes()) {
                 if (o.matchup.awayIsMonsters && o.drop.type != PveDropType::None) ++dropsExpected[o.matchup.home];
+                if (o.matchup.awayIsMonsters) dropsExpected[o.matchup.home] += static_cast<int>(o.loot.size());   // the guaranteed loot (demo 1.1)
             }
         }
         audit();

@@ -228,7 +228,7 @@ public:
     void OnPhaseChanged(MatchPhase, MatchPhase to, int round) override {
         if (to == MatchPhase::Combat) QueueCombat(round);
         combatBatchOpen_ = false;
-        Queue(-1, msg::Phase(config_, to, round, 0, match_ != nullptr ? match_->PhaseTicks() : 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round), match_ != nullptr && match_->IsShopClosed(round)));
+        Queue(-1, msg::Phase(config_, to, round, 0, match_ != nullptr ? match_->PhaseTicks() : 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round), match_ != nullptr && match_->IsShopClosed()));
     }
     void OnPlayerEliminated(PlayerId p, int placement) override { Queue(-1, msg::PlayerEliminated(p, placement)); }
     void OnMatchEnded(PlayerId) override { dirty_ = true; }   // the final message needs the placements: sent when Tick() returns
@@ -264,6 +264,7 @@ public:
     void OnItemConsumed(PlayerId p, const UnitInstance& u, ItemId item, const std::vector<ItemId>& returned) override { Queue(p, msg::ItemConsumed(u, item, returned)); }
     void OnTraitChoiceOffered(PlayerId p, const TraitChoice& c) override { Queue(p, msg::TraitChoiceOffered(c)); }
     void OnTraitChoiceResolved(PlayerId p, const TraitChoice& c, int index, bool automatic) override { Queue(p, msg::TraitChoiceResolved(c, index, automatic)); }
+    void OnChampionUnlocked(PlayerId p, ChampionId c) override { Queue(p, msg::ChampionUnlocked(c)); }
     void OnTraitRewards(PlayerId p, const TraitRewards& r) override {
         Queue(p, msg::TraitRewardsMsg(r, match_ != nullptr ? match_->Players().Get(p)->Traits().starDust : 0));
     }

@@ -112,7 +112,14 @@ UnitId UnitRoster::CellValue(LocationType location, int x, int y) const {
 
 bool UnitRoster::HasFreeSlot() const {
     if (BenchCount() < kBenchSlots) return true;
-    return BoardCount() < std::min(boardCapacity_, kBoardRows * kBoardColumns);
+    if (BoardCount() >= std::min(boardCapacity_, kBoardRows * kBoardColumns)) return false;
+    // A slot also needs an empty hex: plants take no board slot but do stand on a hex, so a crowded board can be "not full" and still have no room.
+    for (const auto& row : board_) {
+        for (UnitId cell : row) {
+            if (cell == kInvalidUnitId) return true;
+        }
+    }
+    return false;
 }
 
 bool UnitRoster::PlaceInFirstFree(UnitInstance& unit) {

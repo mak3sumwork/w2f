@@ -83,5 +83,6 @@ std::string ItemConsumed(const UnitInstance& unit, ItemId consumable, const std:
 std::string TraitChoiceOffered(const TraitChoice& choice);
 std::string TraitChoiceResolved(const TraitChoice& choice, int index, bool automatic);
 std::string TraitRewardsMsg(const TraitRewards& rewards, int starDustTotal);
+std::string ChampionUnlocked(ChampionId champion);
 
 }  // namespace w2f::net::msg

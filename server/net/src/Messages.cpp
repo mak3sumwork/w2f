@@ -135,6 +135,9 @@ void WriteTraitChoice(JsonWriter& w, const TraitChoice& c) {
     for (std::uint32_t o : c.options) w.UInt(o);
     w.EndArray();
     w.Field("bonus_gold", c.bonusGold);
+    w.Key("bonus_items").BeginArray();   // revision 6: the items a Najmi cash-out gives along with the picked one
+    for (std::uint32_t o : c.bonusItems) w.UInt(o);
+    w.EndArray();
     w.Field("can_decline", c.kind == TraitChoiceKind::Prototype);
     w.EndObject();
 }
@@ -374,7 +377,7 @@ std::string Phase(const GameConfig& config, MatchPhase phase, int round, int tic
     w.Field("round_in_stage", sr.roundInStage);
     w.Field("pve", config.match.IsPveRound(round));
     w.Field("mother_nature", motherNatureRound);   // a gift phase this round, and no shop until it is over
-    w.Field("shop_closed", shopClosed);            // no shop this round: Mother Nature's, or the opening round
+    w.Field("shop_closed", shopClosed);            // no shop in this phase: Mother Nature's gift phase (or a configured opening round)
     const int duration = durationTicks;   // (Combat lasts as long as the round's fights: the engine knows, the config only gives the maximum)
     w.Field("duration_ticks", duration);
     w.Field("ticks_remaining", duration > ticksElapsed ? duration - ticksElapsed : 0);
@@ -426,6 +429,9 @@ std::string PrivateState(const MatchManager& match, PlayerId player) {
     w.Field("unit_granted", tp.unitGranted);
     w.Key("modules").BeginArray();
     for (std::uint32_t m : tp.modules) w.UInt(m);
+    w.EndArray();
+    w.Key("unlocked").BeginArray();   // revision 6: unlockable champions (Hexa) this player's shop may now offer
+    for (ChampionId c : tp.unlocked) w.UInt(c);
     w.EndArray();
     w.EndObject();
     w.Key("trait_choice");
@@ -732,6 +738,12 @@ std::string TraitRewardsMsg(const TraitRewards& rewards, int starDustTotal) {
     w.Field("star_dust", rewards.starDust);
     w.Field("star_dust_total", starDustTotal);
     w.Field("unit", rewards.unit);   // a champion id given to the bench (the Rift Herald), 0 = none
+    return Finish(w);
+}
+
+std::string ChampionUnlocked(ChampionId champion) {
+    JsonWriter w = Start("champion_unlocked");   // revision 6
+    w.Field("champion", champion);
     return Finish(w);
 }
 

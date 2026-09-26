@@ -2160,17 +2160,22 @@ private:
             }
             for (const TraitDefinition& trait : traits_->All()) {  // ascending trait id
                 int count = 0;
+                int emblemHolders = 0;   // champions that count only through an emblem (the prismatic breakpoint needs one)
                 for (ChampionId champion : unique) {
                     // A champion counts if ANY of its copies has the trait -- its own, or granted by an item (an emblem).
                     bool has = false;
+                    bool own = false;
                     for (std::size_t i = 0; i < fielded; ++i) {
                         const FightUnit& u = units_[i];
-                        has = has || (u.team == team && u.champion->id == champion && HasTrait(u, trait.name));
+                        if (u.team != team || u.champion->id != champion) continue;
+                        has = has || HasTrait(u, trait.name);
+                        own = own || std::find(u.champion->traits.begin(), u.champion->traits.end(), trait.name) != u.champion->traits.end();
                     }
                     if (has) ++count;
+                    if (has && !own) ++emblemHolders;
                 }
                 const std::vector<TraitBreakpoint>& breakpoints = trait.Breakpoints(PathOf(trait.id));
-                const int tier = ActiveTier(breakpoints, count);
+                const int tier = ActiveTier(breakpoints, count, emblemHolders);
                 if (tier == 0) continue;
                 const TraitBreakpoint* active = &breakpoints[static_cast<std::size_t>(tier - 1)];
 

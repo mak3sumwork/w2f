@@ -15,6 +15,7 @@ MAP = "/Game/W2F/Maps/L_Viewer"
 
 import_blockouts.import_models()   # (re)import every SM_*.glb, replacing what is there
 import_blockouts.import_icons()    # ... and the UI icons (T_Item_*, T_Portrait_*, T_Coin, T_Lock*)
+import_blockouts.import_sfx()           # ... the sound effects (docs/sfx)
 import_blockouts.import_hero_portraits()   # ... then the portraits rendered from the Mixamo heroes over the generated busts
 import_blockouts.assign_material(import_blockouts.vertex_colour_material())
 

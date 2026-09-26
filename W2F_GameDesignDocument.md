@@ -45,7 +45,7 @@ Caster: +2/4/5 Mana Regen
 Assassin: +40/70/100% Crit Chance
 On death, the pilot ejects while Hexa knocks back and Stuns nearby enemies for 1.5 seconds.
 
-- **NAJMI (3/5/6(prismatic najmi)):** *The Cosmic Link.* After losing a player combat, gain 20 star dust, plus additional star dust equal to 5 times the length of your loss streak. Additionally, gain 2 star dust per Najmi takedown.
+- **NAJMI (2/4/6) (demo 1.1: opens at 2; see 2B):** *The Cosmic Link.* After losing a player combat, gain 20 star dust, plus additional star dust equal to 5 times the length of your loss streak. Additionally, gain 2 star dust per Najmi takedown.
 Each time Najmi's get star dust , they prototype new Najmi Items. You can take them, or save your Tech to get more powerful items next time. (100 star dust cash out: )
 
 - **PROTECTOR (2):** All allies gain 10% Damage Amplification and 10% bonus Armor/MR. Protectors (Les, Lum) gain an additional 10% on top of this.
@@ -100,7 +100,18 @@ Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon,
     - *Echo Engine*: the Invention fires again every 8 s.
     - *Armor Nullifier*: Hexagon units +20% damage amp, +40% against enemies with more than 100 Armor.
 - **HEXA (1)** — Hexa's own trait. The ally standing on the hex **directly behind Hexa (decided; drawn blue)** is its pilot. At the start of combat the pilot jumps in. Hexa gains **80% of the pilot's max Health** and a bonus by the pilot's class and Hexa's star: Bastion / Protector +20/30/40% omnivamp; Bruiser / Duelist +20/30/40% AD; Marksman / Gunslinger +12/20/30% damage amp; Sorcerer / Mystic +2/4/5 mana per second; Assassin +40/70/100% crit. When Hexa dies, the pilot ejects onto the nearest free hex with the health it went in with, and Hexa knocks back and stuns every enemy within 1 hex for 1.5 s.
-- **NAJMI (3/5/6)** — *The Cosmic Link.* After losing a player combat you gain **20 star dust + 5 x your loss streak**; every **Najmi takedown** gives **2 star dust**. At (6), prismatic, all star dust is doubled. Whenever star dust is gained, the player is offered a **prototype** from the tier of their total: below 35, a component; 35-69, a completed item; 70-99, a completed item of their choice of 3; 100 or more, **cash out**, a radiant item plus 10 gold. **Taking it** spends all the star dust; **declining** banks it for a better tier later **(decided)**.
+- **NAJMI (2/4/6)** — *The Cosmic Link* (demo 1.1, FEEDBACK V1: it works like TFT's Anima). After losing a player combat you gain **20 star dust + 5 x your loss streak**; every **Najmi takedown** gives **2 star dust**; at (4) you also gain **4 after every player combat**, won or lost; at (6) all star dust is doubled. **Cash-outs happen only at every 100 star dust (100, 200, 300, 400, 500, 600)**, and the loot grows with the bank **(decided)**:
+
+  | Bank | Pick | Bonus | Gold |
+  |---|---|---|---|
+  | 100 | 1 component | | 2 |
+  | 200 | 1 completed item | | 2 |
+  | 300 | 1 of 3 completed items | an Item Remover | 3 |
+  | 400 | 1 of 3 completed items | 1 more completed item | 8 |
+  | 500 | 1 of 3 completed items | 1 more completed item + an Item Remover | 15 |
+  | 600+ | 1 of 3 completed items | 2 more completed items | 20 |
+
+  The offer never pops up and never blocks the shop: a star dust bar (0-600, a mark every 100) shows the bank, and a CASH OUT button opens the offer. **Taking it** spends the whole bank; **keeping on saving** leaves the offer open until a bigger hundred replaces it. It is not settled automatically when a fight starts.
 - **NATURE (3/5/7/9/11)** — *The First Forest.* The player gains **plants** to place on their board during Planning. Plants do **not** count toward team size, cannot be sold, stay where they were placed from round to round, and leave the board while the trait is below the breakpoint that gave them.
   - (3): a **Stonebark Tree** and an **Omnilium Blossom**.
   - (5): a second Stonebark Tree; Stonebark Trees +200 HP.
@@ -197,6 +208,19 @@ Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon,
 | Assassin | Seed + Selinis Gloves (kept) | | Protector | Seed + Omnilium Heart (kept) |
 
 (Omnilium has no bonus of its own, and Hexa / Plant are tags, so none of them needs an emblem.)
+
+
+### 2C. Demo 1.1 rule changes (FEEDBACK V1, decided)
+
+- **The shop is open in every Planning phase** -- round 1 and Mother Nature's rounds too. Only Mother Nature's own gift phase has no shop.
+- **Losing hurts more as the game goes on**: base damage by stage 0 / 2 / 5 / 8 / 11 / 14 / 18 (was 0 / 2 / 3 / 5 / 8 / 12), plus 1 per enemy unit left standing.
+- **Items can go on units during combat.** The round's fight was decided when combat began, so the item counts from the next fight.
+- **Prismatic tiers need an emblem**: the top breakpoint of a trait with four or more breakpoints only switches on when at least one of its holders has the trait from an emblem.
+- **PvE rounds always drop loot**, win or lose, on top of the usual drop for a win: **1-1 three Item Removers, 1-2 and 1-3 three components each, every X-7 boss two items.**
+- **Najmi** opens at 2 and cashes out at every 100 star dust (section 2B).
+- **Hexa must be unlocked**, like TFT's T-Hex: 7 Hexagon star levels on the board at level 8 (the HEXA entry of the roster).
+- Traits shown in the tracker stay for the whole fight, even as units die.
+
 
 ## 3. FULL CHAMPION ROSTER (49 / 49)
 
@@ -326,6 +350,7 @@ Damage: 58 = 54() + 4() [54 / 82 / 150]
 **UMBRA** (Selini / Bastion) | HP 900/1620/2916 | Armor/MR 50 | AD 50 | AP 60 | AS 0.70 | Range 1 | Mana 0/100
 - *Ability:* Eclipse. Blinds all enemies within 2 hexes for 3s (cannot basic attack) and deals 300/450/1000 Magic Damage.
 **HEXA - "The Walking Equation"** [NEW] (Hexagon / Hexa / Gunslinger) | Mana 60/140 (decided) | Health 1100 / 1980 / 3564
+- *Unlock (demo 1.1, like TFT's T-Hex; decided):* Hexa is **not in your shop until you unlock it**: the star levels of the Hexagon units on your board must add up to **7** while you are **level 8** or higher. Nothing else hands Hexa out (no drop, no gift); once unlocked it can appear in your own shop for the rest of the match.
 AD 110 / 165 / 248 , AS 0.9, DPS 99 / 149 / 223 , armor 80, mr 80, attack range 2 hexes.
 Passive: Attacks fire a barrage of 4 bullets.
 Active: Gain 410/598/67022() Shield and begin consuming 30 mana per second. Each second while casting, fire a laser that deals 290/435/2150() physical damage, reduced by 70% per enemy hit up to 90%. Additionally, launch 4() missiles split between 4 nearby enemies that each deal 17/26/129() physical damage.

@@ -25,23 +25,36 @@ SharedChampionPool::SharedChampionPool(const ChampionDatabase& database, const P
     }
 }
 
-const ChampionDefinition* SharedChampionPool::DrawFromTier(int tier, Rng& rng) {
+const ChampionDefinition* SharedChampionPool::DrawFromTier(int tier, Rng& rng, const Allowed& allowed) {
     if (tier < 1 || tier > kMaxCostTier) return nullptr;
     const std::size_t tierIndex = TierIndex(tier);
-    if (tierRemaining_[tierIndex] <= 0) return nullptr;
+    const int drawable = DrawableInTier(tier, allowed);
+    if (drawable <= 0) return nullptr;
 
-    std::uint32_t roll = rng.NextBelow(static_cast<std::uint32_t>(tierRemaining_[tierIndex]));
+    std::uint32_t roll = rng.NextBelow(static_cast<std::uint32_t>(drawable));
     for (std::size_t index : tierMembers_[tierIndex]) {
+        const ChampionDefinition& def = database_.All()[index];
+        if (allowed ? !allowed(def) : def.unlock.Gated()) continue;
         const std::uint32_t copies = static_cast<std::uint32_t>(remaining_[index]);
         if (roll < copies) {
             --remaining_[index];
             --tierRemaining_[tierIndex];
-            return &database_.All()[index];
+            return &def;
         }
         roll -= copies;
     }
     assert(false && "tierRemaining_ out of sync with remaining_");
     return nullptr;
+}
+
+int SharedChampionPool::DrawableInTier(int tier, const Allowed& allowed) const {
+    if (tier < 1 || tier > kMaxCostTier) return 0;
+    int total = 0;
+    for (std::size_t index : tierMembers_[TierIndex(tier)]) {
+        const ChampionDefinition& def = database_.All()[index];
+        if (allowed ? allowed(def) : !def.unlock.Gated()) total += remaining_[index];
+    }
+    return total;
 }
 
 bool SharedChampionPool::Return(const ChampionDefinition* champion, int copies) {

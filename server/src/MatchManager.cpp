@@ -137,7 +137,7 @@ void MatchManager::EnterPhase(MatchPhase next) {
             GenerateGifts();
             break;
         case MatchPhase::Planning:
-            // No shop in the opening round (the free unit was the reward) nor in a Mother Nature round (the gift is).
+            // The shop opens in every Planning phase, a Mother Nature round's too (after the gift phase).
             if (IsShopClosed()) players_.CloseAllShops();
             else players_.RefreshAllShops();
             for (PlayerId id : players_.AlivePlayerIds()) AfterRosterChange(id);   // plants, module offers, the Queen
@@ -231,7 +231,10 @@ void MatchManager::ApplyCombatOutcomes() {
         outcome.drop = PveDrop{};
 
         if (outcome.matchup.awayIsMonsters) {
-            // PvE: a win pays one random drop; nothing else changes -- no damage, and streaks are left alone.
+            // PvE: the encounter's guaranteed loot is paid win or lose, a win adds one random drop; nothing else changes -- no damage,
+            // and streaks are left alone.
+            outcome.loot.clear();
+            GrantGuaranteedDrops(*home, outcome.matchup.encounter, dropRng, outcome.loot);
             if (outcome.winner == CombatWinner::Home) {
                 outcome.drop = GrantPveDrop(*home, outcome.matchup.encounter, dropRng);
                 if (outcome.drop.type != PveDropType::None) {
@@ -333,7 +336,42 @@ PveDrop MatchManager::GrantPveDrop(PlayerState& player, std::uint32_t encounterI
     std::uint32_t roll = rng.NextBelow(total);
     std::size_t chosen = 0;
     while (roll >= weights[chosen]) roll -= weights[chosen++];
-    const PveDropEntry& entry = table[chosen];
+    return PayDropLine(player, table[chosen], rng);
+}
+
+void MatchManager::GrantGuaranteedDrops(PlayerState& player, std::uint32_t encounterId, Rng& rng, std::vector<PveDrop>& paid) {
+    const EncounterDefinition* encounter = encounters_ != nullptr ? encounters_->Find(encounterId) : nullptr;
+    if (encounter == nullptr) return;
+    for (const PveDropEntry& entry : encounter->guaranteed) {
+        for (int n = 0; n < entry.count; ++n) {
+            const PveDrop drop = PayDropLine(player, entry, rng);
+            if (drop.type == PveDropType::None) continue;
+            paid.push_back(drop);
+            for (IMatchListener* listener : listeners_) listener->OnPveDrop(player.Id(), drop);
+        }
+    }
+}
+
+PveDrop MatchManager::PayDropLine(PlayerState& player, const PveDropEntry& entry, Rng& rng) {
+    PveDrop none;
+    const auto usableTiers = [&](const PveDropEntry& e) {
+        std::vector<int> tiers;
+        for (int tier : e.tiers) {
+            if (pool_.RemainingInTier(tier) > 0 && std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) tiers.push_back(tier);
+        }
+        return tiers;
+    };
+    const auto itemChoices = [&](const PveDropEntry& e) {
+        std::vector<ItemId> choices = e.items;
+        if (choices.empty() && items_ != nullptr) {
+            for (const ItemDefinition& def : items_->All()) {
+                if (!def.IsConsumable()) choices.push_back(def.id);
+            }
+        }
+        return choices;
+    };
+    if (entry.type == PveDropType::Champion && usableTiers(entry).empty()) return none;
+    if (entry.type == PveDropType::Item && (items_ == nullptr || itemChoices(entry).empty())) return none;
 
     PveDrop drop;
     switch (entry.type) {
@@ -603,7 +641,10 @@ ActionResult MatchManager::TrySetShopLock(PlayerId player, bool locked) {
 ActionResult MatchManager::TryBuyXp(PlayerId player) {
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p, ActorRule::Shop);
-    return check == ActionResult::Ok ? p->TryBuyXp() : check;
+    if (check != ActionResult::Ok) return check;
+    const ActionResult result = p->TryBuyXp();
+    if (result == ActionResult::Ok) CheckUnlocks(*p);   // a new level can complete an unlock
+    return result;
 }
 
 ActionResult MatchManager::TrySellUnit(PlayerId player, UnitId unit) {
@@ -631,7 +672,8 @@ ActionResult MatchManager::TryEquipItem(PlayerId player, UnitId unit, ItemId ite
     PlayerState* p = nullptr;
     const ActionResult check = ResolveActor(player, p, ActorRule::Bench);
     if (check != ActionResult::Ok) return check;
-    if (BoardUnitLocked(*p, unit)) return ActionResult::UnitInCombat;
+    // Items may go onto board units during Combat / Resolution too (FEEDBACK V1): the round's fight was simulated when Combat began,
+    // so the item counts from the next fight on.
     const ActionResult result = p->TryEquipItem(unit, item);
     if (result == ActionResult::Ok) AfterRosterChange(player);   // an emblem can change a trait count
     return result;
@@ -776,11 +818,13 @@ std::uint64_t MatchManager::StateHash() const {
             h.Add(0x7EA17ull);
             for (int v : {tp.traitGold, tp.takedownCounter, tp.starDust, tp.grantCombats, tp.unitGranted ? 1 : 0, tp.moduleTiersOffered}) h.AddInt(v);
             for (std::uint32_t m : tp.modules) h.Add(m);
+            for (ChampionId c : tp.unlocked) h.Add(0x0C0Cull ^ c);
             h.Add(static_cast<std::uint64_t>(choice.kind));
             h.Add(choice.trait);
             h.AddInt(choice.tier);
             h.AddInt(choice.bonusGold);
             for (std::uint32_t o : choice.options) h.Add(o);
+            for (std::uint32_t o : choice.bonusItems) h.Add(o ^ 0xB0B0ull);
         }
     }
     for (const ChampionDefinition& def : database_.All()) h.AddInt(pool_.Remaining(def.id));

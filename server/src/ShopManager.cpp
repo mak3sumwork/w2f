@@ -85,10 +85,12 @@ const ChampionDefinition* ShopManager::DrawOne() {
     // champion inside that tier. Integer weights only -> fully deterministic.
     const auto& odds = config_.dropRatesByLevel[static_cast<std::size_t>(owner_.Level() - 1)];
 
+    // Unlockable champions (TFT's T-Hex) only once the owner has unlocked them.
+    const SharedChampionPool::Allowed allowed = [this](const ChampionDefinition& c) { return !c.unlock.Gated() || owner_.HasUnlocked(c.id); };
     int weights[kMaxCostTier];
     std::uint32_t totalWeight = 0;
     for (int t = 0; t < kMaxCostTier; ++t) {
-        weights[t] = pool_.RemainingInTier(t + 1) > 0 ? odds[static_cast<std::size_t>(t)] : 0;
+        weights[t] = pool_.DrawableInTier(t + 1, allowed) > 0 ? odds[static_cast<std::size_t>(t)] : 0;
         totalWeight += static_cast<std::uint32_t>(weights[t]);
     }
     if (totalWeight > 0) {
@@ -96,7 +98,7 @@ const ChampionDefinition* ShopManager::DrawOne() {
         for (int t = 0; t < kMaxCostTier; ++t) {
             const std::uint32_t weight = static_cast<std::uint32_t>(weights[t]);
             if (roll < weight) {
-                if (const ChampionDefinition* drawn = pool_.DrawFromTier(t + 1, rng_)) return drawn;
+                if (const ChampionDefinition* drawn = pool_.DrawFromTier(t + 1, rng_, allowed)) return drawn;
                 break;  // (cannot happen: the tier had copies) -- fall back rather than hand out a hole
             }
             roll -= weight;
@@ -114,8 +116,8 @@ const ChampionDefinition* ShopManager::DrawOne() {
         for (int direction : {-1, +1}) {
             if (distance == 0 && direction == +1) continue;
             const int t = favourite + direction * distance;
-            if (t < 0 || t >= kMaxCostTier || pool_.RemainingInTier(t + 1) <= 0) continue;
-            if (const ChampionDefinition* drawn = pool_.DrawFromTier(t + 1, rng_)) return drawn;
+            if (t < 0 || t >= kMaxCostTier || pool_.DrawableInTier(t + 1, allowed) <= 0) continue;
+            if (const ChampionDefinition* drawn = pool_.DrawFromTier(t + 1, rng_, allowed)) return drawn;
         }
     }
     return nullptr;

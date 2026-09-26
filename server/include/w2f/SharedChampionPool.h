@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 // The single, finite pool of champion copies shared by all players. Every copy is in
 // exactly one place at any time: the pool, a shop slot, or a player's roster.
 // Conservation of that invariant is what MatchManager::VerifyPoolIntegrity() checks.
@@ -25,7 +27,9 @@ public:
     // Removes one random copy from the given tier and returns its definition, or nullptr if
     // the tier is sold out. Each remaining *copy* is equally likely, so a champion with
     // more copies left is proportionally more likely to be drawn.
-    const ChampionDefinition* DrawFromTier(int tier, Rng& rng);
+    // Unlockable champions (ChampionDefinition::unlock) are skipped unless `allowed` says otherwise (a shop passes its owner's unlocks).
+    using Allowed = std::function<bool(const ChampionDefinition&)>;
+    const ChampionDefinition* DrawFromTier(int tier, Rng& rng, const Allowed& allowed = nullptr);
 
     // Puts copies back. Returns false (and changes nothing) if that would exceed the
     // champion's original supply -- that always indicates a bookkeeping bug in the caller.
@@ -39,7 +43,8 @@ public:
 
     int Remaining(ChampionId id) const;
     int InitialCopies(ChampionId id) const;
-    int RemainingInTier(int tier) const;
+    int RemainingInTier(int tier) const;   // every copy, unlockable ones included (bookkeeping)
+    int DrawableInTier(int tier, const Allowed& allowed = nullptr) const;   // the copies DrawFromTier may hand out
 
     // Copies a unit is worth when returned: 1 star = 1, 2 star = 3, 3 star = 9.
     static int CopiesForStarLevel(int starLevel);

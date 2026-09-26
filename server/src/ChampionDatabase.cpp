@@ -183,6 +183,11 @@ std::uint64_t ChampionDatabase::ContentHash() const {
         if (d.special) h.Add(0x59EC1A1ull + static_cast<std::uint64_t>(d.price));
         if (d.teamSlots != 1) h.AddInt(0x5107ll + d.teamSlots);
         if (d.stationary) h.Add(0x57A7ull);
+        if (d.unlock.Gated()) {
+            h.AddString(d.unlock.trait);
+            h.AddInt(d.unlock.starLevel);
+            h.AddInt(d.unlock.playerLevel);
+        }
         if (d.pilot.enabled) {
             h.AddInt(d.pilot.hpPercent);
             for (const PilotBonus& b : d.pilot.bonuses) {

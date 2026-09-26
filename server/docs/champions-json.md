@@ -187,6 +187,7 @@ See `docs/game-loop.md` for how PvE rounds work. The file has three parts:
 * **monsters** are ordinary champion definitions (same `stats` / `ability` / `passive` keys), kept in their own list: never in the shop, never in the pool, no traits, and their `id`s must not clash with `champions.json` (the sample uses 10000+). `cost` is accepted but not needed.
 * **encounters** are the boards. `units` stand on the same board a player has — `x` 0–6, `y` 0–3 with `y` = 3 the front row — and the fight mirrors them to the far side. `stage` / `round` choose when an encounter is used, **0 or absent = any**: (1, 2) is round 1-2, (0, 7) is X-7 of every stage. The most specific match wins (stage+round > stage only > round only > neither); if several tie, the match seed picks one, so every player in a round meets the same board. `drops` optionally replaces the default table for that encounter.
 * **drop tables**: winning a PvE round gives **one** drop, chosen from the table by `weight`. `Gold` needs `minGold` and `maxGold` (uniform between); `Champion` needs `tiers` (cost tiers to draw from — the copy comes out of the shared pool, and a full roster gets gold equal to its cost instead); `Item` optionally lists `items` (item ids; empty = any item in `items.json`). Lines that cannot pay out right now — no item data loaded, every listed tier sold out — are skipped for that roll.
+* **guaranteed drops** (demo 1.1): an encounter's `"guaranteedDrops"` (same line format plus `"count"`, 1..20; weights ignored) are **always** paid, win or lose, before the weighted drop: every line `count` times. The shipped file: 1-1 three Item Removers (`"items": [50]`), 1-2 and 1-3 three components (`"items": [1, ..., 8]`), X-7 two items. They are recorded in `CombatOutcome::loot` and sent as `pve_drop` messages like the weighted drop.
 
 ## `mother_nature.json`
 ```json
@@ -303,6 +304,9 @@ Champions:
 * `"plant": true` — a Nature plant: granted by the trait's breakpoint (`plants`), never in the pool, never on the bench, cannot be sold or equipped, takes no board slot (`teamSlots` 0).
 * `"special": true` (+ optional `"price"`) — owned like a champion but never in the pool: given by a trait (`grantUnit`, the Rift Herald) or offered in the shop (`queen`).
 * `"teamSlots"` (0..2) — board slots the unit takes (the Phaisa Queen: 2). `"stationary": true` — never walks or basic-attacks unless it has the `Awakened` status.
+* `"unlock": { "trait": "Hexagon", "starLevel": 7, "playerLevel": 8 }` (demo 1.1) — an UNLOCKABLE champion, like TFT's T-Hex: its copies are in the pool but no shop, drop or gift hands
+  them out until a player's board adds up to `starLevel` star levels of `trait` units while the player is level `playerLevel` or higher; from then on it may appear in THAT player's shop
+  (`PlayerState` remembers the unlock; `champion_unlocked` message, `state.traits.unlocked`).
 * `"pilot": { "hpPercent": 80, "bonuses": [ { "traits": [...], "effects": [...] } ] }` — Hexa: the ally on the hex directly behind it climbs in at the start of combat (status
   `Piloting`), the unit gains `hpPercent`% of its max HP and the first bonus whose `traits` the pilot carries; when the unit dies the pilot ejects.
 
@@ -315,7 +319,9 @@ bar never drops below 30%), `HealingAmp`, `Omnivamp`, `Awakened`; new effect `{"
 
 Traits: `"paths": [ {"name", "breakpoints"} ]` (instead of `breakpoints`; the match picks one at random from its seed), `"mutations"` + breakpoint `"mutationSlots"` (-1 = all) /
 `"supercharge"`, `"modules"` (`id`, `name`, `tier`, `effects`, `goldAfterCombat`, `echoEverySeconds`) + `"invention"` (the summon that fires them) + breakpoint `"moduleTier"`,
-`"queen": {champion, uniqueHolders, level}`; breakpoint keys `"xpAfterCombat"`, `"takedownsPerGold"`, `"starDust": {onLoss, perLossStreak, perTakedown, multiplier}`,
+`"queen": {champion, uniqueHolders, level}`; breakpoint keys `"xpAfterCombat"`, `"takedownsPerGold"`, `"starDust": {onLoss, perLossStreak, perTakedown, perCombat, multiplier}` (`perCombat`: after every player combat, demo 1.1; the cash-outs at every 100 are in `MatchTraits.cpp` `kCashOuts`),
 `"grantUnit": {champion, afterCombats}`, `"plants": [{champion, count}]`, `"plantStar"`. Trigger scope `"Team"` (OnTeamHpLoss only) fires once per team.
 The match-level keys need the trait data passed to `MatchManager::Create` / `Restore`.
 
+**Prismatic tiers (demo 1.1, engine rule, no data key):** the top breakpoint of a trait with four or more breakpoints (`kPrismaticMinBreakpoints`) is only reached when at least
+one of its holders has the trait from an item (an emblem) -- `ActiveTier(breakpoints, count, emblemHolders)`.

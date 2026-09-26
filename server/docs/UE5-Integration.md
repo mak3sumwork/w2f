@@ -93,7 +93,7 @@ any unknown or missing field and any out-of-range number is refused with an `err
 | `combine_items` | `first`, `second` | (revision 2) two base components in the item bag become the finished item; answered with `result`, a `bag_event`, and the new `state` |
 | `equip_item` | `unit_id`, `item_id` | Planning; in Combat/Resolution only onto bench units. An **Item Remover** takes *all* items off the unit and is used up |
 | `unequip_item` | `unit_id`, `slot` 0..2 | as `equip_item` |
-| `pick_trait_choice` | `index` -1..7 | (revision 5) Planning, Combat, Resolution: answer `state.trait_choice` (a Hexagon module: pick an option; a Najmi prototype: pick, or `-1` to decline and bank the star dust). Open choices are settled automatically when the next Combat starts |
+| `pick_trait_choice` | `index` -1..7 | (revision 5) Planning, Combat, Resolution: answer `state.trait_choice` (a Hexagon module: pick an option; a Najmi cash-out: pick one; revision 6: it stays open -- no need to answer --, the star dust keeps growing). Open module choices are settled automatically when the next Combat starts |
 | `get_state` | | any time: re-sends `state` and `public_state` |
 | `get_fight` | `fight_index` 0..7 | any time: the combat log of any of this round's fights (they are public) |
 | `get_catalog` | | any time, also in the lobby |
@@ -354,3 +354,10 @@ data yet; names are. Fights are instant on the server: the log is produced in on
   `team_slots`, `stationary`, `pilot`, catalog traits `paths`, `modules`, `mutations`; status types `ManaCost`, `HealingAmp`, `Omnivamp`, `Awakened`, `Piloting` appended (snapshot format 6); **4** (Phase 22) the catalog champions also carry `armor[3]`, `magic_resist[3]`, `ability_damage[3]`, `start_mana`, `mana_regen_milli`; **3** (Phase 21) `set_shop_lock` + `state.shop_locked` (the lock rule; snapshot format 5); **2** (Phase 20) `combine_items` command + `bag_event` message, `public_state.players[].bench` (benches are public, so a client can show a
   scouted player's arena), `combat.unit_items` (unit id -> item ids of the fighters).
 * The combat log's columns are named in every message: read them from `columns`, never by hard-coded position, and tolerate extra columns at the end.
+
+## Revision 6 (demo 1.1, FEEDBACK V1)
+* `trait_choice.choice.bonus_items` (a Najmi cash-out's extra items), `tier` up to 6 (hundreds of star dust); cash-outs are not settled automatically.
+* `state.traits.unlocked` and the message `champion_unlocked` (Hexa unlocks like TFT's T-Hex).
+* Guaranteed PvE loot: several `pve_drop` messages per PvE round.
+* Rule changes a client should know: the shop is open in every Planning phase (only Mother Nature's gift phase closes it); `equip_item` works on board units during
+  Combat / Resolution (the item counts from the next fight).

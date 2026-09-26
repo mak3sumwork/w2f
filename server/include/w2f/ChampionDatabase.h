@@ -99,6 +99,15 @@ struct ChampionDefinition {
     int teamSlots = 1;          // board slots it takes (plants 0; the Queen 2)
     bool stationary = false;    // never walks and never basic-attacks (it still casts) unless Awakened
     PilotDefinition pilot;      // Hexa
+    // An UNLOCKABLE champion (like TFT's T-Hex): its copies sit in the pool but nothing hands them out -- no shop, drop or gift -- until a player
+    // meets the rule; from then on it can appear in THAT player's shop. Rule: the star levels of the `trait` units on the board add up to
+    // `starLevel` or more while the player is level `playerLevel` or higher (demo 1.1, FEEDBACK V1).
+    struct UnlockRule {
+        std::string trait;
+        int starLevel = 0;
+        int playerLevel = 0;
+        bool Gated() const { return !trait.empty(); }
+    } unlock;
 
     // Sold in the shop and counted in the shared pool.
     bool IsPooled() const { return !summon && !plant && !special; }

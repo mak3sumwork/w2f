@@ -17,10 +17,19 @@
 namespace w2f {
 
 namespace {
-constexpr int kPrototypeTier2 = 35;   // star dust: below this a component, from here a completed item,
-constexpr int kPrototypeTier3 = 70;   // from here a choice of 3 completed items,
-constexpr int kPrototypeCashOut = 100;   // from here a completed item and 10 gold ("cash out")
-constexpr int kCashOutGold = 10;
+// Najmi's cash-outs (like TFT's Anima, FEEDBACK V1): offered only at every 100 star dust; the loot grows with the bank.
+// tier = hundreds banked (1..6): {items to pick from, of which kind, bonus completed items, bonus Item Removers, gold}
+struct CashOut { int choices; bool completed; int bonusCompleted; int bonusRemovers; int gold; };
+constexpr int kStarDustPerTier = 100;
+constexpr int kCashOutTiers = 6;
+constexpr CashOut kCashOuts[kCashOutTiers] = {
+    {1, false, 0, 0, 2},    // 100: a component
+    {1, true, 0, 0, 2},     // 200: a completed item
+    {3, true, 0, 1, 3},     // 300: a completed item of your choice + an Item Remover
+    {3, true, 1, 0, 8},     // 400: a choice + another completed item
+    {3, true, 1, 1, 15},    // 500: a choice + another completed item + an Item Remover
+    {3, true, 2, 0, 20},    // 600+: a choice + two more completed items
+};
 constexpr int kModuleOptions = 3;
 constexpr int kColumnsFromCentre[kBoardColumns] = {3, 2, 4, 1, 5, 0, 6};
 }  // namespace
@@ -52,9 +61,10 @@ std::vector<TraitCountUnit> MatchManager::BoardUnits(const PlayerState& player) 
 }
 
 int MatchManager::TierFor(const PlayerState& player, const TraitDefinition& trait, int* countOut) const {
-    const int count = CountTraitHolders(BoardUnits(player), trait.name);
+    const std::vector<TraitCountUnit> units = BoardUnits(player);
+    const int count = CountTraitHolders(units, trait.name);
     if (countOut) *countOut = count;
-    return ActiveTier(trait.Breakpoints(TraitPath(trait.id)), count);
+    return ActiveTier(trait.Breakpoints(TraitPath(trait.id)), count, CountEmblemHolders(units, trait.name));
 }
 
 int MatchManager::TraitTier(PlayerId player, const TraitDefinition& trait, int* countOut) const {
@@ -67,12 +77,32 @@ int MatchManager::TraitTier(PlayerId player, const TraitDefinition& trait, int* 
 }
 
 void MatchManager::AfterRosterChange(PlayerId id) {
-    if (traits_ == nullptr) return;
     PlayerState* p = players_.Get(id);
     if (p == nullptr || !p->IsAlive()) return;
+    if (traits_ == nullptr) {
+        CheckUnlocks(*p);
+        return;
+    }
     SyncPlants(*p);
     OfferModules(*p);
     OfferQueen(*p);
+    CheckUnlocks(*p);
+}
+
+// Unlockable champions (TFT's T-Hex): once the star levels of the rule's trait on the board add up to enough while the player is at the level,
+// the champion can appear in their shop for the rest of the match.
+void MatchManager::CheckUnlocks(PlayerState& player) {
+    for (const ChampionDefinition& def : database_.All()) {
+        if (!def.unlock.Gated() || player.HasUnlocked(def.id) || player.Level() < def.unlock.playerLevel) continue;
+        int stars = 0;
+        for (const UnitInstance& u : player.Roster().Units()) {
+            if (u.location != LocationType::Board || u.champion == nullptr || u.champion->summon || u.champion->plant) continue;
+            if (std::find(u.champion->traits.begin(), u.champion->traits.end(), def.unlock.trait) != u.champion->traits.end()) stars += u.starLevel;
+        }
+        if (stars < def.unlock.starLevel) continue;
+        player.TraitsMutable().unlocked.push_back(def.id);
+        for (IMatchListener* listener : listeners_) listener->OnChampionUnlocked(player.Id(), def.id);
+    }
 }
 
 // The Nature trait's plants follow the board: the breakpoint reached says which plants (and at what star) stand on it. Plants that should not
@@ -154,7 +184,7 @@ void MatchManager::OfferQueen(PlayerState& player) {
 void MatchManager::OfferModules(PlayerState& player) {
     if (traits_ == nullptr) return;
     TraitChoice& choice = choices_[player.Id()];
-    if (choice.Pending()) return;
+    if (choice.Pending() && choice.kind != TraitChoiceKind::Prototype) return;   // a Najmi cash-out waits; a module pushes it aside (it comes back after)
     for (const TraitDefinition& trait : traits_->All()) {
         if (trait.modules.empty()) continue;
         const std::vector<TraitBreakpoint>& breakpoints = trait.Breakpoints(TraitPath(trait.id));
@@ -185,20 +215,26 @@ void MatchManager::OfferModules(PlayerState& player) {
     }
 }
 
-// Najmi: whenever star dust comes in, a prototype from the tier of the bank is offered (it replaces an open one).
+// Najmi: a cash-out is offered each time the bank reaches another 100 star dust (100 .. 600). It stays on offer -- no pop-up, nothing to answer --
+// until the player takes it (the bank is spent) or a bigger one replaces it.
 void MatchManager::OfferPrototype(PlayerState& player) {
     if (items_ == nullptr || traits_ == nullptr) return;
     TraitChoice& choice = choices_[player.Id()];
     if (choice.Pending() && choice.kind != TraitChoiceKind::Prototype) return;   // a module decision first; the dust stays banked
     const int dust = player.Traits().starDust;
+    const int tier = std::min(kCashOutTiers, dust / kStarDustPerTier);
+    if (tier < 1) return;                                                           // nothing below 100
+    if (choice.kind == TraitChoiceKind::Prototype && choice.tier >= tier) return;   // this cash-out is already on offer
+    const CashOut& rule = kCashOuts[tier - 1];
     std::vector<std::uint32_t> components;
     std::vector<std::uint32_t> completed;
+    std::uint32_t remover = 0;
     for (const ItemDefinition& def : items_->All()) {
         if (ItemIsOfClass(*items_, def, ItemClass::Component)) components.push_back(def.id);
         else if (ItemIsOfClass(*items_, def, ItemClass::Legendary)) completed.push_back(def.id);
+        else if (def.IsConsumable() && remover == 0) remover = def.id;
     }
-    const int tier = dust >= kPrototypeCashOut ? 4 : dust >= kPrototypeTier3 ? 3 : dust >= kPrototypeTier2 ? 2 : 1;
-    std::vector<std::uint32_t>& source = tier == 1 ? components : completed;
+    std::vector<std::uint32_t>& source = rule.completed ? completed : components;
     if (source.empty()) return;
     std::uint32_t najmi = 0;
     for (const TraitDefinition& trait : traits_->All()) {
@@ -209,13 +245,18 @@ void MatchManager::OfferPrototype(PlayerState& player) {
     choice.kind = TraitChoiceKind::Prototype;
     choice.trait = najmi;
     choice.tier = tier;
-    choice.bonusGold = tier == 4 ? kCashOutGold : 0;
-    const int count = tier == 3 ? 3 : 1;
-    while (!source.empty() && static_cast<int>(choice.options.size()) < count) {
+    choice.bonusGold = rule.gold;
+    while (!source.empty() && static_cast<int>(choice.options.size()) < rule.choices) {
         const std::size_t pick = rng.NextBelow(static_cast<std::uint32_t>(source.size()));
         choice.options.push_back(source[pick]);
         source.erase(source.begin() + static_cast<std::ptrdiff_t>(pick));
     }
+    for (int k = 0; k < rule.bonusCompleted && !completed.empty(); ++k) {
+        const std::size_t pick = rng.NextBelow(static_cast<std::uint32_t>(completed.size()));
+        choice.bonusItems.push_back(completed[pick]);
+        completed.erase(completed.begin() + static_cast<std::ptrdiff_t>(pick));
+    }
+    for (int k = 0; k < rule.bonusRemovers && remover != 0; ++k) choice.bonusItems.push_back(remover);
     for (IMatchListener* listener : listeners_) listener->OnTraitChoiceOffered(player.Id(), choice);
 }
 
@@ -228,7 +269,7 @@ void MatchManager::GrantTraitRewards(PlayerState& player, const CombatOutcome& o
     TraitRewards rewards;
     for (const TraitDefinition& trait : traits_->All()) {
         const std::vector<TraitBreakpoint>& breakpoints = trait.Breakpoints(TraitPath(trait.id));
-        const int tier = ActiveTier(breakpoints, CountTraitHolders(units, trait.name));
+        const int tier = ActiveTier(breakpoints, CountTraitHolders(units, trait.name), CountEmblemHolders(units, trait.name));
         if (tier == 0) continue;
         const TraitBreakpoint& bp = breakpoints[static_cast<std::size_t>(tier - 1)];
         int takedowns = 0;   // by this player's units that carry the trait
@@ -257,6 +298,7 @@ void MatchManager::GrantTraitRewards(PlayerState& player, const CombatOutcome& o
         if (bp.starDust.Any()) {
             int dust = bp.starDust.perTakedown * takedowns;
             if (lost) dust += bp.starDust.onLoss + bp.starDust.perLossStreak * std::max(0, -player.Streak());
+            if (!outcome.matchup.awayIsMonsters) dust += bp.starDust.perCombat;   // every player combat, won or lost
             dust *= bp.starDust.multiplier;
             progress.starDust += dust;
             rewards.starDust += dust;
@@ -304,12 +346,14 @@ ActionResult MatchManager::ResolveTraitChoice(PlayerId id, int index, bool autom
             p->TraitsMutable().modules.push_back(picked);
         } else {
             p->AddItemToBag(picked);
+            for (std::uint32_t bonus : choice.bonusItems) p->AddItemToBag(bonus);
             if (choice.bonusGold > 0) p->AddGold(choice.bonusGold);
             p->TraitsMutable().starDust = 0;
         }
     }
     for (IMatchListener* listener : listeners_) listener->OnTraitChoiceResolved(id, choice, index, automatic);
     if (traits_ != nullptr) OfferModules(*p);   // the next tier may be waiting
+    if (traits_ != nullptr && !choices_[id].Pending() && choice.kind == TraitChoiceKind::Module) OfferPrototype(*p);   // a cash-out the module pushed aside
     return ActionResult::Ok;
 }
 
@@ -322,8 +366,9 @@ ActionResult MatchManager::TryPickTraitChoice(PlayerId player, int index) {
 
 void MatchManager::SettleTraitChoices() {
     for (PlayerId id : players_.AlivePlayerIds()) {
-        for (int guard = 0; guard < 4 && choices_[id].Pending(); ++guard) {   // (settling a module may open the next tier's offer)
-            ResolveTraitChoice(id, choices_[id].kind == TraitChoiceKind::Module ? 0 : -1, true);
+        // Modules are settled (the first option) when a fight starts; a Najmi cash-out stays on offer until the player takes it (FEEDBACK V1).
+        for (int guard = 0; guard < 4 && choices_[id].Pending() && choices_[id].kind == TraitChoiceKind::Module; ++guard) {   // (settling a module may open the next tier's offer)
+            ResolveTraitChoice(id, 0, true);
         }
     }
 }

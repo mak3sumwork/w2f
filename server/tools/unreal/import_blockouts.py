@@ -212,6 +212,31 @@ def apply_crafted_materials():
         unreal.log("W2F: %s uses %s" % (name, inst_name))
 
 
+SFX_SRC = os.environ.get("W2F_SFX") or os.path.normpath(os.path.join(HERE, "..", "..", "docs", "sfx"))
+SFX_DEST = "/Game/W2F/Sfx"
+
+
+def import_sfx():
+    """The synthesised sound effects (tools/make_sfx.py -> docs/sfx/SFX_*.wav) as SoundWaves in /Game/W2F/Sfx (AW2FArena::PlaySfx finds them by name)."""
+    if not os.path.isdir(SFX_SRC):
+        return 0
+    tasks = []
+    for f in sorted(os.listdir(SFX_SRC)):
+        if not (f.startswith("SFX_") and f.endswith(".wav")):
+            continue
+        t = unreal.AssetImportTask()
+        t.set_editor_property("filename", os.path.join(SFX_SRC, f))
+        t.set_editor_property("destination_path", SFX_DEST)
+        t.set_editor_property("automated", True)
+        t.set_editor_property("replace_existing", True)
+        t.set_editor_property("save", True)
+        tasks.append(t)
+    if tasks:
+        unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+    unreal.log("W2F: %d sound effects" % len(tasks))
+    return len(tasks)
+
+
 def import_hero_portraits():
     """The portraits rendered from the Mixamo heroes (tools/mixamo/build_heroes.py -> <project>/SourceArt/Mixamo/<id>_<Name>/T_Portrait_<id>.png) replace the generated
     busts of the same name that import_icons() just brought in from docs/icons. Without this, re-running setup_viewer.py puts the old busts back on the shop cards."""

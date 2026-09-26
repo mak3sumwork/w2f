@@ -21,8 +21,11 @@ PIECE = ARGS[ARGS.index("--piece") + 1] if "--piece" in ARGS else "floor"
 random.seed(11)
 
 FLOOR_W, FLOOR_L = 12.0, 12.8          # the painted floor plane (X, Y), metres
-ITEM_X, ITEM_Y0, ITEM_STEP, ITEM_Z = -4.3, 0.9, 0.51, 0.31   # the ten item pedestals (x, first y, spacing towards the bench, top)
-ITEM_Y1 = ITEM_Y0 - 9 * ITEM_STEP
+# The item slots (FEEDBACK V1): a flat stone platform on the front-left corner (where a brazier pillar stood), ten slots in two columns of five,
+# nearest the bench first. AW2FArena::ItemSlotWorld mirrors these numbers.
+ITEM_COLS = (-4.5, -5.2)                  # x of the two columns
+ITEM_Y0, ITEM_STEP, ITEM_Z = -5.45, 0.55, 0.14   # first row's y (the front), row spacing towards the board, the slots' top
+PLATFORM = (-5.75, -4.05, -5.95, -3.0)    # x0, x1, y0, y1 of the item platform
 BOARD_X, BOARD_Y = 3.95, 3.7           # half extents of the grass board
 WALK_X, WALK_Y = 4.45, 5.3             # half extents of the flagstone walkways (they run from BOARD_Y to WALK_Y)
 
@@ -341,7 +344,7 @@ def base():
             y = -4.75
             while y < 4.75:
                 ln = random.uniform(0.6, 1.3); ln = min(ln, 4.75 - y)
-                if sx < 0 and tier == 0 and ITEM_Y1 - 0.3 < y + ln / 2 < ITEM_Y0 + 0.3:   # the item ledge goes here
+                if sx < 0 and y + ln / 2 < PLATFORM[3] + 0.1:   # the item platform takes the front-left corner
                     y += ln; continue
                 if random.random() > 0.12 or tier == 2:
                     hh = h + random.uniform(-0.04, 0.06)
@@ -353,6 +356,7 @@ def base():
     # corner pillars with bronze braziers (the game puts its flickering fire lights at x = +-4.75, y = +-5.25, z = 1.75)
     for sx in (-1, 1):
         for sy in (-1, 1):
+            if sx < 0 and sy < 0: continue   # the front-left corner holds the item platform instead
             px, py = sx * 4.75, sy * 5.25
             stone_block("plinth%d%d" % (sx, sy), (px, py, 0.12), (1.15, 1.15, 0.34), m_pillar, jag=0.02)
             stone_block("shaft%d%d" % (sx, sy), (px, py, 0.62), (0.78, 0.78, 0.7), m_pillar, jag=0.015)
@@ -371,15 +375,13 @@ def base():
                 limb("lbar%d%d%d%d" % (sx, k, cx, cy), (lx + cx * 0.12, ly + cy * 0.12, 1.52), (lx + cx * 0.09, ly + cy * 0.09, 1.9), 0.018, 0.015, m_gold, seg=6)
             limb("lroof%d%d" % (sx, k), (lx, ly, 1.9), (lx, ly, 2.08), 0.22, 0.02, m_gold, seg=8)
             sphere("lcry%d%d" % (sx, k), (lx, ly, 1.7), (0.1, 0.1, 0.17), lamp, seg=6, rings=4)
-    # the item slots on the left of the board (screen left = -X), from the middle down to the bench corner, like TFT: a stone ledge carrying ten
-    # gold-rimmed pedestals; the game hangs the player's items over them as glowing orbs (AW2FArena::ItemSlotWorld mirrors ITEM_X / ITEM_Y0 / ITEM_STEP / ITEM_Z)
-    ledge_len = ITEM_Y0 - ITEM_Y1 + 0.6
-    stone_block("itemledge", (ITEM_X, (ITEM_Y0 + ITEM_Y1) / 2, 0.06), (0.55, ledge_len, 0.2), m_block, jag=0.015)
+    # the item platform on the front-left corner: one flat slab with a gold edge, ten inset slots with a warm glow
+    px0, px1, py0, py1 = PLATFORM
+    stone_block("itemplatform", ((px0 + px1) / 2, (py0 + py1) / 2, 0.02), (px1 - px0, py1 - py0, 0.2), m_pillar, jag=0.01)
     for k in range(10):
-        y = ITEM_Y0 - k * ITEM_STEP
-        limb("ped%d" % k, (ITEM_X, y, 0.16), (ITEM_X, y, 0.27), 0.17, 0.13, m_pillar, seg=6)
-        limb("pedtop%d" % k, (ITEM_X, y, 0.27), (ITEM_X, y, 0.3), 0.19, 0.19, m_gold, seg=6)
-        limb("pedcup%d" % k, (ITEM_X, y, 0.3), (ITEM_X, y, 0.31), 0.13, 0.13, material("pedglow%d" % k, lin((0.3, 0.26, 0.2)), 0.0, 0.6, emit=lin((0.55, 0.42, 0.18)), strength=1.0), seg=6)
+        cx, cy = ITEM_COLS[k % 2], ITEM_Y0 + (k // 2) * ITEM_STEP
+        limb("slot%d" % k, (cx, cy, 0.115), (cx, cy, 0.13), 0.21, 0.21, m_gold, seg=6)
+        limb("slotin%d" % k, (cx, cy, 0.125), (cx, cy, 0.14), 0.17, 0.17, material("slotglow%d" % k, lin((0.28, 0.24, 0.18)), 0.0, 0.6, emit=lin((0.5, 0.38, 0.16)), strength=1.0), seg=6)
     # the plateau's edge: a rocky cliff skirt under the floor's rim, going down to the valley, with boulders stacked along it
     def rounded(w, l, rad, z, seg=6):
         pts = []

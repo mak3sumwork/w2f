@@ -39,12 +39,13 @@ enum class TraitChoiceKind : std::uint8_t { None, Module, Prototype };
 struct TraitChoice {
     TraitChoiceKind kind = TraitChoiceKind::None;
     std::uint32_t trait = 0;              // the trait asking
-    int tier = 0;                         // Module: the module tier (1..3). Prototype: the star-dust tier (1 below 35, 2 below 70, 3 below 100, 4 = cash out)
-    std::vector<std::uint32_t> options;   // Module: module ids. Prototype: item ids
-    int bonusGold = 0;                    // Prototype cash-out: gold paid along with the item
+    int tier = 0;                         // Module: the module tier (1..3). Prototype: the cash-out tier = hundreds of star dust banked (1..6)
+    std::vector<std::uint32_t> options;   // Module: module ids. Prototype: item ids (pick one)
+    int bonusGold = 0;                    // Prototype cash-out: gold paid along with the picked item
+    std::vector<std::uint32_t> bonusItems;   // Prototype cash-out: items given along with the picked one (the bigger cash-outs)
     bool Pending() const { return kind != TraitChoiceKind::None; }
     bool operator==(const TraitChoice& o) const {
-        return kind == o.kind && trait == o.trait && tier == o.tier && options == o.options && bonusGold == o.bonusGold;
+        return kind == o.kind && trait == o.trait && tier == o.tier && options == o.options && bonusGold == o.bonusGold && bonusItems == o.bonusItems;
     }
 };
 
@@ -109,6 +110,8 @@ public:
     virtual void OnTraitChoiceResolved(PlayerId /*player*/, const TraitChoice& /*choice*/, int /*index*/, bool /*automatic*/) {}
     // Fired during Resolution entry, after the round's results: what the player's traits paid out.
     virtual void OnTraitRewards(PlayerId /*player*/, const TraitRewards& /*rewards*/) {}
+    // An unlockable champion (Hexa) can now appear in the player's shop.
+    virtual void OnChampionUnlocked(PlayerId /*player*/, ChampionId /*champion*/) {}
 };
 
 class MatchManager : private IPlayerListener {  // private: it only re-broadcasts player events
@@ -159,8 +162,8 @@ public:
     bool IsMotherNatureRound() const { return IsMotherNatureRound(round_); }
     bool IsMotherNatureRound(int round) const { return motherNature_ != nullptr && config_.match.IsMotherNatureRound(round); }
     // Is the shop closed this round? True in the opening round(s) (the free unit is the reward) and in Mother Nature's rounds (the gift is).
-    bool IsShopClosed() const { return IsShopClosed(round_); }
-    bool IsShopClosed(int round) const { return config_.match.IsOpeningRound(round) || IsMotherNatureRound(round); }
+    // The shop is open in every Planning phase (FEEDBACK V1, demo 1.1); only Mother Nature's gift phase closes it (and the opening rounds, if configured).
+    bool IsShopClosed() const { return phase_ == MatchPhase::MotherNature || config_.match.IsOpeningRound(round_); }
     const MotherNatureDatabase* MotherNature() const { return motherNature_; }
     // Trait system v2 (all empty / none when the match runs without trait data -- then the traits only act inside fights).
     // `traits` (optional, must outlive the match) turns on the match-level half of the traits: the path each trait with paths takes this match,
@@ -263,6 +266,9 @@ private:
     int ComputeCombatTicks() const;   // the Combat phase's length for the fights in outcomes_
     void ApplyCombatOutcomes();
     PveDrop GrantPveDrop(PlayerState& player, std::uint32_t encounterId, Rng& rng);
+    PveDrop PayDropLine(PlayerState& player, const PveDropEntry& entry, Rng& rng);   // one payout of one drop-table line
+    void GrantGuaranteedDrops(PlayerState& player, std::uint32_t encounterId, Rng& rng, std::vector<PveDrop>& paid);
+    void CheckUnlocks(PlayerState& player);   // unlockable champions whose rule the player now meets
     void TakeAutoSnapshot();
     // Mother Nature
     void GenerateGifts();

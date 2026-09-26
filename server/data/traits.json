@@ -159,18 +159,18 @@
       ]
     },
 
-    // NAJMI (3/5/6) "The Cosmic Link": whenever a Najmi unit casts, the allies next to it gain 15 / 25 / 25 mana. STAR DUST: after a lost player combat the
-    // player gains 20 + 5 x the loss streak, and 2 per Najmi takedown; (6) is prismatic: all star dust x2. Each time star dust comes in, a prototype
-    // from the bank's tier is offered: take it (the bank is spent) or decline (it keeps growing). Below 35 a component, 35+ a completed item, 70+ a
-    // choice of 3 completed items, 100+ "cash out": a completed item and 10 gold.
+    // NAJMI (2/4/6) "The Cosmic Link" (demo 1.1, after TFT's Anima): whenever a Najmi unit casts, the allies next to it gain 15 / 25 / 25 mana. STAR DUST:
+    // after a lost player combat the player gains 20 + 5 x the loss streak, and 2 per Najmi takedown; (4) also 4 after EVERY player combat; (6): all star
+    // dust x2. CASH-OUTS: at every 100 star dust (100 .. 600) the Najmi offer loot that grows with the bank (MatchTraits.cpp kCashOuts): take it (the bank
+    // is spent) or keep saving for a bigger one. The offer stays open until taken or replaced.
     {
       "id": 7, "name": "Najmi",
       "breakpoints": [
-        { "count": 3, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
+        { "count": 2, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
             "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 15 } ] } } ] },
-        { "count": 5, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 242, "name": "The Cosmic Link", "trigger": "OnCast",
+        { "count": 4, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2, "perCombat": 4 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 242, "name": "The Cosmic Link", "trigger": "OnCast",
             "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 25 } ] } } ] },
-        { "count": 6, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2, "multiplier": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 243, "name": "The Cosmic Link", "trigger": "OnCast",
+        { "count": 6, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2, "perCombat": 4, "multiplier": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 243, "name": "The Cosmic Link", "trigger": "OnCast",
             "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 25 } ] } } ] }
       ]
     },

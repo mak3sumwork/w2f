@@ -54,8 +54,9 @@ struct StarDustRule {
     int onLoss = 0;
     int perLossStreak = 0;
     int perTakedown = 0;
+    int perCombat = 0;    // after every player combat, won or lost
     int multiplier = 1;
-    bool Any() const { return onLoss != 0 || perLossStreak != 0 || perTakedown != 0; }
+    bool Any() const { return onLoss != 0 || perLossStreak != 0 || perTakedown != 0 || perCombat != 0; }
 };
 
 // A unit the trait gives the player (on the bench) after `afterCombats` player combats fought with this breakpoint (or a higher one) active.
@@ -146,8 +147,10 @@ struct TraitDefinition {
     }
 };
 
-// Which breakpoint `count` holders reach: 1-based tier, 0 = none.
-int ActiveTier(const std::vector<TraitBreakpoint>& breakpoints, int count);
+// Which breakpoint `count` holders reach: 1-based tier, 0 = none. The top ("prismatic") breakpoint of a trait with kPrismaticMinBreakpoints or more
+// breakpoints is only reached when at least one holder has the trait from an emblem (`emblemHolders` > 0; FEEDBACK V1, demo 1.1).
+constexpr std::size_t kPrismaticMinBreakpoints = 4;
+int ActiveTier(const std::vector<TraitBreakpoint>& breakpoints, int count, int emblemHolders);
 
 class TraitDatabase {
 public:
@@ -181,6 +184,8 @@ struct TraitCountUnit {
 bool UnitHasTrait(const TraitCountUnit& unit, const std::string& trait);
 // How many DIFFERENT champions among `units` carry `trait` (a champion counts if any of its copies does). Summons and plants never count.
 int CountTraitHolders(const std::vector<TraitCountUnit>& units, const std::string& trait);
+// How many of those count only because an item (an emblem) gives them the trait.
+int CountEmblemHolders(const std::vector<TraitCountUnit>& units, const std::string& trait);
 // The units' trait-count view of a roster's BOARD (items resolve through `items`, which may be null).
 std::vector<TraitCountUnit> BoardTraitUnits(const std::vector<UnitInstance>& roster, const ItemDatabase* items);
 

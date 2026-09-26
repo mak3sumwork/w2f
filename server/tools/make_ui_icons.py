@@ -107,6 +107,56 @@ def main():
     save("T_UI_Leaf", fill(np.maximum(leaf, -vein)))
     fl = np.minimum(np.hypot(x, y + 0.3) - 0.55, poly(x, y, [(0.05, 0.98), (-0.5, -0.15), (0.5, -0.15)]))
     save("T_UI_Flame", fill(fl))
+    # rank chevron (pointing left) and a five-point star, for the unit plates
+    chev = np.minimum(seg(x, y, (0.35, 0.75), (-0.35, 0.0), 0.2), seg(x, y, (-0.35, 0.0), (0.35, -0.75), 0.2))
+    save("T_UI_ChevLeft", fill(chev))
+    star = []
+    for k in range(10):
+        a_ = math.pi / 2 + k * math.pi / 5
+        rr = 0.95 if k % 2 == 0 else 0.4
+        star.append((rr * math.cos(a_), rr * math.sin(a_)))
+    tri_d = np.full(x.shape, 9.0, np.float32)
+    for k in range(5):   # a star = the union of five triangles (outer point + the two inner points beside it) and the inner pentagon
+        o = star[2 * k]; l = star[(2 * k - 1) % 10]; r_ = star[(2 * k + 1) % 10]
+        tri_d = np.minimum(tri_d, poly(x, y, [l, o, r_]))
+    tri_d = np.minimum(tri_d, poly(x, y, [star[(2 * k + 1) % 10] for k in range(5)]))
+    save("T_UI_Star", fill(tri_d))
+    # stat icons for the unit panel: attack damage (sword), ability power (swirl star), armor (shield), magic resist (shield with a rune),
+    # attack speed (double arrow), crit (burst), range (bow arrow), mana (drop)
+    sword = np.minimum(np.minimum(seg(x, y, (-0.6, -0.6), (0.65, 0.65), 0.1), seg(x, y, (-0.55, -0.15), (-0.15, -0.55), 0.09)), seg(x, y, (-0.8, -0.8), (-0.62, -0.62), 0.12))
+    save("T_UI_StatAD", fill(sword))
+    ap = np.maximum(np.abs(r - 0.55) - 0.12, -(np.abs(np.arctan2(y, x) * 0.0) - 1)) 
+    swirl = np.full(x.shape, 9.0, np.float32)
+    for k in range(3):
+        a0 = k * 2 * math.pi / 3
+        pts = [(0.15 * math.cos(a0 + t) * (1 + t), 0.15 * math.sin(a0 + t) * (1 + t)) for t in np.linspace(0, 2.4, 10)]
+        for i_ in range(len(pts) - 1): swirl = np.minimum(swirl, seg(x, y, pts[i_], pts[i_ + 1], 0.08))
+    save("T_UI_StatAP", fill(swirl))
+    shield = np.maximum(np.maximum(np.abs(x) - 0.7, y - 0.75), np.hypot(x, np.minimum(y, 0) * 0.9 + 0.0) - 0.8)
+    shield = np.maximum(np.maximum(np.abs(x) - 0.7, y - 0.75), np.where(y < 0.1, np.hypot(x / 0.7, (y - 0.1) / 0.95) - 1.0, -1.0))
+    save("T_UI_StatArmor", fill(shield))
+    rune = np.maximum(np.hypot(x, y - 0.12) - 0.3, -(np.hypot(x, y - 0.12) - 0.16))
+    save("T_UI_StatMR", fill(np.maximum(shield, -rune)))
+    arrows = np.minimum(np.minimum(seg(x, y, (-0.7, 0.3), (0.2, 0.3), 0.09), seg(x, y, (-0.7, -0.3), (0.2, -0.3), 0.09)),
+                        np.minimum(poly(x, y, [(0.8, 0.3), (0.2, 0.62), (0.2, -0.02)]), poly(x, y, [(0.8, -0.3), (0.2, 0.02), (0.2, -0.62)])))
+    save("T_UI_StatAS", fill(arrows))
+    burst = []
+    for k in range(16):
+        a_ = k * math.pi / 8
+        rr = 0.95 if k % 2 == 0 else 0.45
+        burst.append((rr * math.cos(a_), rr * math.sin(a_)))
+    bd = np.full(x.shape, 9.0, np.float32)
+    for k in range(8):
+        bd = np.minimum(bd, poly(x, y, [burst[(2 * k - 1) % 16], burst[2 * k], burst[(2 * k + 1) % 16]]))
+    bd = np.minimum(bd, r - 0.47)
+    save("T_UI_StatCrit", fill(bd))
+    rng_ = np.minimum(seg(x, y, (-0.7, -0.7), (0.5, 0.5), 0.08), poly(x, y, [(0.85, 0.85), (0.25, 0.65), (0.65, 0.25)]))
+    rng_ = np.minimum(rng_, np.minimum(seg(x, y, (-0.7, -0.7), (-0.85, -0.4), 0.07), seg(x, y, (-0.7, -0.7), (-0.4, -0.85), 0.07)))
+    save("T_UI_StatRange", fill(rng_))
+    drop = np.minimum(np.hypot(x, y + 0.25) - 0.55, poly(x, y, [(0.0, 0.95), (-0.48, 0.0), (0.48, 0.0)]))
+    save("T_UI_StatMana", fill(drop))
+    heart = np.minimum(np.minimum(np.hypot(x + 0.3, y - 0.25) - 0.38, np.hypot(x - 0.3, y - 0.25) - 0.38), poly(x, y, [(0.0, -0.85), (0.66, 0.1), (-0.66, 0.1)]))
+    save("T_UI_StatHP", fill(heart))
     xs, ys = grid(S * SS)
     save("T_UI_Grad", np.clip((1.0 - ys) / 2.0, 0, 1) ** 1.4 * np.ones_like(xs))
     save("T_UI_Glow", np.clip(1.0 - r, 0, 1) ** 2)

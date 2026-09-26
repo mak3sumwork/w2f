@@ -316,6 +316,8 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
         w.I32(tp.moduleTiersOffered);
         w.U32(static_cast<std::uint32_t>(tp.modules.size()));
         for (std::uint32_t m : tp.modules) w.U32(m);
+        w.U32(static_cast<std::uint32_t>(tp.unlocked.size()));   // format 7
+        for (ChampionId c : tp.unlocked) w.U32(c);
         const TraitChoice& choice = choices_[static_cast<std::size_t>(i)];
         w.U8(static_cast<std::uint32_t>(choice.kind));
         w.U32(choice.trait);
@@ -323,6 +325,8 @@ std::vector<std::uint8_t> MatchManager::Snapshot() const {
         w.I32(choice.bonusGold);
         w.U32(static_cast<std::uint32_t>(choice.options.size()));
         for (std::uint32_t o : choice.options) w.U32(o);
+        w.U32(static_cast<std::uint32_t>(choice.bonusItems.size()));
+        for (std::uint32_t o : choice.bonusItems) w.U32(o);
     }
 
     w.U32(static_cast<std::uint32_t>(matchups_.size()));
@@ -496,6 +500,8 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
         data.traits.moduleTiersOffered = r.I32();
         const std::size_t moduleCount = r.Count(3, 4);
         for (std::size_t m = 0; m < moduleCount; ++m) data.traits.modules.push_back(r.U32());
+        const std::size_t unlockCount = r.Count(3, 4);
+        for (std::size_t m = 0; m < unlockCount; ++m) data.traits.unlocked.push_back(static_cast<ChampionId>(r.U32()));
         TraitChoice& choice = match->choices_[static_cast<std::size_t>(i)];
         const std::uint32_t kind = r.U8();
         choice.trait = r.U32();
@@ -503,6 +509,9 @@ std::unique_ptr<MatchManager> MatchManager::Restore(const std::vector<std::uint8
         choice.bonusGold = r.I32();
         const std::size_t optionCount = r.Count(8, 4);
         for (std::size_t o = 0; o < optionCount; ++o) choice.options.push_back(r.U32());
+        const std::size_t bonusCount = r.U32();
+        if (bonusCount > 16) return fail("too many bonus items in a trait choice");
+        for (std::size_t o = 0; o < bonusCount; ++o) choice.bonusItems.push_back(r.U32());
         if (!r.ok()) return fail("truncated trait section");
         if (kind > static_cast<std::uint32_t>(TraitChoiceKind::Prototype)) return fail("unknown trait choice");
         choice.kind = static_cast<TraitChoiceKind>(kind);

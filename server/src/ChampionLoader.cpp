@@ -1000,8 +1000,10 @@ private:
             const Value* maxGold = Take(o, "maxGold");
             const Value* tiers = Take(o, "tiers");
             const Value* items = Take(o, "items");
+            const Value* count = Take(o, "count");
             if (!RejectUnknown(o)) return false;
             PveDropEntry entry;
+            if (count && !ReadInt(*count, dropPath + ".count", 1, 20, entry.count)) return false;
             if (!ReadEnum(*type, dropPath + ".type", kDropTypes, entry.type)) return false;
             if (weight && !ReadInt(*weight, dropPath + ".weight", 1, 1'000'000, entry.weight)) return false;
             if (entry.type == PveDropType::Gold) {
@@ -1045,6 +1047,7 @@ private:
         const Value* stage = Take(o, "stage");
         const Value* round = Take(o, "round");
         const Value* drops = Take(o, "drops");
+        const Value* guaranteed = Take(o, "guaranteedDrops");
         if (!RejectUnknown(o)) return false;
         int idValue = 0;
         if (!ReadInt(*id, path + ".id", 1, 2'000'000'000, idValue)) return false;
@@ -1072,6 +1075,7 @@ private:
             out.units.push_back(placed);
         }
         if (drops && !ReadDrops(*drops, path + ".drops", out.drops)) return false;
+        if (guaranteed && !ReadDrops(*guaranteed, path + ".guaranteedDrops", out.guaranteed)) return false;
         return true;
     }
 
@@ -1357,7 +1361,9 @@ private:
                 const Value* perStreak = Take(d, "perLossStreak");
                 const Value* perTakedown = Take(d, "perTakedown");
                 const Value* multiplier = Take(d, "multiplier");
+                const Value* perCombat = Take(d, "perCombat");
                 if (!RejectUnknown(d)) return false;
+                if (perCombat && !ReadInt(*perCombat, bpPath + ".starDust.perCombat", 0, 1000, bp.starDust.perCombat)) return false;
                 if (onLoss && !ReadInt(*onLoss, bpPath + ".starDust.onLoss", 0, 1000, bp.starDust.onLoss)) return false;
                 if (perStreak && !ReadInt(*perStreak, bpPath + ".starDust.perLossStreak", 0, 1000, bp.starDust.perLossStreak)) return false;
                 if (perTakedown && !ReadInt(*perTakedown, bpPath + ".starDust.perTakedown", 0, 1000, bp.starDust.perTakedown)) return false;
@@ -1510,7 +1516,20 @@ private:
         const Value* teamSlots = Take(o, "teamSlots");
         const Value* stationary = Take(o, "stationary");
         const Value* pilot = Take(o, "pilot");
+        const Value* unlock = Take(o, "unlock");
         if (!RejectUnknown(o)) return false;
+        if (unlock) {   // { "trait": "Hexagon", "starLevel": 7, "playerLevel": 8 }
+            Obj u;
+            if (!Open(*unlock, path + ".unlock", u)) return false;
+            const Value* trait = nullptr;
+            const Value* stars = nullptr;
+            if (!Require(u, "trait", trait) || !Require(u, "starLevel", stars)) return false;
+            const Value* level = Take(u, "playerLevel");
+            if (!RejectUnknown(u)) return false;
+            if (!ReadString(*trait, path + ".unlock.trait", out.unlock.trait)) return false;
+            if (!ReadInt(*stars, path + ".unlock.starLevel", 1, 100, out.unlock.starLevel)) return false;
+            if (level && !ReadInt(*level, path + ".unlock.playerLevel", 1, 20, out.unlock.playerLevel)) return false;
+        }
         if (plant && !ReadBool(*plant, path + ".plant", out.plant)) return false;
         if (special && !ReadBool(*special, path + ".special", out.special)) return false;
         if (price && !ReadInt(*price, path + ".price", 1, 20, out.price)) return false;

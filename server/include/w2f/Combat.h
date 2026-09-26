@@ -174,6 +174,7 @@ struct CombatOutcome {
     // Set by the MatchManager when the round resolves (0 before that, for draws, ghosts' owners' wins and PvE).
     int damageToLoser = 0;
     PveDrop drop;           // PvE win only: what the player was given
+    std::vector<PveDrop> loot;   // PvE: the encounter's guaranteed drops, paid win or lose (demo 1.1)
     CombatLog log;          // Empty for simulators that don't produce one.
 };
 

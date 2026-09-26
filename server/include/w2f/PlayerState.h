@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 // Everything the server tracks for one player: health, level/XP, gold, streak, their units
 // (bench + board, via UnitRoster), and their attached ShopManager.
 //
@@ -33,9 +35,10 @@ struct TraitProgress {
     bool unitGranted = false;    // Phaisa: the Rift Herald was given (once per match)
     int moduleTiersOffered = 0;  // Hexagon: the highest module tier already offered
     std::vector<std::uint32_t> modules;   // Hexagon: chosen module ids, in the order they were chosen
+    std::vector<ChampionId> unlocked;     // unlockable champions this player has unlocked (Hexa), in the order they were unlocked
     bool operator==(const TraitProgress& o) const {
         return traitGold == o.traitGold && takedownCounter == o.takedownCounter && starDust == o.starDust && grantCombats == o.grantCombats &&
-               unitGranted == o.unitGranted && moduleTiersOffered == o.moduleTiersOffered && modules == o.modules;
+               unitGranted == o.unitGranted && moduleTiersOffered == o.moduleTiersOffered && modules == o.modules && unlocked == o.unlocked;
     }
 };
 
@@ -90,6 +93,7 @@ public:
     const UnitRoster& Roster() const { return roster_; }
     const TraitProgress& Traits() const { return traits_; }
     TraitProgress& TraitsMutable() { return traits_; }
+    bool HasUnlocked(ChampionId id) const { return std::find(traits_.unlocked.begin(), traits_.unlocked.end(), id) != traits_.unlocked.end(); }
     ShopManager& Shop() { return *shop_; }
     const ShopManager& Shop() const { return *shop_; }
 

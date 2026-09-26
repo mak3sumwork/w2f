@@ -166,9 +166,9 @@
     {
       "id": 7, "name": "Najmi",
       "breakpoints": [
-        { "count": 3, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
+        { "count": 2, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 241, "name": "The Cosmic Link", "trigger": "OnCast",
             "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 15 } ] } } ] },
-        { "count": 5, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 242, "name": "The Cosmic Link", "trigger": "OnCast",
+        { "count": 4, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 242, "name": "The Cosmic Link", "trigger": "OnCast",
             "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 25 } ] } } ] },
         { "count": 6, "starDust": { "onLoss": 20, "perLossStreak": 5, "perTakedown": 2, "multiplier": 2 }, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 243, "name": "The Cosmic Link", "trigger": "OnCast",
             "effects": [ { "type": "Mana", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": 25 } ] } } ] }

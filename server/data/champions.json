@@ -801,6 +801,7 @@
     // The ally on the hex directly behind Hexa pilots it (see "pilot"); its attacks fire a barrage of 4 bullets (presentation: one hit of its AD).
     {
       "id": 9045, "name": "Hexa", "cost": 5, "role": "Tank",
+      "unlock": { "trait": "Hexagon", "starLevel": 7, "playerLevel": 8 },   // like TFT's T-Hex: not in your shop until your Hexagon units add up to 7 stars at level 8
       "traits": ["Hexagon", "Hexa", "Gunslinger"],
       "stats": { "hp": [880, 1584, 2851], "armor": 62, "magicResist": 62, "attackDamage": [110, 165, 248], "attackSpeed": 0.90, "range": 2,
                  "maxMana": 140, "startMana": 60 },

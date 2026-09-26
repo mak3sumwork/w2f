@@ -4,7 +4,8 @@
 // PLACEHOLDERS: every number and every board here is for the lead designer to replace. What the ENGINE guarantees:
 //  * In a PvE round (1-1, 1-2, 1-3 and X-7 of every later stage, see MatchConfig) each player fights the encounter chosen for
 //    that round on their own copy of the board. Nobody takes damage and streaks do not change.
-//  * Winning drops exactly ONE thing, picked from the drop table by weight: gold, a champion from the shared pool, or an item.
+//  * Winning drops ONE thing, picked from the drop table by weight: gold, a champion from the shared pool, or an item.
+//  * On top of that an encounter's "guaranteedDrops" are always paid, win or lose: every line "count" times (weights ignored).
 //  * Monsters are ordinary champion definitions in their own list: never sold in the shop, never in the pool. Ids must not
 //    clash with champions.json (monsters use 10000+).
 //  * Encounters stand on the same board a player does: x 0..6, y 0..3 with y = 3 the front row (nearest the player).
@@ -40,15 +41,20 @@
 
   "encounters": [
     { "id": 1, "name": "Gloop Nest", "stage": 1, "round": 1,
-      "units": [ { "monster": 10001, "x": 2, "y": 3 }, { "monster": 10001, "x": 4, "y": 3 } ] },
+      "units": [ { "monster": 10001, "x": 2, "y": 3 }, { "monster": 10001, "x": 4, "y": 3 } ],
+      // FEEDBACK V1: the first creeps always leave three Item Removers behind
+      "guaranteedDrops": [ { "type": "Item", "items": [50], "count": 3 } ] },
     { "id": 2, "name": "Gloops and a Spitter", "stage": 1, "round": 2,
-      "units": [ { "monster": 10001, "x": 2, "y": 3 }, { "monster": 10001, "x": 4, "y": 3 }, { "monster": 10002, "x": 3, "y": 2 } ] },
+      "units": [ { "monster": 10001, "x": 2, "y": 3 }, { "monster": 10001, "x": 4, "y": 3 }, { "monster": 10002, "x": 3, "y": 2 } ],
+      "guaranteedDrops": [ { "type": "Item", "items": [1, 2, 3, 4, 5, 6, 7, 8], "count": 3 } ] },   // three random components
     { "id": 3, "name": "Boulder Pass", "stage": 1, "round": 3,
-      "units": [ { "monster": 10003, "x": 3, "y": 3 }, { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ] },
+      "units": [ { "monster": 10003, "x": 3, "y": 3 }, { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ],
+      "guaranteedDrops": [ { "type": "Item", "items": [1, 2, 3, 4, 5, 6, 7, 8], "count": 3 } ] },
     // X-7 of every stage from 2 on (stage 0 = any). The rewards here are better: items only.
     { "id": 4, "name": "The Elder Wraith", "round": 7,
       "units": [ { "monster": 10004, "x": 3, "y": 3 }, { "monster": 10003, "x": 1, "y": 3 }, { "monster": 10003, "x": 5, "y": 3 },
                  { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ],
-      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ] }
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ],
+      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] }   // two items (components or finished) from every boss
   ]
 }

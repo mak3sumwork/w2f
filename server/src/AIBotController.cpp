@@ -210,8 +210,8 @@ void AIBotController::PickGift(MatchManager& match) {
     if (!offers.empty()) match.TryPickGift(player_, best);
 }
 
-// Trait system v2: a Hexagon module offer takes the first option; a Najmi prototype is taken once it is worth it (a choice of completed items or
-// the cash-out), or when the bot is in trouble; otherwise the star dust is banked. Deterministic (no randomness).
+// Trait system v2: a Hexagon module offer takes the first option; a Najmi cash-out is taken once it is worth it (300+ star dust: a choice of
+// completed items), or at 200+ when the bot is in trouble; otherwise it is left on offer and the bank keeps growing. Deterministic.
 void AIBotController::AnswerTraitChoice(MatchManager& match) {
     const TraitChoice& choice = match.PendingTraitChoice(player_);
     if (!choice.Pending()) return;
@@ -222,7 +222,7 @@ void AIBotController::AnswerTraitChoice(MatchManager& match) {
         return;
     }
     const bool take = choice.tier >= 3 || (choice.tier >= 2 && self->Health() <= profile_.lowHealth);
-    match.TryPickTraitChoice(player_, take ? 0 : -1);
+    if (take) match.TryPickTraitChoice(player_, 0);
 }
 
 void AIBotController::BuyExperience(MatchManager& match) {

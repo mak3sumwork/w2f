@@ -69,6 +69,9 @@
   },
   {
    "$ref": "#/$defs/trait_rewards"
+  },
+  {
+   "$ref": "#/$defs/champion_unlocked"
   }
  ],
  "$defs": {
@@ -1129,6 +1132,14 @@
         "type": "integer",
         "minimum": 0
        }
+      },
+      "unlocked": {
+       "type": "array",
+       "description": "(revision 6) unlockable champions (Hexa) this player's shop may now offer",
+       "items": {
+        "type": "integer",
+        "minimum": 0
+       }
       }
      },
      "required": [
@@ -1136,7 +1147,8 @@
       "star_dust",
       "takedown_counter",
       "trait_gold",
-      "unit_granted"
+      "unit_granted",
+      "unlocked"
      ],
      "additionalProperties": false
     },
@@ -2065,7 +2077,7 @@
     "tier": {
      "type": "integer",
      "minimum": 0,
-     "maximum": 4
+     "maximum": 6
     },
     "options": {
      "type": "array",
@@ -2078,12 +2090,21 @@
      "type": "integer",
      "minimum": 0
     },
+    "bonus_items": {
+     "type": "array",
+     "description": "(revision 6) the items a Najmi cash-out gives along with the picked one",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
     "can_decline": {
      "type": "boolean"
     }
    },
    "required": [
     "bonus_gold",
+    "bonus_items",
     "can_decline",
     "kind",
     "options",
@@ -2180,6 +2201,24 @@
     "type",
     "unit",
     "xp"
+   ],
+   "additionalProperties": false
+  },
+  "champion_unlocked": {
+   "type": "object",
+   "description": "(revision 6) an unlockable champion (Hexa) can now appear in this player's shop",
+   "properties": {
+    "type": {
+     "const": "champion_unlocked"
+    },
+    "champion": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "champion",
+    "type"
    ],
    "additionalProperties": false
   }

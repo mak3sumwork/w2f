@@ -82,7 +82,7 @@ std::unique_ptr<TraitDatabase> TraitDatabase::Create(std::vector<TraitDefinition
             if (bp.xpAfterCombat < 0 || bp.xpAfterCombat > 100 || bp.takedownsPerGold < 0 || bp.takedownsPerGold > 100) {
                 return fail("trait '" + trait.name + "': xpAfterCombat / takedownsPerGold out of range");
             }
-            if (bp.starDust.multiplier < 1 || bp.starDust.multiplier > 10 || bp.starDust.onLoss < 0 || bp.starDust.perLossStreak < 0 || bp.starDust.perTakedown < 0) {
+            if (bp.starDust.multiplier < 1 || bp.starDust.multiplier > 10 || bp.starDust.onLoss < 0 || bp.starDust.perLossStreak < 0 || bp.starDust.perTakedown < 0 || bp.starDust.perCombat < 0) {
                 return fail("trait '" + trait.name + "': invalid starDust");
             }
             if (bp.grantUnit.champion != 0 && (bp.grantUnit.afterCombats < 0 || bp.grantUnit.afterCombats > 50)) return fail("trait '" + trait.name + "': invalid grantUnit");
@@ -134,11 +134,13 @@ std::unique_ptr<TraitDatabase> TraitDatabase::Create(std::vector<TraitDefinition
     return std::unique_ptr<TraitDatabase>(new TraitDatabase(std::move(definitions)));
 }
 
-int ActiveTier(const std::vector<TraitBreakpoint>& breakpoints, int count) {
+int ActiveTier(const std::vector<TraitBreakpoint>& breakpoints, int count, int emblemHolders) {
     int tier = 0;
     for (std::size_t i = 0; i < breakpoints.size(); ++i) {
         if (count >= breakpoints[i].count) tier = static_cast<int>(i) + 1;
     }
+    const bool prismatic = breakpoints.size() >= kPrismaticMinBreakpoints && tier == static_cast<int>(breakpoints.size());
+    if (prismatic && emblemHolders <= 0) --tier;   // the prismatic tier needs an emblem
     return tier;
 }
 
@@ -152,6 +154,18 @@ int CountTraitHolders(const std::vector<TraitCountUnit>& units, const std::strin
     std::vector<ChampionId> counted;
     for (const TraitCountUnit& u : units) {
         if (u.champion == nullptr || u.champion->summon || u.champion->plant || !UnitHasTrait(u, trait)) continue;
+        if (std::find(counted.begin(), counted.end(), u.champion->id) == counted.end()) counted.push_back(u.champion->id);
+    }
+    return static_cast<int>(counted.size());
+}
+
+int CountEmblemHolders(const std::vector<TraitCountUnit>& units, const std::string& trait) {
+    std::vector<ChampionId> counted;
+    for (const TraitCountUnit& u : units) {
+        if (u.champion == nullptr || u.champion->summon || u.champion->plant) continue;
+        const bool own = std::find(u.champion->traits.begin(), u.champion->traits.end(), trait) != u.champion->traits.end();
+        const bool granted = std::find(u.extraTraits.begin(), u.extraTraits.end(), trait) != u.extraTraits.end();
+        if (own || !granted) continue;
         if (std::find(counted.begin(), counted.end(), u.champion->id) == counted.end()) counted.push_back(u.champion->id);
     }
     return static_cast<int>(counted.size());

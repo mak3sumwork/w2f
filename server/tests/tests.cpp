@@ -6227,13 +6227,14 @@ static void TestShopAndBenchDuringCombat() {
         const int goldBefore = p->Gold();
         const std::uint64_t before = match->StateHash();
         CHECK(match->TryBuyShopUnit(0, 2) == ActionResult::UnitInCombat && p->Gold() == goldBefore && match->StateHash() == before);
-        // The board is locked: no selling, moving, equipping or unequipping a unit that is on it ...
+        // The board is locked: no selling, moving or unequipping a unit that is on it ...
         CHECK(match->TrySellUnit(0, onBoard) == ActionResult::UnitInCombat);
         CHECK(match->TryMoveUnit(0, onBoard, LocationType::Bench, 5, 0) == ActionResult::UnitInCombat);
         CHECK(match->TryMoveUnit(0, onBench, LocationType::Board, 2, 3) == ActionResult::UnitInCombat);
-        CHECK(match->TryEquipItem(0, onBoard, 3) == ActionResult::UnitInCombat && match->TryEquipItem(0, onBoard, 50) == ActionResult::UnitInCombat);
         CHECK(match->TryUnequipItem(0, onBoard, 0) == ActionResult::UnitInCombat);
         CHECK(match->StateHash() == before);
+        // ... but items may go onto it (demo 1.1, FEEDBACK V1): they count from the next fight. Here an Item Remover takes its gloves back.
+        CHECK(match->TryEquipItem(0, onBoard, 50) == ActionResult::Ok && p->Roster().Find(onBoard)->ItemCount() == 0);
         // ... but the bench is free: equip (4 + 3 combine into Deadbeat), an Item Remover, unequip, moving between bench slots, selling.
         CHECK(match->TryEquipItem(0, onBench, 3) == ActionResult::Ok && p->Roster().Find(onBench)->items[0] == 25);
         CHECK(match->TryEquipItem(0, onBench, 50) == ActionResult::Ok && p->Roster().Find(onBench)->ItemCount() == 0);
@@ -6275,7 +6276,7 @@ static void TestShopAndBenchDuringCombat() {
         }
         CHECK(slot < 5 && match->TryBuyShopUnit(0, slot) == ActionResult::RosterFull);
     }
-    {   // The shop rule still holds in Combat: closed in round 1 (the opening) and in Mother Nature's rounds.
+    {   // The shop rule (demo 1.1): open in every round, round 1 and Mother Nature's included; only her gift phase has no shop.
         auto motherNature = w2f::LoadMotherNatureDatabaseFromFile(sample::ProductionMotherNaturePath(), items.get(), &err);
         auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
         GameConfig cfg;
@@ -6286,15 +6287,15 @@ static void TestShopAndBenchDuringCombat() {
         if (!match) return;
         match->Start();
         while (match->Phase() != MatchPhase::Combat) match->Tick();
-        CHECK(match->Round() == 1 && match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed && match->TryBuyXp(0) == ActionResult::Ok);
+        CHECK(match->Round() == 1 && match->TryRerollShop(0) == ActionResult::Ok && match->TryBuyXp(0) == ActionResult::Ok);
         while (match->Round() < 2 || match->Phase() != MatchPhase::Combat) match->Tick();
         CHECK(match->Round() == 2 && match->TryRerollShop(0) == ActionResult::Ok);   // round 2: open in Combat
         while (match->Round() < 3 || match->Phase() != MatchPhase::MotherNature) match->Tick();
         CHECK(match->TryBuyXp(0) == ActionResult::WrongPhase && match->TryRerollShop(0) == ActionResult::WrongPhase);   // her phase: gifts only
         while (match->Phase() != MatchPhase::Combat) match->Tick();
-        CHECK(match->Round() == 3 && match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed);
+        CHECK(match->Round() == 3 && match->TryRerollShop(0) == ActionResult::Ok);
         while (match->Phase() != MatchPhase::Resolution) match->Tick();
-        CHECK(match->TryRerollShop(0) == ActionResult::ShopClosed);
+        CHECK(match->TryRerollShop(0) == ActionResult::Ok);
     }
 }
 
@@ -6343,7 +6344,7 @@ static void TestMotherNatureUnitGiftsScaleWithTheStage() {
 
 static void TestRoundRhythmAndShopRule() {
     // A whole match under the real rules: how long every phase lasts, that no fight outlasts 35 s, and that the shop is open in EVERY round's
-    // planning phase except round 1 (the opening) and Mother Nature's rounds.
+    // planning phase (demo 1.1: round 1 and Mother Nature's rounds too).
     auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
     CHECK(roster != nullptr);
     if (!roster) return;
@@ -6367,13 +6368,14 @@ static void TestRoundRhythmAndShopRule() {
                     break;
                 case MatchPhase::Planning: {
                     phasesRight = phasesRight && m.PhaseTicks() == mc.planningTicks;
-                    const bool mustBeClosed = m.Round() == 1 || m.IsMotherNatureRound();
+                    const bool mustBeClosed = false;   // demo 1.1: the shop is open in EVERY Planning phase (Mother Nature's rounds and round 1 too)
                     shopRight = shopRight && m.IsShopClosed() == mustBeClosed;
                     for (PlayerId p : m.Players().AlivePlayerIds()) {
                         const PlayerState* me = m.Players().Get(p);
                         int filled = 0;
                         for (const ChampionDefinition* slot : me->Shop().Slots()) filled += slot != nullptr ? 1 : 0;
-                        shopRight = shopRight && (mustBeClosed ? filled == 0 : filled == live->cfg.shop.slotCount);
+                        // (in round 1 the bots shop in the very tick the phase starts, so some slots may be bought already)
+                        shopRight = shopRight && (mustBeClosed ? filled == 0 : (filled == live->cfg.shop.slotCount || m.Round() == 1));
                         if (mustBeClosed) {   // locked completely: no buying, no rerolling, nothing changes
                             const int gold = me->Gold();
                             refusalsRight = refusalsRight && m.TryBuyShopUnit(p, 0) == ActionResult::ShopClosed &&
@@ -6412,7 +6414,7 @@ static void TestRoundRhythmAndShopRule() {
             }
         }
         CHECK(phasesRight && shopRight && refusalsRight && fightsRight);
-        CHECK(planningChecked > 20 && closedRounds > 5 && openRounds > 15 && combatChecked > 20);
+        CHECK(planningChecked > 20 && closedRounds == 0 && openRounds > 20 && combatChecked > 20);
         CHECK(longestFight > 0 && longestFight <= live->cfg.combat.hardLimitTicks);
         std::printf("  seed %llu: %d rounds, longest fight %.1f s, %d overtime fights, %d fights lasted more than 35 s\n", static_cast<unsigned long long>(seed), combatChecked,
                     static_cast<double>(longestFight) / kTicksPerSecond, overtimeFights, drawsAtLimit);
@@ -6987,12 +6989,12 @@ static void TestStageStructureAndPveRounds() {
 }
 
 static void TestPlayerDamageFormula() {
-    GameConfig cfg;   // baseDamageByStage = {0, 2, 3, 5, 8, 12}, +1 per surviving unit
+    GameConfig cfg;   // baseDamageByStage = {0, 2, 5, 8, 11, 14, 18} (demo 1.1: steeper), +1 per surviving unit
     CHECK(cfg.PlayerDamage(4, 0) == 2 && cfg.PlayerDamage(4, 3) == 5);       // 2-1: stage 2
     CHECK(cfg.PlayerDamage(10, 4) == 6);                                     // 2-7 is still stage 2
-    CHECK(cfg.PlayerDamage(11, 0) == 3 && cfg.PlayerDamage(18, 2) == 5 + 2); // stage 3 / stage 4
-    CHECK(cfg.PlayerDamage(25, 1) == 8 + 1 && cfg.PlayerDamage(32, 1) == 12 + 1);
-    CHECK(cfg.PlayerDamage(500, 5) == 12 + 5);                               // beyond the table: the last entry repeats
+    CHECK(cfg.PlayerDamage(11, 0) == 5 && cfg.PlayerDamage(18, 2) == 8 + 2); // stage 3 / stage 4
+    CHECK(cfg.PlayerDamage(25, 1) == 11 + 1 && cfg.PlayerDamage(32, 1) == 14 + 1);
+    CHECK(cfg.PlayerDamage(39, 0) == 18 && cfg.PlayerDamage(500, 5) == 18 + 5);   // stage 7; beyond the table: the last entry repeats
     CHECK(cfg.PlayerDamage(4, -3) == 2);                                     // nonsense survivor counts never heal
     cfg.damage.baseDamageByStage = {7};
     cfg.damage.perSurvivingUnit = 3;
@@ -9514,8 +9516,19 @@ static void TestOpeningRoundAndBoardLimit() {
         return match;
     };
 
-    {   // The real defaults: round 1 has no shop, and every player has been dealt one random 1-cost unit, free.
+    {   // Demo 1.1 defaults: the shop is open in round 1 too (every Planning phase has a shop), next to the free opening unit.
         GameConfig cfg;
+        auto match = planningOf(cfg, 11);
+        match->Start();
+        CHECK(match->Round() == 1 && match->Phase() == MatchPhase::Planning && !match->IsShopClosed());
+        int filled = 0;
+        for (const ChampionDefinition* slot : match->Players().Get(0)->Shop().Slots()) filled += slot != nullptr ? 1 : 0;
+        CHECK(filled == cfg.shop.slotCount && match->Players().Get(0)->Roster().Count() == 1);
+    }
+    {   // A configured opening (shopClosedOpeningRounds = 1, the rule before demo 1.1): round 1 has no shop, and every player has been dealt one
+        // random 1-cost unit, free.
+        GameConfig cfg;
+        cfg.match.shopClosedOpeningRounds = 1;
         auto match = planningOf(cfg, 11);
         EventLog log;
         match->AddListener(&log);
@@ -9603,9 +9616,10 @@ static void TestOpeningRoundAndBoardLimit() {
         other.match.shopClosedOpeningRounds = 2;
         CHECK(other.ContentHash() != GameConfig{}.ContentHash());
     }
-    {   // A snapshot of the opening round restores it exactly (closed shop, dealt units) and the restored match plays on identically.
+    {   // A snapshot of a configured opening round restores it exactly (closed shop, dealt units) and the restored match plays on identically.
         GameConfig cfg;
         cfg.match.playerCount = 4;
+        cfg.match.shopClosedOpeningRounds = 1;
         auto match = planningOf(cfg, 21);
         match->Start();
         const std::vector<std::uint8_t> bytes = match->Snapshot();
@@ -9860,9 +9874,10 @@ static void TestBotEconomyRerollsAndLevels() {
         bot.Tick(*match);
         CHECK(me->Gold() >= 20);
     }
-    {   // The shop is closed in the opening round: the bot places the unit it was dealt and does nothing else with gold it cannot spend.
+    {   // A closed opening round (configured): the bot places the unit it was dealt and does nothing else with gold it cannot spend.
         GameConfig cfg;
         cfg.match.playerCount = 2;
+        cfg.match.shopClosedOpeningRounds = 1;
         auto match = MatchManager::Create(cfg, *db, 9, nullptr);
         match->Start();
         const PlayerState* me = match->Players().Get(0);
@@ -11588,13 +11603,13 @@ static void TestMotherNaturePhaseFlow() {
     CHECK(remaining > 1 && ticks == remaining);   // it waited for the player who never chose, for the whole rest of the phase
     CHECK(match->Phase() == MatchPhase::Planning && match->Round() == 3);
     CHECK(log.picked.size() == 3 && log.picked[2].player == 2 && log.picked[2].automatic && log.picked[2].index == 0 && log.picked[2].gift.gift == firstOfThird.gift);
-    // The offers are gone, and there is no shop for the whole of a Mother Nature round.
+    // The offers are gone, and (demo 1.1) the round's Planning phase has its shop like any other.
     for (PlayerId p = 0; p < 3; ++p) {
         CHECK(match->GiftOffers(p).empty());
-        for (const ChampionDefinition* slot : match->Players().Get(p)->Shop().Slots()) CHECK(slot == nullptr);
+        for (const ChampionDefinition* slot : match->Players().Get(p)->Shop().Slots()) CHECK(slot != nullptr);
     }
-    CHECK(match->TryBuyShopUnit(0, 0) == ActionResult::ShopClosed && match->TryRerollShop(0) == ActionResult::ShopClosed);
-    CHECK(match->TryBuyXp(0) == ActionResult::Ok);   // levelling up is not the shop
+    CHECK(match->TryRerollShop(0) == ActionResult::Ok);
+    CHECK(match->TryBuyXp(0) == ActionResult::Ok);
     CHECK(match->VerifyPoolIntegrity() && match->VerifyRosterLayouts());
     // The next round is ordinary again.
     while (match->Round() == 3) match->Tick();
@@ -12043,8 +12058,17 @@ static void TestTraitV2PhaisaMutations() {
         CHECK(StatusOn(r, 3, StatusType::AbilityPower).size() == 1 && StatusOn(r, 3, StatusType::AbilityPower)[0].amount == 20);
         CHECK(StatusOn(r, 1, StatusType::BonusCritChance).empty() && StatusOn(r, 2, StatusType::BonusMaxHp).empty());
     }
-    {   // 9 Phaisa (with the Rift Herald and the Queen): everyone mutated and supercharged, and Baron Nashor joins.
+    {   // 9 natural Phaisa: the prismatic (9) needs an emblem (demo 1.1, FEEDBACK V1), so they stop at (6).
         const FightResult r = fight({9015, 9016, 9021, 9025, 9029, 9037, 9039, 9041, 9043});
+        CHECK(TraitsOf(r, 2, 0).size() == 1 && TraitsOf(r, 2, 0)[0].subtype == 3 && TraitsOf(r, 2, 0)[0].amount == 9);
+    }
+    {   // 8 Phaisa + a Phaisa Emblem (item 44) on Alesk: the prismatic (9): everyone mutated and supercharged, and Baron Nashor joins.
+        std::vector<FightUnitSpec> specs;
+        const std::vector<ChampionId> team = {9015, 9016, 9021, 9025, 9029, 9037, 9041, 9043};
+        for (std::size_t i = 0; i < team.size(); ++i) specs.push_back(v.Unit(static_cast<UnitId>(1 + i), team[i], 0, static_cast<int>(i % 7), i < 7 ? 3 : 2));
+        specs.push_back(v.Unit(9, 9001, 0, 3, 1, 1, {44}));
+        specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
+        const FightResult r = v.Run(specs, 60);
         CHECK(TraitsOf(r, 2, 0).size() == 1 && TraitsOf(r, 2, 0)[0].subtype == 4 && TraitsOf(r, 2, 0)[0].amount == 9);
         CHECK(StatusOn(r, 1, StatusType::BonusCritChance).size() == 1 && StatusOn(r, 1, StatusType::BonusCritChance)[0].amount == 30);   // Vex: Hyper-Adrenal x2
         bool shell = false;   // Null: Chitinous Shell x2 (next to Bruiser's +100 for everyone)
@@ -12053,7 +12077,7 @@ static void TestTraitV2PhaisaMutations() {
         bool baron = false;
         for (const CombatEvent& e : Events(r.log, CombatEventType::Spawn)) baron = baron || (e.champion == 9042 && (e.flags & kFlagSummon) != 0 && e.tick == 0);
         CHECK(baron);
-        CHECK(StatusOn(r, 9, StatusType::CcImmunity).size() == 1);   // the Queen's own passive
+        CHECK(StatusOn(r, 8, StatusType::CcImmunity).size() == 1);   // the Queen's own passive
         CHECK(v.Valid(r, 60));
     }
 }
@@ -12248,23 +12272,38 @@ static void TestTraitV2MatchLevel() {
     Field(*m, 0, *v.db, {9005}, 0);
     int najmi = 0;
     CHECK(m->TraitTier(0, *v.traits->FindById(7), &najmi) == 1 && najmi == 3);
-    // Run rounds until the first combat is resolved.
+    // Run rounds until the first combat is resolved. The bank starts at 95: the loss (+25) takes it past 100, the first cash-out.
+    m->PlayersMutable().Get(0)->TraitsMutable().starDust = 95;
     const std::uint64_t stateBefore = m->StateHash();
     for (int i = 0; i < 200 && m->Round() == 1; ++i) m->Tick();
     CHECK(stateBefore != m->StateHash());
     const PlayerState* home = nullptr;
     for (const Matchup& mu : m->CurrentMatchups()) home = m->Players().Get(mu.home);
     const PlayerState& seat0 = *m->Players().Get(0);
-    if (home == &seat0) {   // seat 0 was the home side: it lost and got star dust (its takedowns were by the first board unit -- not a Najmi)
-        CHECK(seat0.Traits().starDust == 25 || seat0.Traits().starDust == 0);   // (0 once a prototype was taken)
-    }
+    const bool lost = home == &seat0;   // seat 0 was the home side: it lost and got star dust (its takedowns were by the first board unit -- not a Najmi)
+    if (lost) CHECK(seat0.Traits().starDust == 120);
     bool dust = false;
     for (const auto& [player, reward] : log.rewards) dust = dust || (player == 0 && reward.starDust > 0);
-    CHECK(dust == (home == &seat0));
-    // A prototype offer follows star dust (tier 1: a component).
+    CHECK(dust == lost);
+    // Demo 1.1 (after TFT's Anima): a cash-out only at every 100 star dust; 100 = a component and 2 gold.
     bool prototype = false;
-    for (const auto& [player, c] : log.offered) prototype = prototype || (player == 0 && c.kind == TraitChoiceKind::Prototype && c.tier == 1 && c.options.size() == 1);
-    CHECK(prototype == (home == &seat0));
+    for (const auto& [player, c] : log.offered) prototype = prototype || (player == 0 && c.kind == TraitChoiceKind::Prototype && c.tier == 1 && c.options.size() == 1 && c.bonusGold == 2);
+    CHECK(prototype == lost);
+    if (lost) {
+        // The offer stays open through the next fight (it is not settled when Combat starts, nothing to answer) ...
+        for (int i = 0; i < 400 && !(m->Round() == 2 && m->Phase() == MatchPhase::Resolution); ++i) m->Tick();
+        CHECK(m->PendingTraitChoice(0).kind == TraitChoiceKind::Prototype);
+        // ... and a bigger bank replaces it with a bigger cash-out: 600+ = a choice of 3 completed items, 2 more completed items, 20 gold.
+        m->PlayersMutable().Get(0)->TraitsMutable().starDust = 590;
+        for (int i = 0; i < 4000 && m->PendingTraitChoice(0).tier < 6 && m->Round() < 12; ++i) m->Tick();   // until seat 0 loses again
+        const TraitChoice& big = m->PendingTraitChoice(0);
+        CHECK(big.kind == TraitChoiceKind::Prototype && big.tier == 6 && big.options.size() == 3 && big.bonusItems.size() == 2 && big.bonusGold == 20);
+        while (m->Phase() != MatchPhase::Planning) m->Tick();
+        const int gold = seat0.Gold();
+        const std::size_t bag = seat0.ItemBag().size();
+        CHECK(m->TryPickTraitChoice(0, 1) == ActionResult::Ok);
+        CHECK(seat0.Traits().starDust == 0 && seat0.Gold() == gold + 20 && seat0.ItemBag().size() == bag + 3 && !m->PendingTraitChoice(0).Pending());
+    }
 
     // ---- Snapshot: the trait state survives a round trip.
     const std::vector<std::uint8_t> bytes = m->Snapshot();
@@ -12276,6 +12315,93 @@ static void TestTraitV2MatchLevel() {
     CHECK(restored->StateHash() == m->StateHash() && restored->Snapshot() == bytes);
     CHECK(restored->Players().Get(1)->Traits().modules == m->Players().Get(1)->Traits().modules);
     CHECK(restored->PendingTraitChoice(0) == m->PendingTraitChoice(0));
+}
+
+// Demo 1.1 (FEEDBACK V1): prismatic tiers need an emblem, a plant-crowded board has no room, guaranteed PvE loot, Hexa unlocks like T-Hex.
+static void TestDemo11Rules() {
+    {   // The top breakpoint of a trait with four or more breakpoints needs at least one emblem holder; three-breakpoint traits are untouched.
+        std::vector<TraitBreakpoint> four(4), three(3);
+        for (int i = 0; i < 4; ++i) four[static_cast<std::size_t>(i)].count = std::array<int, 4>{2, 4, 6, 9}[static_cast<std::size_t>(i)];
+        for (int i = 0; i < 3; ++i) three[static_cast<std::size_t>(i)].count = std::array<int, 3>{2, 4, 6}[static_cast<std::size_t>(i)];
+        CHECK(ActiveTier(four, 9, 0) == 3 && ActiveTier(four, 9, 1) == 4 && ActiveTier(four, 12, 0) == 3 && ActiveTier(four, 6, 0) == 3);
+        CHECK(ActiveTier(three, 6, 0) == 3 && ActiveTier(three, 1, 0) == 0);
+        ChampionDefinition own = Def(301, "Own", 1);
+        own.traits = {"Phaisa"};
+        ChampionDefinition other = Def(302, "Other", 1);
+        other.traits = {"Helios"};
+        std::vector<TraitCountUnit> units(2);
+        units[0].champion = &own;
+        units[1].champion = &other;
+        units[1].extraTraits = {"Phaisa"};   // an emblem
+        CHECK(CountTraitHolders(units, "Phaisa") == 2 && CountEmblemHolders(units, "Phaisa") == 1 && CountEmblemHolders(units, "Helios") == 0);
+    }
+    {   // Plants take no board slot but stand on a hex: when every hex is taken the board is full even below its capacity (the roster must never
+        // accept a unit it cannot place -- this crashed a live match once shops opened in more phases).
+        std::vector<ChampionDefinition> defs;
+        for (ChampionId id = 101; id <= 140; ++id) defs.push_back(Def(id, "F", 1));
+        ChampionDefinition plant = Def(900, "Plant", 1);
+        plant.plant = true;
+        plant.teamSlots = 0;
+        UnitRoster r(0);
+        r.SetBoardCapacity(kBoardRows * kBoardColumns);
+        std::size_t next = 0;
+        while (r.BenchCount() < kBenchSlots || r.BoardCount() < kBoardRows * kBoardColumns - 2) CHECK(r.Add(&defs[next++], 1).added);
+        CHECK(r.Add(&plant, 1).added && r.Add(&plant, 1).added);   // (two plants; merging needs three)
+        CHECK(r.BoardCount() == kBoardRows * kBoardColumns - 2 && !r.CanAdd(&defs[next], 1));
+    }
+    auto roster = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());
+    CHECK(roster != nullptr);
+    if (!roster) return;
+    {   // Guaranteed PvE loot, win or lose: 1-1 three Item Removers, 1-2 and 1-3 three components each.
+        auto live = LiveMatch::Create(*roster, 31);
+        live->match->Start();
+        int checked = 0;
+        for (long tick = 0; tick < 200000 && live->match->Round() <= 3; ++tick) {
+            live->Step();
+            const MatchManager& m = *live->match;
+            if (m.Phase() != MatchPhase::Resolution || m.TicksInPhase() != 0) continue;
+            for (const CombatOutcome& o : m.CurrentCombatOutcomes()) {
+                if (!o.matchup.awayIsMonsters) continue;
+                bool right = o.loot.size() == 3;
+                for (const PveDrop& d : o.loot) right = right && d.type == PveDropType::Item && (m.Round() == 1 ? d.item == 50 : (d.item >= 1 && d.item <= 8));
+                CHECK(right);
+                ++checked;
+            }
+        }
+        CHECK(checked >= 3 * 8);
+    }
+    {   // Hexa (unlock: Hexagon star levels 7 at player level 8) never shows up in a shop until it is unlocked; then it can.
+        GameConfig cfg;
+        cfg.match.playerCount = 2;
+        for (auto& row : cfg.shop.dropRatesByLevel) row = {{0, 0, 0, 0, 100}};   // 5-costs only: Hexa's tier
+        auto items = w2f::LoadItemDatabaseFromFile(sample::ProductionItemsPath());
+        auto match = MatchManager::Create(cfg, *roster, 17, nullptr, nullptr, items.get());
+        CHECK(match != nullptr);
+        if (!match) return;
+        match->Start();
+        PlayerState* p = match->PlayersMutable().Get(0);
+        p->AddGold(5000);
+        while (p->Level() < 8) p->AddXp(10);
+        const auto rolls = [&](int times) {
+            int seen = 0;
+            for (int i = 0; i < times; ++i) {
+                CHECK(match->TryRerollShop(0) == ActionResult::Ok);
+                for (const ChampionDefinition* slot : p->Shop().Slots()) seen += slot != nullptr && slot->id == 9045 ? 1 : 0;
+            }
+            return seen;
+        };
+        CHECK(rolls(150) == 0 && !p->HasUnlocked(9045));
+        const std::pair<ChampionId, int> hexagon[] = {{9003, 2}, {9005, 2}, {9019, 2}, {9023, 1}};   // 7 stars
+        int x = 0;
+        for (const auto& [id, star] : hexagon) {
+            CHECK(p->AcquireUnit(roster->Find(id), 0, star) == ActionResult::Ok);
+            const UnitInstance* u = nullptr;
+            for (const UnitInstance& unit : p->Roster().Units()) u = unit.champion->id == id ? &unit : u;
+            CHECK(u != nullptr && match->TryMoveUnit(0, u->id, LocationType::Board, x++, 3) == ActionResult::Ok);
+        }
+        CHECK(p->HasUnlocked(9045) && !match->Players().Get(1)->HasUnlocked(9045));
+        CHECK(rolls(150) > 0);   // (no pool-integrity check here: the Hexagon units above were conjured, not drawn from the pool)
+    }
 }
 
 static void TestTraitV2RiftHerald() {
@@ -12409,6 +12535,7 @@ int main(int argc, char** argv) {
         {"Trait v2: Hexa pilot", TestTraitV2HexaPilot},
         {"Trait v2: Nature plants in combat", TestTraitV2NatureInCombat},
         {"Trait v2: match level (plants, modules, star dust, snapshot)", TestTraitV2MatchLevel},
+        {"Demo 1.1: prismatic needs an emblem, crowded boards, PvE loot, Hexa unlock", TestDemo11Rules},
         {"Trait v2: Rift Herald", TestTraitV2RiftHerald},
         {"Lunis: teleport, untargetable, aggro drop", TestTeleportAndUntargetable},
         {"Astra: tether redirect", TestAstraTether},
