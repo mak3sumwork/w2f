@@ -29,9 +29,10 @@ PLATFORM = (-5.75, -4.05, -5.95, -3.0)    # x0, x1, y0, y1 of the item platform
 BOARD_X, BOARD_Y = 3.95, 3.7           # half extents of the grass board
 WALK_X, WALK_Y = 4.45, 5.3             # half extents of the flagstone walkways (they run from BOARD_Y to WALK_Y)
 
-GRASS = [(0.0, (0.29, 0.36, 0.17)), (0.35, (0.4, 0.47, 0.22)), (0.65, (0.52, 0.57, 0.28)), (1.0, (0.66, 0.67, 0.38))]
-DIRT = [(0.0, (0.55, 0.46, 0.32)), (0.45, (0.68, 0.59, 0.43)), (1.0, (0.8, 0.72, 0.55))]
-STONE = [(0.0, (0.47, 0.44, 0.39)), (0.5, (0.62, 0.59, 0.52)), (1.0, (0.75, 0.72, 0.63))]
+# demo 1.3 (FEEDBACK V3 "graphics polished"): a deeper, cooler, less yellow palette -- the old lime grass read as cheap next to the heroes
+GRASS = [(0.0, (0.17, 0.28, 0.14)), (0.35, (0.24, 0.37, 0.17)), (0.65, (0.33, 0.46, 0.21)), (1.0, (0.45, 0.55, 0.27))]
+DIRT = [(0.0, (0.46, 0.39, 0.29)), (0.45, (0.58, 0.5, 0.37)), (1.0, (0.7, 0.63, 0.49))]
+STONE = [(0.0, (0.43, 0.42, 0.4)), (0.5, (0.58, 0.57, 0.53)), (1.0, (0.72, 0.71, 0.66))]
 
 
 # ------------------------------------------------------------------------------------------------------------------------------ the painted floor
@@ -253,7 +254,7 @@ def foliage(name, dark, light, dabs=6.0):
     ramp.color_ramp.elements[0].position = 0.25; ramp.color_ramp.elements[0].color = (*dark, 1)
     ramp.color_ramp.elements[1].position = 0.85; ramp.color_ramp.elements[1].color = (*light, 1)
     mid = ramp.color_ramp.elements.new(0.55); mid.color = tuple(0.5 * (a + c) for a, c in zip(dark, light)) + (1,)
-    ramp.color_ramp.interpolation = "CONSTANT"                                   # posterised bands = painted look
+    ramp.color_ramp.interpolation = "EASE"                                       # demo 1.3: soft painted bands (hard CONSTANT bands made every face a facet)
     nt.links.new(h.outputs[0], ramp.inputs["Fac"]); nt.links.new(ramp.outputs["Color"], b.inputs["Base Color"])
     nt.links.new(b.outputs["BSDF"], out.inputs["Surface"])
     return m
@@ -316,7 +317,7 @@ def base():
     m_block = painted("block", "stone", 1.2, top="grass", top_from=0.93, tint=(1.02, 1.0, 0.96))
     m_curb = painted("curb", "stone", 0.9, tint=(1.05, 1.03, 0.98))
     m_cliff = painted("cliff", "rock", 2.5, top="grass", top_from=0.7)
-    m_rim = painted("rim", "rock", 1.5, top="grass", top_from=0.86)
+    m_rim = painted("rim", "rock", 1.5, top="grass", top_from=0.93)
     m_pillar = painted("pillar", "stone", 1.0, tint=(1.08, 1.05, 1.0))
     m_bronze = material("bronze", lin((0.62, 0.45, 0.22)), 0.8, 0.35, kind="metal", wear=0.2, color2=lin((0.85, 0.66, 0.34)))
     m_gold = material("gold", lin((0.86, 0.66, 0.3)), 0.9, 0.3, kind="metal", wear=0.0, color2=lin((1.0, 0.85, 0.5)))
@@ -458,12 +459,12 @@ def pine(name, x, y, z, height, mat_leaf, mat_bark):
         t = k / (tiers - 1)
         z0 = z + height * (0.22 + 0.19 * k); rad = height * (0.3 - 0.2 * t)
         bm = bmesh.new()
-        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=9, radius1=rad, radius2=0.0, depth=height * 0.36)
+        bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=16, radius1=rad, radius2=0.0, depth=height * 0.36)
         for v in bm.verts:                                                  # a jagged, drooping rim
             if v.co.z < 0:
                 v.co.x *= random.uniform(0.85, 1.15); v.co.y *= random.uniform(0.85, 1.15); v.co.z -= random.uniform(0.0, 0.12) * height / 4
         o = make("%s_c%d" % (name, k), bm); o.location = (x, y, z0 + height * 0.18); o.rotation_euler = (0, 0, random.uniform(0, 6.28))
-        finish(o, mat_leaf, smooth=False)
+        finish(o, mat_leaf, smooth=True)   # demo 1.3: smooth tiers (the faceted cones looked cheap)
 
 
 def broadleaf(name, x, y, z, height, mat_leaf, mat_bark):
@@ -472,9 +473,11 @@ def broadleaf(name, x, y, z, height, mat_leaf, mat_bark):
     for k in range(random.randint(6, 9)):
         a = random.uniform(0, 6.28); d = random.uniform(0.2, 0.75) * rad
         s_ = rad * random.uniform(0.55, 0.8)
-        bm = bmesh.new(); bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)
-        for v in bm.verts:
-            v.co = Vector((v.co.x * s_ * random.uniform(0.95, 1.05), v.co.y * s_ * random.uniform(0.95, 1.05), v.co.z * s_ * 0.8))
+        bm = bmesh.new(); bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0)
+        ph = [random.uniform(0, 6.28) for _ in range(3)]
+        for v in bm.verts:   # demo 1.3: rounder, lumpier canopy blobs (a few low-frequency bumps), smooth-shaded
+            bump = 1.0 + 0.09 * math.sin(3.0 * v.co.x + ph[0]) * math.cos(2.6 * v.co.y + ph[1]) + 0.06 * math.sin(4.2 * v.co.z + ph[2])
+            v.co = Vector((v.co.x * s_ * bump, v.co.y * s_ * bump, v.co.z * s_ * 0.82 * bump))
         o = make("%s_b%d" % (name, k), bm)
         o.location = (x + math.cos(a) * d, y + math.sin(a) * d, cz + random.uniform(-0.35, 0.45) * rad)
         finish(o, mat_leaf, smooth=True)
@@ -579,19 +582,19 @@ def trees():
     scene.render.bake.target = "VERTEX_COLORS"
 
     def bake_attr(name, kind):
-        attr = me.color_attributes.new(name, "FLOAT_COLOR", "CORNER")
+        attr = me.color_attributes.new(name, "FLOAT_COLOR", "POINT")   # demo 1.3: per VERTEX (per-corner colours made every face a flat facet)
         me.color_attributes.active_color = attr
         if kind == "DIFFUSE":
             scene.render.bake.use_pass_direct = False; scene.render.bake.use_pass_indirect = False; scene.render.bake.use_pass_color = True
         bpy.ops.object.bake(type=kind)
-        vals = np.empty(len(me.loops) * 4, np.float32); attr.data.foreach_get("color", vals)
+        vals = np.empty(len(me.vertices) * 4, np.float32); attr.data.foreach_get("color", vals)
         return vals.reshape(-1, 4)
 
     bpy.ops.object.select_all(action="DESELECT"); obj.select_set(True); bpy.context.view_layer.objects.active = obj
     colour = bake_attr("BakeCol", "DIFFUSE")
     ao = bake_attr("BakeAO", "AO")
     colour[:, :3] *= (0.42 + 0.58 * ao[:, :1])
-    final = me.color_attributes.new("Col", "BYTE_COLOR", "CORNER")
+    final = me.color_attributes.new("Col", "BYTE_COLOR", "POINT")
     final.data.foreach_set("color", colour.reshape(-1))
     for n in ("BakeCol", "BakeAO"):
         me.color_attributes.remove(me.color_attributes[n])

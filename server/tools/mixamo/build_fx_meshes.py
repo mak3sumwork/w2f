@@ -248,7 +248,7 @@ def main():
     if "--out" in sys.argv:
         out = sys.argv[sys.argv.index("--out") + 1]
     os.makedirs(out, exist_ok=True)
-    textures(out)
+    # the sprite textures moved to make_fx_textures.py (demo 1.3: 512 px, erosion + heat channels); textures() is the old 256 px set, kept for reference
     for name, build in MESHES.items():
         bpy.ops.wm.read_factory_settings(use_empty=True)
         me = bpy.data.meshes.new(name)

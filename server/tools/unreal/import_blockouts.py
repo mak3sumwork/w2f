@@ -68,14 +68,15 @@ ICONS_SRC = os.environ.get("W2F_ICONS") or os.path.normpath(os.path.join(HERE, "
 ICONS_DEST = "/Game/W2F/Icons"
 
 
-def import_icons():
-    """Imports docs/icons/*.png (item icons, champion portraits, UI glyphs) as UI textures: no mipmaps, no compression artefacts, never streamed."""
+def import_icons(prefix=""):
+    """Imports docs/icons/*.png (item icons, champion portraits, UI glyphs) as UI textures: no mipmaps, no compression artefacts, never streamed.
+    `prefix` limits it to the files whose name starts with it (import_ui.py: "T_UI_")."""
     if not os.path.isdir(ICONS_SRC):
         unreal.log_warning("W2F: no icons folder at %s (run tools/make_icons.py)" % ICONS_SRC)
         return 0
     tasks = []
     for f in sorted(os.listdir(ICONS_SRC)):
-        if not f.endswith(".png"):
+        if not f.endswith(".png") or not f.startswith(prefix):
             continue
         task = unreal.AssetImportTask()
         task.set_editor_property("filename", os.path.join(ICONS_SRC, f))
@@ -88,6 +89,8 @@ def import_icons():
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
     count = 0
     for asset_path in unreal.EditorAssetLibrary.list_assets(ICONS_DEST, recursive=True, include_folder=False):
+        if prefix and not asset_path.rsplit("/", 1)[-1].startswith(prefix):
+            continue
         texture = unreal.EditorAssetLibrary.load_asset(asset_path)
         if not isinstance(texture, unreal.Texture2D):
             continue
@@ -151,9 +154,9 @@ def crafted_parent_material(with_normal=False):
     return mat
 
 
-def apply_crafted_materials():
-    """A material instance per crafted model, with its own albedo / emissive textures, assigned to the mesh."""
-    names = crafted_names()
+def apply_crafted_materials(only=None):
+    """A material instance per crafted model, with its own albedo / emissive textures, assigned to the mesh. `only`: just these model names."""
+    names = crafted_names() if only is None else set(only) & crafted_names()
     if not names:
         return
     parent_plain = crafted_parent_material(False)
@@ -306,6 +309,27 @@ def assign_material(material):
         unreal.EditorAssetLibrary.save_loaded_asset(asset)
         done += 1
     unreal.log("W2F: %s applied to %d static meshes" % (MAT_NAME, done))
+
+
+def import_crafted(names):
+    """Re-imports just these crafted models (docs/models/<name>.glb) and gives them their materials: import_arena.py (a changed stage piece) without re-importing every model."""
+    tasks = []
+    for name in names:
+        stale = "%s/%s" % (DEST, name)
+        if unreal.EditorAssetLibrary.does_directory_exist(stale):
+            unreal.EditorAssetLibrary.delete_directory(stale)
+        task = unreal.AssetImportTask()
+        task.set_editor_property("filename", os.path.join(MODELS_SRC, name + ".glb"))
+        task.set_editor_property("destination_path", DEST)
+        task.set_editor_property("automated", True)
+        task.set_editor_property("replace_existing", True)
+        task.set_editor_property("replace_existing_settings", True)
+        task.set_editor_property("save", True)
+        tasks.append(task)
+    if tasks:
+        unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+    apply_crafted_materials(names)
+    unreal.log("W2F: re-imported %s" % ", ".join(names))
 
 
 if __name__ == "__main__":
