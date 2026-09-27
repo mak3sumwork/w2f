@@ -29,6 +29,7 @@ Run from `server/`.
 | Clean | `make clean` |
 | CMake (what CI and Windows use) | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build && ctest --test-dir build --output-on-failure` |
 | CMake options | `-DW2F_SANITIZE=ON/OFF` `-DW2F_WERROR=ON` `-DW2F_UE_COMPAT=ON` (no exceptions, no RTTI) |
+| The UE client's screens, driven like a player (login, friends, profile, collection; needs the UE editor built) | `scripts/client_selftest.sh` (updates/update-1.5.1.md) |
 | Determinism fingerprint of seeded matches | `scripts/fingerprint.sh path/to/w2f_demo` (must be identical across builds and OSes) |
 
 * The Makefile builds with `clang++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Wshadow -Wconversion -fsanitize=address,undefined`. **A build with any warning is a failed build.**

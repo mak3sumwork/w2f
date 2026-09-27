@@ -1,0 +1,109 @@
+{
+ "format": 1,
+ "accounts": [
+  {
+   "name": "Rival",
+   "salt": "e57489d9f8f8a0769265b6ede9d2d4b1",
+   "hash": "7e3d00f78411bdb575f3b09d9fb557781bf680b517e6841ea4d4332e7af52769",
+   "iterations": 20000,
+   "created_ms": 1790512570708,
+   "points": 0,
+   "peak_points": 0,
+   "stats": {
+    "games": 0,
+    "wins": 0,
+    "top4": 0,
+    "placement_sum": 0,
+    "ranked_games": 0,
+    "ranked_wins": 0,
+    "ranked_top4": 0,
+    "ranked_placement_sum": 0
+   },
+   "history": [],
+   "friends": [
+    "tester"
+   ],
+   "incoming": [],
+   "outgoing": [],
+   "sessions": []
+  },
+  {
+   "name": "Tester",
+   "salt": "ac8726e038cfdeff17eb4f8faacba8dc",
+   "hash": "88e8a5e065d17a9073814ec96ae5e2b6e59001c939e8e9cd791e5dd7602b864b",
+   "iterations": 20000,
+   "created_ms": 1790512473225,
+   "points": 0,
+   "peak_points": 0,
+   "stats": {
+    "games": 1,
+    "wins": 0,
+    "top4": 0,
+    "placement_sum": 8,
+    "ranked_games": 1,
+    "ranked_wins": 0,
+    "ranked_top4": 0,
+    "ranked_placement_sum": 8
+   },
+   "history": [
+    {
+     "time_ms": 1790512971866,
+     "mode": "ranked",
+     "placement": 8,
+     "level": 6,
+     "round": 18,
+     "lp_change": 0,
+     "points_after": 0,
+     "board": [
+      {
+       "champion": 9016,
+       "star": 2,
+       "items": []
+      },
+      {
+       "champion": 9014,
+       "star": 2,
+       "items": []
+      },
+      {
+       "champion": 9034,
+       "star": 1,
+       "items": []
+      },
+      {
+       "champion": 9013,
+       "star": 2,
+       "items": []
+      },
+      {
+       "champion": 9013,
+       "star": 1,
+       "items": []
+      },
+      {
+       "champion": 9027,
+       "star": 1,
+       "items": []
+      }
+     ],
+     "players": [
+      "RunePilot67",
+      "FrostOracle",
+      "GrimComet",
+      "VoidRogue39",
+      "GrimBlade",
+      "QuietMonk",
+      "MossyOwl",
+      "Tester"
+     ]
+    }
+   ],
+   "friends": [
+    "rival"
+   ],
+   "incoming": [],
+   "outgoing": [],
+   "sessions": []
+  }
+ ]
+}
