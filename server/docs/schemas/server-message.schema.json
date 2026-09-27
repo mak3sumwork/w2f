@@ -78,6 +78,18 @@
   },
   {
    "$ref": "#/$defs/match_found"
+  },
+  {
+   "$ref": "#/$defs/auth"
+  },
+  {
+   "$ref": "#/$defs/profile"
+  },
+  {
+   "$ref": "#/$defs/friends"
+  },
+  {
+   "$ref": "#/$defs/logged_out"
   }
  ],
  "$defs": {
@@ -949,6 +961,13 @@
      "items": {
       "type": "string"
      }
+    },
+    "player_names": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "revision 8: every seat's name, by seat (players' usernames; the AI players have usernames too)"
     }
    },
    "required": [
@@ -2244,7 +2263,8 @@
     "mode": {
      "enum": [
       "bots",
-      "normal"
+      "normal",
+      "ranked"
      ],
      "description": "searching only"
     },
@@ -2304,7 +2324,8 @@
     "mode": {
      "enum": [
       "bots",
-      "normal"
+      "normal",
+      "ranked"
      ]
     },
     "humans": {
@@ -2323,6 +2344,314 @@
     "mode",
     "humans",
     "bots"
+   ],
+   "additionalProperties": false
+  },
+  "rank": {
+   "type": "object",
+   "properties": {
+    "tier": {
+     "enum": [
+      "Iron",
+      "Bronze",
+      "Silver",
+      "Gold",
+      "Platinum",
+      "Emerald",
+      "Diamond",
+      "Master",
+      "Grandmaster",
+      "Challenger"
+     ]
+    },
+    "division": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 4
+    },
+    "lp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "points": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "tier",
+    "division",
+    "lp",
+    "points"
+   ],
+   "additionalProperties": false
+  },
+  "auth": {
+   "type": "object",
+   "description": "Revision 8: you are logged in.",
+   "properties": {
+    "type": {
+     "const": "auth"
+    },
+    "username": {
+     "type": "string"
+    },
+    "session": {
+     "type": "string"
+    },
+    "rank": {
+     "$ref": "#/$defs/rank"
+    }
+   },
+   "required": [
+    "type",
+    "username",
+    "session",
+    "rank"
+   ],
+   "additionalProperties": false
+  },
+  "profile": {
+   "type": "object",
+   "description": "Revision 8: a player's profile: rank, stats, the last 20 matches (newest first).",
+   "properties": {
+    "type": {
+     "const": "profile"
+    },
+    "username": {
+     "type": "string"
+    },
+    "online": {
+     "type": "boolean"
+    },
+    "created_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "rank": {
+     "$ref": "#/$defs/rank"
+    },
+    "peak_points": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "stats": {
+     "type": "object",
+     "properties": {
+      "games": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "wins": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "top4": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "placement_sum": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "ranked_games": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "ranked_wins": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "ranked_top4": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "ranked_placement_sum": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "games",
+      "wins",
+      "top4",
+      "placement_sum",
+      "ranked_games",
+      "ranked_wins",
+      "ranked_top4",
+      "ranked_placement_sum"
+     ],
+     "additionalProperties": false
+    },
+    "history": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "time_ms": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "mode": {
+        "enum": [
+         "bots",
+         "normal",
+         "ranked"
+        ]
+       },
+       "placement": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 8
+       },
+       "level": {
+        "type": "integer"
+       },
+       "round": {
+        "type": "integer"
+       },
+       "lp_change": {
+        "type": "integer"
+       },
+       "points_after": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "board": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "champion": {
+           "type": "integer"
+          },
+          "star": {
+           "type": "integer",
+           "minimum": 1,
+           "maximum": 3
+          },
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "integer"
+           }
+          }
+         },
+         "required": [
+          "champion",
+          "star",
+          "items"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "players": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       }
+      },
+      "required": [
+       "time_ms",
+       "mode",
+       "placement",
+       "level",
+       "round",
+       "lp_change",
+       "points_after",
+       "board",
+       "players"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "type",
+    "username",
+    "online",
+    "created_ms",
+    "rank",
+    "peak_points",
+    "stats",
+    "history"
+   ],
+   "additionalProperties": false
+  },
+  "friends": {
+   "type": "object",
+   "description": "Revision 8: your friends (online first) and the requests in and out. Sent after login, on every change, and when a friend's status changes.",
+   "properties": {
+    "type": {
+     "const": "friends"
+    },
+    "friends": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "username": {
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "offline",
+         "online",
+         "searching",
+         "in_match"
+        ]
+       },
+       "rank": {
+        "$ref": "#/$defs/rank"
+       }
+      },
+      "required": [
+       "username",
+       "status",
+       "rank"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "incoming": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "outgoing": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "type",
+    "friends",
+    "incoming",
+    "outgoing"
+   ],
+   "additionalProperties": false
+  },
+  "logged_out": {
+   "type": "object",
+   "description": "Revision 8: you are logged out (reason logout, or elsewhere: the account logged in on another connection).",
+   "properties": {
+    "type": {
+     "const": "logged_out"
+    },
+    "reason": {
+     "enum": [
+      "logout",
+      "elsewhere"
+     ]
+    }
+   },
+   "required": [
+    "type",
+    "reason"
    ],
    "additionalProperties": false
   }

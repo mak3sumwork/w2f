@@ -365,13 +365,18 @@ std::string MatchFound(QueueMode mode, int humans, int bots) {
     return Finish(w);
 }
 
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats) {
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats, const std::vector<std::string>& names) {
     JsonWriter w = Start("match_started");
     w.Field("player_id", static_cast<int>(you));
     w.Field("seats", seats);
     w.Key("bot_seats").BeginArray();
     for (PlayerId bot : botSeats) w.Int(bot);
     w.EndArray();
+    if (!names.empty()) {   // revision 8: every seat's name (usernames; the AI players have usernames too)
+        w.Key("player_names").BeginArray();
+        for (const std::string& n : names) w.String(n);
+        w.EndArray();
+    }
     w.Field("tick_rate", kTicksPerSecond);
     w.Key("phase_ticks").BeginObject();
     w.Field("mother_nature", config.match.motherNatureTicks);
@@ -584,6 +589,88 @@ std::string PlayerDamaged(PlayerId player, int damage, int healthAfter) {
     w.Field("player_id", static_cast<int>(player));
     w.Field("damage", damage);
     w.Field("health", healthAfter);
+    return Finish(w);
+}
+
+namespace {
+void WriteRank(JsonWriter& w, int points) {
+    const RankInfo r = RankOf(points);
+    w.Key("rank").BeginObject();
+    w.Field("tier", r.tier);
+    w.Field("division", r.division);
+    w.Field("lp", r.lp);
+    w.Field("points", r.points);
+    w.EndObject();
+}
+}  // namespace
+
+std::string Auth(const Account& account, std::string_view session) {
+    JsonWriter w = Start("auth");
+    w.Field("username", account.name);
+    w.Field("session", session);
+    WriteRank(w, account.points);
+    return Finish(w);
+}
+
+std::string Profile(const Account& account, bool online) {
+    JsonWriter w = Start("profile");
+    w.Field("username", account.name);
+    w.Field("online", online);
+    w.Field("created_ms", account.createdMs);
+    WriteRank(w, account.points);
+    w.Field("peak_points", account.peakPoints);
+    const AccountStats& s = account.stats;
+    w.Key("stats").BeginObject();
+    w.Field("games", s.games).Field("wins", s.wins).Field("top4", s.top4).Field("placement_sum", s.placementSum);
+    w.Field("ranked_games", s.rankedGames).Field("ranked_wins", s.rankedWins).Field("ranked_top4", s.rankedTop4).Field("ranked_placement_sum", s.rankedPlacementSum);
+    w.EndObject();
+    w.Key("history").BeginArray();
+    for (const HistoryEntry& h : account.history) {
+        w.BeginObject();
+        w.Field("time_ms", h.timeMs).Field("mode", h.mode).Field("placement", h.placement).Field("level", h.level).Field("round", h.round);
+        w.Field("lp_change", h.lpChange).Field("points_after", h.pointsAfter);
+        w.Key("board").BeginArray();
+        for (const HistoryUnit& u : h.board) {
+            w.BeginObject();
+            w.Field("champion", u.champion).Field("star", u.star);
+            w.Key("items").BeginArray();
+            for (int i : u.items) w.Int(i);
+            w.EndArray();
+            w.EndObject();
+        }
+        w.EndArray();
+        w.Key("players").BeginArray();
+        for (const std::string& n : h.players) w.String(n);
+        w.EndArray();
+        w.EndObject();
+    }
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string Friends(const std::vector<FriendInfo>& friends, const std::vector<std::string>& incoming, const std::vector<std::string>& outgoing) {
+    JsonWriter w = Start("friends");
+    w.Key("friends").BeginArray();
+    for (const FriendInfo& f : friends) {
+        w.BeginObject();
+        w.Field("username", f.name);
+        w.Field("status", f.status);
+        WriteRank(w, f.points);
+        w.EndObject();
+    }
+    w.EndArray();
+    w.Key("incoming").BeginArray();
+    for (const std::string& n : incoming) w.String(n);
+    w.EndArray();
+    w.Key("outgoing").BeginArray();
+    for (const std::string& n : outgoing) w.String(n);
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string LoggedOut(std::string_view reason) {
+    JsonWriter w = Start("logged_out");
+    w.Field("reason", reason);
     return Finish(w);
 }
 

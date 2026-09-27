@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <random>
+#include <set>
 #include <unordered_map>
 
 #include "w2f/AIBotController.h"
 #include "w2f/CombatSimulator.h"
 #include "w2f/Json.h"
 #include "w2f/net/JsonWriter.h"
+#include "w2f/net/BotNames.h"
 #include "w2f/net/Encoding.h"
 #include "w2f/net/Messages.h"
 
@@ -72,6 +74,7 @@ public:
                 return (static_cast<std::uint64_t>(device()) << 32) ^ device();
             };
         }
+        NameSeats();
     }
 
     // ---- connections --------------------------------------------------------------------------
@@ -164,6 +167,9 @@ public:
         if (cmd.type == CommandType::JoinQueue || cmd.type == CommandType::LeaveQueue || cmd.type == CommandType::LeaveMatch) {   // (a QueueServer handles these before they get here)
             return SendTo(id, msg::Error("no_queue", "this server hosts a single lobby: there is no queue (start it with --queue)", cmd.hasId, cmd.id));
         }
+        if (IsAccountCommand(cmd.type)) {   // (revision 8: a QueueServer with --accounts handles these before they get here)
+            return SendTo(id, msg::Error("no_accounts", "this server has no accounts (start it with --queue --accounts FILE)", cmd.hasId, cmd.id));
+        }
         if (!match_ || conn.seat < 0) return Violation(id, "not_in_match", "no match is running yet", cmd.hasId, cmd.id);
         const PlayerId player = static_cast<PlayerId>(conn.seat);
 
@@ -199,6 +205,16 @@ public:
             case CommandType::JoinQueue:
             case CommandType::LeaveQueue:
             case CommandType::LeaveMatch:
+            case CommandType::Register:
+            case CommandType::Login:
+            case CommandType::ResumeSession:
+            case CommandType::Logout:
+            case CommandType::GetProfile:
+            case CommandType::GetFriends:
+            case CommandType::FriendRequest:
+            case CommandType::FriendAccept:
+            case CommandType::FriendDecline:
+            case CommandType::FriendRemove:
             case CommandType::Ping: break;   // handled above
         }
         if (observer_) observer_(tick_, player, cmd, result);
@@ -222,6 +238,7 @@ public:
                 finishedTicks_ = 0;
                 Broadcast(msg::MatchOver(*match_));
                 if (finishedHandler_) finishedHandler_();
+                if (resultHandler_) resultHandler_(Result());
             }
             return;
         }
@@ -232,11 +249,14 @@ public:
     // Callbacks run inside the engine's Tick / action: they only serialize (the references are valid for the call) and queue.
 
     void OnPhaseChanged(MatchPhase, MatchPhase to, int round) override {
-        if (to == MatchPhase::Combat) QueueCombat(round);
+        if (to == MatchPhase::Combat) { QueueCombat(round); RememberBoards(); }
         combatBatchOpen_ = false;
         Queue(-1, msg::Phase(config_, to, round, 0, match_ != nullptr ? match_->PhaseTicks() : 0, tick_, match_ != nullptr && match_->IsMotherNatureRound(round), match_ != nullptr && match_->IsShopClosed()));
     }
-    void OnPlayerEliminated(PlayerId p, int placement) override { Queue(-1, msg::PlayerEliminated(p, placement)); }
+    void OnPlayerEliminated(PlayerId p, int placement) override {
+        if (static_cast<std::size_t>(p) < outRound_.size() && match_ != nullptr) outRound_[static_cast<std::size_t>(p)] = match_->Round();
+        Queue(-1, msg::PlayerEliminated(p, placement));
+    }
     void OnMatchEnded(PlayerId) override { dirty_ = true; }   // the final message needs the placements: sent when Tick() returns
     void OnCombatSimulated(int round, const CombatOutcome& o) override {
         if (!combatBatchOpen_) {   // the first fight of a new round: the previous round's fights are history
@@ -283,6 +303,62 @@ public:
     CommandObserver observer_;
     SnapshotSink snapshotSink_;
     MatchFinishedHandler finishedHandler_;
+    MatchResultHandler resultHandler_;
+    std::vector<std::string> names_;                            // every seat's name (match_started.player_names)
+    std::vector<std::vector<MatchResultUnit>> lastBoards_;     // the board each seat last fought with (match history)
+    std::vector<int> outRound_;                                 // the round each seat went out in
+
+    void NameSeats() {
+        names_ = cfg_.seatNames;
+        names_.resize(seats_.size());
+        std::set<std::string> taken;
+        for (const std::string& n : names_) {
+            std::string k = n;
+            for (char& c : k) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+            if (!k.empty()) taken.insert(k);
+        }
+        const std::vector<std::string> botNames = PickBotNames(cfg_.bots, cfg_.entropy, taken);
+        std::size_t nextBot = 0;
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            if (!names_[i].empty()) continue;
+            names_[i] = seats_[i].bot && nextBot < botNames.size() ? botNames[nextBot++] : "Player " + std::to_string(i + 1);
+        }
+    }
+    void RememberBoards() {
+        if (match_ == nullptr) return;
+        for (int i = 0; i < match_->Players().PlayerCount() && static_cast<std::size_t>(i) < lastBoards_.size(); ++i) {
+            const PlayerState& p = *match_->Players().Get(static_cast<PlayerId>(i));
+            if (!p.IsAlive()) continue;
+            std::vector<MatchResultUnit> board;
+            for (const UnitInstance& u : p.Roster().Units()) {
+                if (u.location != LocationType::Board || u.champion == nullptr) continue;
+                MatchResultUnit r;
+                r.champion = static_cast<int>(u.champion->id);
+                r.star = u.starLevel;
+                for (ItemId item : u.items) { if (item != 0) r.items.push_back(static_cast<int>(item)); }
+                board.push_back(std::move(r));
+            }
+            lastBoards_[static_cast<std::size_t>(i)] = std::move(board);
+        }
+    }
+    MatchResult Result() const {
+        MatchResult r;
+        r.rounds = match_ != nullptr ? match_->Round() : 0;
+        for (std::size_t i = 0; i < seats_.size(); ++i) {
+            MatchResultSeat s;
+            s.name = i < names_.size() ? names_[i] : std::string();
+            s.bot = seats_[i].bot;
+            if (match_ != nullptr && static_cast<int>(i) < match_->Players().PlayerCount()) {
+                const PlayerState& p = *match_->Players().Get(static_cast<PlayerId>(i));
+                s.placement = p.Placement();
+                s.level = p.Level();
+            }
+            s.round = i < outRound_.size() && outRound_[i] > 0 ? outRound_[i] : r.rounds;
+            if (i < lastBoards_.size()) s.board = lastBoards_[i];
+            r.seats.push_back(std::move(s));
+        }
+        return r;
+    }
     GameServerConfig cfg_;
     std::unordered_map<ConnectionId, Conn> conns_;
     std::vector<Seat> seats_;
@@ -417,7 +493,7 @@ private:
     // A player (re)joining a running match gets everything they need to draw the game as it is right now.
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
-        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats()));
+        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats(), names_));
         SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), match_->PhaseTicks(), tick_, match_->IsMotherNatureRound(), match_->IsShopClosed()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
@@ -451,12 +527,14 @@ private:
         fights_.clear();
         fightJson_.clear();
         combatBatchOpen_ = false;
+        lastBoards_.assign(seats_.size(), {});
+        outRound_.assign(seats_.size(), 0);
         bots_.clear();
         for (std::size_t i = 0; i < seats_.size(); ++i) {
             if (seats_[i].bot) bots_.emplace_back(static_cast<PlayerId>(i), seed, BotProfile{}, data_.traits);
         }
         for (std::size_t i = 0; i < seats_.size(); ++i) {
-            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats()));
+            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats(), names_));
         }
         match_->Start();
         SyncAfterEngineCall();
@@ -626,6 +704,7 @@ std::uint64_t GameServer::tickCount() const { return impl_->tick_; }
 void GameServer::SetCommandObserver(CommandObserver observer) { impl_->observer_ = std::move(observer); }
 void GameServer::SetSnapshotSink(SnapshotSink sink) { impl_->snapshotSink_ = std::move(sink); }
 void GameServer::SetMatchFinishedHandler(MatchFinishedHandler handler) { impl_->finishedHandler_ = std::move(handler); }
+void GameServer::SetMatchResultHandler(MatchResultHandler handler) { impl_->resultHandler_ = std::move(handler); }
 bool GameServer::Resume(const std::vector<std::uint8_t>& snapshot, const std::string& seatsJson, std::string* error) { return impl_->Resume(snapshot, seatsJson, error); }
 
 }  // namespace w2f::net

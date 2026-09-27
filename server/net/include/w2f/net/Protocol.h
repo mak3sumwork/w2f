@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 7;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 8;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -44,10 +44,21 @@ enum class CommandType : std::uint8_t {
     JoinQueue,    // mode ("bots" | "normal"): look for a match
     LeaveQueue,   // stop looking
     LeaveMatch,   // go back to the client from a match (the seat stays reserved for its token, the match goes on without you)
+    // Revision 8 (demo 1.5): accounts, profile, friends. Only a queue server with accounts (w2f_server --queue --accounts FILE) acts on these.
+    Register,       // username, password: create an account and log in
+    Login,          // username, password
+    ResumeSession,  // session: log in with a remembered session token
+    Logout,
+    GetProfile,     // [username]: a player's profile (rank, stats, match history); yours without a name
+    GetFriends,
+    FriendRequest,  // username
+    FriendAccept,   // username
+    FriendDecline,  // username: refuse an incoming request, or cancel your own
+    FriendRemove,   // username
 };
 
-enum class QueueMode : std::uint8_t { Bots, Normal };
-constexpr const char* ToString(QueueMode m) { return m == QueueMode::Bots ? "bots" : "normal"; }
+enum class QueueMode : std::uint8_t { Bots, Normal, Ranked };   // Ranked: revision 8
+constexpr const char* ToString(QueueMode m) { return m == QueueMode::Bots ? "bots" : (m == QueueMode::Normal ? "normal" : "ranked"); }
 
 constexpr const char* ToString(CommandType t) {
     switch (t) {
@@ -69,8 +80,24 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::JoinQueue: return "queue";
         case CommandType::LeaveQueue: return "leave_queue";
         case CommandType::LeaveMatch: return "leave_match";
+        case CommandType::Register: return "register";
+        case CommandType::Login: return "login";
+        case CommandType::ResumeSession: return "resume_session";
+        case CommandType::Logout: return "logout";
+        case CommandType::GetProfile: return "get_profile";
+        case CommandType::GetFriends: return "get_friends";
+        case CommandType::FriendRequest: return "friend_request";
+        case CommandType::FriendAccept: return "friend_accept";
+        case CommandType::FriendDecline: return "friend_decline";
+        case CommandType::FriendRemove: return "friend_remove";
     }
     return "?";
+}
+
+// Revision 8: the account / profile / friends commands (a QueueServer with accounts answers them; anything else says "no_accounts").
+constexpr bool IsAccountCommand(CommandType t) {
+    return t == CommandType::Register || t == CommandType::Login || t == CommandType::ResumeSession || t == CommandType::Logout || t == CommandType::GetProfile ||
+           t == CommandType::GetFriends || t == CommandType::FriendRequest || t == CommandType::FriendAccept || t == CommandType::FriendDecline || t == CommandType::FriendRemove;
 }
 
 struct Command {
@@ -90,6 +117,7 @@ struct Command {
     bool locked = false;   // set_shop_lock
     int choiceIndex = 0;   // pick_trait_choice: -1..7
     QueueMode queueMode = QueueMode::Bots;   // queue
+    std::string username, password, session; // register / login / resume_session / get_profile / friend_*
 };
 
 struct ProtocolError {

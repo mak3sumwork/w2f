@@ -232,6 +232,31 @@ def main():
     clip = np.maximum(np.abs(x) - 0.3, np.abs(y - 0.76) - 0.14)
     lines = U(*[seg(x, y, (-0.36, yy), (0.36, yy), 0.055) for yy in (0.28, -0.05, -0.38)])
     mask("T_UI_Planner", U(cut(board, np.maximum(np.abs(x) - 0.36, np.abs(y - 0.72) - 0.2)), clip, lines))
+    # rank emblems (demo 1.5): a crest in the tier's metal with a gem; Master and above grow wings, Challenger a crown
+    tiers = {"Iron": (0.42, 0.4, 0.4), "Bronze": (0.72, 0.45, 0.28), "Silver": (0.74, 0.8, 0.86), "Gold": (0.96, 0.76, 0.3), "Platinum": (0.35, 0.82, 0.76),
+             "Emerald": (0.2, 0.8, 0.45), "Diamond": (0.5, 0.64, 1.0), "Master": (0.72, 0.38, 0.96), "Grandmaster": (0.92, 0.28, 0.28), "Challenger": (0.4, 0.86, 1.0)}
+    for i, (tier, base) in enumerate(tiers.items()):
+        base = np.array(base, np.float32)
+        crest = poly(x, y, [(-0.55, 0.62), (0.55, 0.62), (0.55, -0.05), (0.0, -0.85), (-0.55, -0.05)])
+        shape = crest
+        if i >= 7:   # wings
+            for sx in (-1, 1):
+                shape = U(shape, poly(x, y, [(sx * 0.5, 0.5), (sx * 0.98, 0.72), (sx * 0.88, 0.2), (sx * 0.5, -0.1)]))
+        if i == 9:   # crown
+            for cx in (-0.35, 0.0, 0.35):
+                shape = U(shape, poly(x, y, [(cx - 0.13, 0.6), (cx + 0.13, 0.6), (cx, 0.95)]))
+        t = np.clip((y + 1) / 2, 0, 1)
+        col = base[None, None, :] * (0.45 + 0.75 * t)[..., None]
+        edge = np.exp(-((shape + 0.06) ** 2) / 0.0015)
+        col = np.clip(col + edge[..., None] * 0.35, 0, 1)
+        gem_d = poly(x, y, ngon(4, 0.24 + 0.02 * i, math.pi / 2, 0.0, 0.05))
+        gem_col = np.clip(np.array([1.0, 1.0, 1.0]) * 0.35 + base * 0.8, 0, 1)
+        g = fill(gem_d)
+        col = col * (1 - g[..., None]) + gem_col[None, None, :] * (0.7 + 0.5 * np.clip(0.3 - (x * 0.5 - y), 0, 1))[..., None] * g[..., None]
+        dark = fill(shape)
+        body = fill(shape + 0.04)
+        rgb = col * body[..., None]
+        save("T_UI_Rank_" + tier, np.concatenate([rgb, dark[..., None]], -1))
     # the settings gear (demo 1.4)
     teeth = np.full(x.shape, 9.0, np.float32)
     for k in range(8):

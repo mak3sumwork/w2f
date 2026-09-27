@@ -368,7 +368,7 @@
   },
   {
    "type": "object",
-   "description": "Revision 7, queue server only: look for a match. bots = you + AI players at once; normal = wait for other players (AI players fill the empty seats after the server's fill time).",
+   "description": "Revision 7, queue server only: look for a match. bots = you + AI players at once; normal = wait for other players (AI players fill the empty seats after the server's fill time). Revision 8: ranked = like normal, and the result moves your rank (needs accounts).",
    "properties": {
     "action": {
      "const": "queue"
@@ -382,7 +382,8 @@
     "mode": {
      "enum": [
       "bots",
-      "normal"
+      "normal",
+      "ranked"
      ]
     }
    },
@@ -427,6 +428,255 @@
    },
    "required": [
     "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: create an account (username: 3-16 letters, digits, '_'; password: 6-64 characters) and log in; answered with `auth`, `profile` and `friends`.",
+   "properties": {
+    "action": {
+     "const": "register"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    },
+    "password": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    }
+   },
+   "required": [
+    "action",
+    "username",
+    "password"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: log in; answered with `auth`, `profile` and `friends` (error bad_credentials).",
+   "properties": {
+    "action": {
+     "const": "login"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    },
+    "password": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    }
+   },
+   "required": [
+    "action",
+    "username",
+    "password"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: log in with the session token from an earlier `auth` (\"remember me\").",
+   "properties": {
+    "action": {
+     "const": "resume_session"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "session": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64
+    }
+   },
+   "required": [
+    "action",
+    "session"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: log out (the session token is forgotten); answered with `logged_out`.",
+   "properties": {
+    "action": {
+     "const": "logout"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: a player's profile (rank, stats, match history); yours without a username.",
+   "properties": {
+    "action": {
+     "const": "get_profile"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: your friend list and requests (`friends`).",
+   "properties": {
+    "action": {
+     "const": "get_friends"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: send a friend request (if they already asked you, you become friends).",
+   "properties": {
+    "action": {
+     "const": "friend_request"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: accept an incoming friend request.",
+   "properties": {
+    "action": {
+     "const": "friend_accept"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: refuse an incoming request, or cancel your own.",
+   "properties": {
+    "action": {
+     "const": "friend_decline"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 8, queue server with accounts only: remove a friend.",
+   "properties": {
+    "action": {
+     "const": "friend_remove"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
    ],
    "additionalProperties": false
   }

@@ -50,6 +50,7 @@ public:
         std::unique_ptr<GameServer> game;
         int unattendedTicks = 0;
         bool dead = false;
+        std::vector<std::string> accounts;   // the account key of each human seat ("" = anonymous)
     };
 
     struct Client {
@@ -61,6 +62,7 @@ public:
         Bucket bucket;
         int violations = 0;
         bool closing = false;
+        std::string account, session;   // logged in (revision 8)
     };
 
     Impl(const QueueServerConfig& config, const GameData& data, IServerTransport& transport) : cfg_(config), data_(data), transport_(transport) {
@@ -95,7 +97,12 @@ public:
             if (parsed.ok && parsed.command.type == CommandType::LeaveMatch) {
                 room->game->OnDisconnect(id);   // the seat stays reserved for its token; the match goes on
                 c.room = 0;
-                return SendStatus(id, "left_match");
+                SendStatus(id, "left_match");
+                return PresenceChanged(c.account);
+            }
+            if (parsed.ok && IsAccountCommand(parsed.command.type)) {   // profiles and friends work in a match too
+                if (!c.bucket.Take(nowMs, 1, cfg_.match.rateBurst, cfg_.match.rateRefillPerSecond)) return Violation(id, c, "rate_limited", "too many messages, slow down");
+                return AccountCommand(id, parsed.command);
             }
             if (parsed.ok && (parsed.command.type == CommandType::JoinQueue || parsed.command.type == CommandType::LeaveQueue)) {
                 return transport_.Send(id, msg::Error("in_match", "you are in a match: leave_match first", parsed.command.hasId, parsed.command.id));
@@ -107,12 +114,15 @@ public:
         const ParseResult parsed = ParseCommand(text);
         if (!parsed.ok) return Violation(id, c, parsed.error.code, parsed.error.detail, parsed.hasId, parsed.id);
         const Command& cmd = parsed.command;
+        if (IsAccountCommand(cmd.type)) return AccountCommand(id, cmd);
         switch (cmd.type) {
             case CommandType::Ping: return transport_.Send(id, msg::Pong(cmd.hasId, cmd.id));
             case CommandType::GetCatalog:
                 if (!c.bucket.Take(nowMs, 4, cfg_.match.rateBurst, cfg_.match.rateRefillPerSecond)) return Violation(id, c, "rate_limited", "too many messages, slow down", cmd.hasId, cmd.id);
                 return transport_.Send(id, Catalog());
             case CommandType::JoinQueue:
+                if (cfg_.accounts != nullptr && c.account.empty()) return transport_.Send(id, msg::Error("not_logged_in", "log in first", cmd.hasId, cmd.id));
+                if (cmd.queueMode == QueueMode::Ranked && cfg_.accounts == nullptr) return transport_.Send(id, msg::Error("no_accounts", "ranked needs accounts (start the server with --accounts FILE)", cmd.hasId, cmd.id));
                 if (!c.searching || c.mode != cmd.queueMode) {
                     c.searching = true;
                     c.mode = cmd.queueMode;
@@ -120,11 +130,13 @@ public:
                     c.order = ++order_;
                 }
                 SendStatus(id, "");
+                PresenceChanged(c.account);
                 return Matchmake();   // (a bots match starts at once, unless the server is at its match limit)
             case CommandType::LeaveQueue:
                 if (!c.searching) return transport_.Send(id, msg::Error("not_searching", "you are not in a queue", cmd.hasId, cmd.id));
                 c.searching = false;
-                return SendStatus(id, "cancelled");
+                SendStatus(id, "cancelled");
+                return PresenceChanged(c.account);
             case CommandType::LeaveMatch: return transport_.Send(id, msg::Error("not_in_match", "you are not in a match", cmd.hasId, cmd.id));
             default: return transport_.Send(id, msg::Error("not_in_match", "no match yet: queue first", cmd.hasId, cmd.id));
         }
@@ -134,7 +146,9 @@ public:
         auto it = clients_.find(id);
         if (it == clients_.end()) return;
         if (Room* room = Find(it->second.room)) room->game->OnDisconnect(id);
+        const std::string account = it->second.account;
         clients_.erase(it);
+        PresenceChanged(account);
     }
 
     void Tick(std::uint64_t nowMs) {
@@ -235,7 +249,10 @@ private:
     // Deletes finished / abandoned matches (outside every call into them) and sends the players who came back from one their idle status.
     void Reap() {
         for (ConnectionId id : pendingIdle_) {
-            if (clients_.count(id) && !clients_[id].closing) SendStatus(id, "match_over");
+            if (clients_.count(id) && !clients_[id].closing) {
+                SendStatus(id, "match_over");
+                PresenceChanged(clients_[id].account);
+            }
         }
         pendingIdle_.clear();
         for (auto& [id, c] : clients_) {
@@ -245,7 +262,7 @@ private:
     }
 
     void Matchmake() {
-        for (QueueMode mode : {QueueMode::Bots, QueueMode::Normal}) {
+        for (QueueMode mode : {QueueMode::Bots, QueueMode::Normal, QueueMode::Ranked}) {
             for (;;) {
                 if (LiveRooms() >= cfg_.maxMatches) return;
                 std::vector<std::pair<std::uint64_t, ConnectionId>> waiting;   // (order, connection): first come, first served
@@ -277,7 +294,14 @@ private:
         GameServerConfig gc = cfg_.match;
         const int humans = static_cast<int>(players.size());
         gc.bots = gc.seats - humans;
+        for (ConnectionId id : players) {   // the players connect in this order, so seat i is players[i]: their usernames name the seats
+            const Account* a = cfg_.accounts != nullptr ? cfg_.accounts->Find(clients_[id].account) : nullptr;
+            gc.seatNames.push_back(a != nullptr ? a->name : std::string());
+            room->accounts.push_back(a != nullptr ? clients_[id].account : std::string());
+        }
         room->game = std::make_unique<GameServer>(gc, data_, *room->transport);
+        const std::uint64_t roomId = room->id;
+        room->game->SetMatchResultHandler([this, roomId](const MatchResult& result) { Record(roomId, result); });
         Room& r = *room;
         rooms_.push_back(std::move(room));
         for (ConnectionId id : players) {
@@ -287,6 +311,155 @@ private:
             transport_.Send(id, msg::MatchFound(mode, humans, gc.bots));
         }
         for (ConnectionId id : players) r.game->OnConnect(id, "", now_);   // the last one fills the lobby: the match starts
+        for (ConnectionId id : players) PresenceChanged(clients_[id].account);
+    }
+
+    // ---- accounts (revision 8) -------------------------------------------------------------------
+
+    void AccountCommand(ConnectionId id, const Command& cmd) {
+        AccountStore* store = cfg_.accounts;
+        if (store == nullptr) return transport_.Send(id, msg::Error("no_accounts", "this server has no accounts (start it with --accounts FILE)", cmd.hasId, cmd.id));
+        Client& c = clients_[id];
+        const auto fail = [&](AccountStore::Result r) { transport_.Send(id, msg::Error(AccountStore::Code(r), AccountStore::Describe(r), cmd.hasId, cmd.id)); };
+        switch (cmd.type) {
+            case CommandType::Register:
+            case CommandType::Login:
+            case CommandType::ResumeSession: {
+                if (c.room != 0) return transport_.Send(id, msg::Error("in_match", "you are in a match", cmd.hasId, cmd.id));
+                std::string key, session = cmd.session;
+                AccountStore::Result r = AccountStore::Result::Ok;
+                if (cmd.type == CommandType::Register) r = store->Register(cmd.username, cmd.password, WallClock(), key, session);
+                else if (cmd.type == CommandType::Login) r = store->Login(cmd.username, cmd.password, key, session);
+                else r = store->Resume(cmd.session, key);
+                if (r != AccountStore::Result::Ok) return fail(r);
+                const std::string previous = c.account;
+                c.searching = false;
+                for (auto& [otherId, other] : clients_) {   // one connection per account: the older one is logged out
+                    if (otherId != id && other.account == key) {
+                        transport_.Send(otherId, msg::LoggedOut("elsewhere"));
+                        other.account.clear();
+                        other.session.clear();
+                        other.searching = false;
+                    }
+                }
+                c.account = key;
+                c.session = session;
+                const Account* a = store->Find(key);
+                transport_.Send(id, msg::Auth(*a, session));
+                transport_.Send(id, msg::Profile(*a, true));
+                SendFriends(id);
+                if (!previous.empty() && previous != key) PresenceChanged(previous);
+                return PresenceChanged(key);
+            }
+            default: break;
+        }
+        if (c.account.empty()) return transport_.Send(id, msg::Error("not_logged_in", "log in first", cmd.hasId, cmd.id));
+        const std::string me = c.account;
+        switch (cmd.type) {
+            case CommandType::Logout: {
+                store->Logout(me, c.session);
+                c.account.clear();
+                c.session.clear();
+                c.searching = false;
+                transport_.Send(id, msg::LoggedOut("logout"));
+                return PresenceChanged(me);
+            }
+            case CommandType::GetProfile: {
+                const Account* a = store->Find(cmd.username.empty() ? me : cmd.username);
+                if (a == nullptr) return fail(AccountStore::Result::UnknownUser);
+                return transport_.Send(id, msg::Profile(*a, Status(AccountStore::Key(a->name)) != "offline"));
+            }
+            case CommandType::GetFriends: return SendFriends(id);
+            case CommandType::FriendRequest:
+            case CommandType::FriendAccept:
+            case CommandType::FriendDecline:
+            case CommandType::FriendRemove: {
+                AccountStore::Result r = AccountStore::Result::Ok;
+                bool became = false;
+                if (cmd.type == CommandType::FriendRequest) r = store->Request(me, cmd.username, became);
+                else if (cmd.type == CommandType::FriendAccept) r = store->Accept(me, cmd.username);
+                else if (cmd.type == CommandType::FriendDecline) r = store->Decline(me, cmd.username);
+                else r = store->Unfriend(me, cmd.username);
+                if (r != AccountStore::Result::Ok) return fail(r);
+                SendFriendsToAccount(me);
+                return SendFriendsToAccount(AccountStore::Key(cmd.username));
+            }
+            default: return;
+        }
+    }
+
+    std::uint64_t WallClock() const { return cfg_.wallClockMs ? cfg_.wallClockMs() : 0; }
+
+    std::string Status(const std::string& key) const {
+        std::string best = "offline";
+        for (const auto& [id, c] : clients_) {
+            if (c.account != key || c.closing) continue;
+            if (c.room != 0) return "in_match";
+            best = c.searching ? "searching" : "online";
+        }
+        return best;
+    }
+
+    void SendFriends(ConnectionId id) {
+        const Account* a = cfg_.accounts != nullptr ? cfg_.accounts->Find(clients_[id].account) : nullptr;
+        if (a == nullptr) return;
+        std::vector<msg::FriendInfo> list;
+        for (const std::string& k : a->friends) {
+            const Account* f = cfg_.accounts->Find(k);
+            if (f != nullptr) list.push_back({f->name, Status(k), f->points});
+        }
+        std::sort(list.begin(), list.end(), [](const msg::FriendInfo& x, const msg::FriendInfo& y) {   // online first, then by name
+            const bool xo = x.status != "offline", yo = y.status != "offline";
+            return xo != yo ? xo : AccountStore::Key(x.name) < AccountStore::Key(y.name);
+        });
+        std::vector<std::string> in, out;
+        for (const std::string& k : a->incoming) { if (const Account* f = cfg_.accounts->Find(k)) in.push_back(f->name); }
+        for (const std::string& k : a->outgoing) { if (const Account* f = cfg_.accounts->Find(k)) out.push_back(f->name); }
+        transport_.Send(id, msg::Friends(list, in, out));
+    }
+
+    void SendFriendsToAccount(const std::string& key) {
+        for (const auto& [id, c] : clients_) {
+            if (c.account == key && !c.closing) SendFriends(id);
+        }
+    }
+
+    // A player's status changed (logged in / out, queued, in a match, back): their online friends get a fresh list.
+    void PresenceChanged(const std::string& key) {
+        if (key.empty() || cfg_.accounts == nullptr) return;
+        const Account* a = cfg_.accounts->Find(key);
+        if (a == nullptr) return;
+        for (const std::string& f : a->friends) SendFriendsToAccount(f);
+    }
+
+    // A match of this room ended: every logged-in player's history, stats and (ranked) LP; they get their new profile.
+    void Record(std::uint64_t roomId, const MatchResult& result) {
+        if (cfg_.accounts == nullptr) return;
+        const Room* room = nullptr;
+        for (const auto& r : rooms_) { if (r->id == roomId) room = r.get(); }
+        if (room == nullptr) return;
+        std::vector<std::pair<int, std::string>> order;
+        for (const MatchResultSeat& s : result.seats) order.emplace_back(s.placement > 0 ? s.placement : 99, s.name);
+        std::sort(order.begin(), order.end());
+        std::vector<std::string> lobby;
+        for (const auto& [p, n] : order) lobby.push_back(n);
+        for (std::size_t i = 0; i < room->accounts.size() && i < result.seats.size(); ++i) {
+            const std::string& key = room->accounts[i];
+            if (key.empty()) continue;
+            const MatchResultSeat& s = result.seats[i];
+            HistoryEntry h;
+            h.timeMs = WallClock();
+            h.mode = ToString(room->mode);
+            h.placement = s.placement;
+            h.level = s.level;
+            h.round = s.round;
+            for (const MatchResultUnit& u : s.board) h.board.push_back({u.champion, u.star, u.items});
+            h.players = lobby;
+            cfg_.accounts->RecordMatch(key, std::move(h));
+            for (const auto& [id, c] : clients_) {
+                if (c.account == key && !c.closing) transport_.Send(id, msg::Profile(*cfg_.accounts->Find(key), true));
+            }
+        }
     }
 
     QueueServerConfig cfg_;

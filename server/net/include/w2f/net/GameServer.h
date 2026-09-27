@@ -80,6 +80,27 @@ struct GameServerConfig {
     // After the match ends the server waits this many ticks (players read the result), then disconnects everyone and
     // opens a fresh lobby.
     int postMatchTicks = kTicksPerSecond * 20;
+    // (revision 8) The name of every seat, shown to everyone (`match_started.player_names`): a QueueServer passes the players' usernames and the
+    // bots' names. Empty = "Player N" for the humans and generated usernames for the bots.
+    std::vector<std::string> seatNames;
+};
+
+// (demo 1.5) What a finished match reports, for the accounts' match history and rank: every seat's placement, level, the round it went out in
+// and the board it last fought with.
+struct MatchResultUnit {
+    int champion = 0;
+    int star = 1;
+    std::vector<int> items;
+};
+struct MatchResultSeat {
+    std::string name;
+    bool bot = false;
+    int placement = 0, level = 0, round = 0;
+    std::vector<MatchResultUnit> board;
+};
+struct MatchResult {
+    int rounds = 0;
+    std::vector<MatchResultSeat> seats;   // by seat index
 };
 
 class GameServer : public IServerHandler {
@@ -122,6 +143,9 @@ public:
     // Called once when a match ends (the moment `match_over` goes out). The server tool deletes its autosave then: a finished match must never be resumed.
     using MatchFinishedHandler = std::function<void()>;
     void SetMatchFinishedHandler(MatchFinishedHandler handler);
+    // Called once when a match ends, with every seat's result (a QueueServer records it in the accounts).
+    using MatchResultHandler = std::function<void(const MatchResult& result)>;
+    void SetMatchResultHandler(MatchResultHandler handler);
 
     // Crash recovery: turns a freshly started server (no match, nobody connected) into the server that wrote this snapshot, at the start of that round's
     // Planning phase. The humans' seats come back with their old tokens (nobody is connected yet: each reconnects with `?token=...` and is resynced), the

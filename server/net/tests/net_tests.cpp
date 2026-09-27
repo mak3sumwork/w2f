@@ -39,6 +39,8 @@
 #include "w2f/net/Messages.h"
 #include "w2f/net/ResumeFile.h"
 #include "w2f/net/GameServer.h"
+#include "w2f/net/Accounts.h"
+#include "w2f/net/Encoding.h"
 #include "w2f/net/QueueServer.h"
 #include "w2f/net/JsonWriter.h"
 #include "w2f/net/Protocol.h"
@@ -1473,7 +1475,7 @@ struct QueueRig {
     std::unique_ptr<QueueServer> hub;
     std::uint64_t now = 1000;
     ConnectionId nextConn = 100;
-    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120)
+    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120, AccountStore* accounts = nullptr)
         : data(seats, [](GameData& d, GameServerConfig& c) {
               d.config.player.startingHealth = 20;
               d.config.damage.baseDamageByStage = {8, 12};
@@ -1483,6 +1485,8 @@ struct QueueRig {
         qc.match = data.cfg;
         qc.fillMs = fillMs;
         qc.abandonTicks = abandonTicks;
+        qc.accounts = accounts;
+        qc.wallClockMs = [] { return std::uint64_t{1790000000000}; };
         hub = std::make_unique<QueueServer>(qc, data.data, net);
     }
     ConnectionId Connect(const std::string& token = "") { const ConnectionId id = ++nextConn; hub->OnConnect(id, token, now); return id; }
@@ -1499,6 +1503,137 @@ struct QueueRig {
         return n;
     }
 };
+
+static void TestAccounts() {
+    // The password hash's building blocks against published test vectors (FIPS 180-2, RFC 7914 section 11 / PBKDF2-HMAC-SHA-256).
+    const auto hex = [](const std::string& raw) { return HexEncode(reinterpret_cast<const std::uint8_t*>(raw.data()), raw.size()); };
+    const auto sha = Sha256("abc");
+    CHECK(HexEncode(sha.data(), sha.size()) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    CHECK(hex(Pbkdf2Sha256("password", "salt", 1, 32)) == "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+    CHECK(hex(Pbkdf2Sha256("password", "salt", 2, 32)) == "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43");
+    CHECK(ConstantTimeEquals("abc", "abc") && !ConstantTimeEquals("abc", "abd") && !ConstantTimeEquals("abc", "ab"));
+
+    // The ladder.
+    CHECK(RankOf(0).tier == "Iron" && RankOf(0).division == 4 && RankOf(0).lp == 0);
+    CHECK(RankOf(399).tier == "Iron" && RankOf(399).division == 1 && RankOf(399).lp == 99);
+    CHECK(RankOf(400).tier == "Bronze" && RankOf(400).division == 4);
+    CHECK(RankOf(2799).tier == "Diamond" && RankOf(2799).division == 1);
+    CHECK(RankOf(2800).tier == "Master" && RankOf(2800).division == 0 && RankOf(3000).tier == "Grandmaster" && RankOf(3350).tier == "Challenger" && RankOf(3350).lp == 550);
+    CHECK(LpForPlacement(1) == 40 && LpForPlacement(4) == 10 && LpForPlacement(5) == -10 && LpForPlacement(8) == -40);
+
+    // The store: names, passwords, sessions, friends, a match, and the file.
+    std::uint64_t counter = 7;
+    const auto entropy = [&counter] { counter = counter * 6364136223846793005ULL + 1442695040888963407ULL; return counter; };
+    const std::string path = "build/test_accounts.json";
+    std::remove(path.c_str());
+    {
+        AccountStore store(path, entropy, 3);
+        std::string key, session;
+        CHECK(store.Register("ab", "secret1", 5, key, session) == AccountStore::Result::InvalidName);
+        CHECK(store.Register("bad name", "secret1", 5, key, session) == AccountStore::Result::InvalidName);
+        CHECK(store.Register("Alice", "short", 5, key, session) == AccountStore::Result::InvalidPassword);
+        CHECK(store.Register("Alice", "secret1", 5, key, session) == AccountStore::Result::Ok && key == "alice" && session.size() == 32);
+        CHECK(store.Register("ALICE", "secret1", 5, key, session) == AccountStore::Result::NameTaken);
+        const std::string first = session;
+        CHECK(store.Login("alice", "wrong-password", key, session) == AccountStore::Result::BadCredentials);
+        CHECK(store.Login("nobody", "secret1", key, session) == AccountStore::Result::BadCredentials);
+        CHECK(store.Login("aLiCe", "secret1", key, session) == AccountStore::Result::Ok && key == "alice" && session != first);
+        std::string resumed;
+        CHECK(store.Resume(first, resumed) == AccountStore::Result::Ok && resumed == "alice");
+        CHECK(store.Resume(std::string(32, '0'), resumed) == AccountStore::Result::BadSession);
+        store.Logout("alice", first);
+        CHECK(store.Resume(first, resumed) == AccountStore::Result::BadSession);
+        CHECK(store.Find("alice")->hash.find("secret1") == std::string::npos);   // never the password itself
+        std::string bobKey, bobSession;
+        CHECK(store.Register("Bob", "hunter22", 6, bobKey, bobSession) == AccountStore::Result::Ok);
+        bool became = false;
+        CHECK(store.Request("alice", "alice", became) == AccountStore::Result::Self);
+        CHECK(store.Request("alice", "carol", became) == AccountStore::Result::UnknownUser);
+        CHECK(store.Request("alice", "Bob", became) == AccountStore::Result::Ok && !became);
+        CHECK(store.Request("alice", "Bob", became) == AccountStore::Result::AlreadyRequested);
+        CHECK(store.Find("bob")->incoming.count("alice") == 1 && store.Find("alice")->outgoing.count("bob") == 1);
+        CHECK(store.Request("bob", "alice", became) == AccountStore::Result::Ok && became);   // asking back is a yes
+        CHECK(store.Find("bob")->friends.count("alice") == 1 && store.Find("alice")->friends.count("bob") == 1 && store.Find("bob")->incoming.empty());
+        CHECK(store.Unfriend("bob", "Alice") == AccountStore::Result::Ok && store.Find("alice")->friends.empty());
+        CHECK(store.Accept("bob", "Alice") == AccountStore::Result::NoRequest);
+        HistoryEntry h;
+        h.mode = "ranked"; h.placement = 2; h.level = 7; h.round = 20;
+        h.board.push_back({9001, 2, {10, 11}});
+        store.RecordMatch("alice", h);
+        h.mode = "normal"; h.placement = 7;
+        store.RecordMatch("alice", h);
+        h.mode = "ranked"; h.placement = 8;
+        store.RecordMatch("bob", h);
+        const Account& alice = *store.Find("alice");
+        CHECK(alice.points == 30 && alice.peakPoints == 30 && alice.stats.games == 2 && alice.stats.top4 == 1 && alice.stats.rankedGames == 1);
+        CHECK(alice.history.size() == 2 && alice.history[0].mode == "normal" && alice.history[1].lpChange == 30 && alice.history[1].board[0].champion == 9001);
+        CHECK(store.Find("bob")->points == 0);   // the floor
+    }
+    {
+        AccountStore again(path, entropy, 3);   // the file holds it all
+        std::string error, key, session;
+        CHECK(again.Load(&error) && again.size() == 2);
+        CHECK(again.Login("Alice", "secret1", key, session) == AccountStore::Result::Ok);
+        const Account& alice = *again.Find("alice");
+        CHECK(alice.points == 30 && alice.history.size() == 2 && alice.history[1].board.size() == 1 && alice.history[1].board[0].items.size() == 2);
+    }
+    std::remove(path.c_str());
+}
+
+static void TestQueueAccounts() {
+    std::uint64_t counter = 11;
+    AccountStore store("", [&counter] { counter = counter * 6364136223846793005ULL + 1442695040888963407ULL; return counter; }, 2);
+    QueueRig q(4, 2000, kTicksPerSecond * 120, &store);
+    const ConnectionId a = q.Connect();
+    const ConnectionId b = q.Connect();
+    q.Say(a, R"({"action": "queue", "mode": "bots"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "not_logged_in" && q.hub->matches() == 0);
+    q.Say(a, R"({"action": "register", "username": "Alice", "password": "secret1"})");
+    const json::Value auth = q.Last(a, "auth");
+    CHECK(Str(auth, "username") == "Alice" && Str(auth, "session").size() == 32 && q.CountType(a, "profile") == 1 && q.CountType(a, "friends") == 1);
+    q.Say(b, R"({"action": "register", "username": "alice", "password": "secret1"})");
+    CHECK(Str(q.Last(b, "error"), "code") == "name_taken");
+    q.Say(b, R"({"action": "register", "username": "Bob", "password": "hunter22"})");
+    q.Say(a, R"({"action": "friend_request", "username": "bob"})");
+    CHECK(q.Last(b, "friends").Find("incoming")->Items().size() == 1);
+    q.Say(b, R"({"action": "friend_accept", "username": "Alice"})");
+    const json::Value bf = q.Last(b, "friends");
+    CHECK(bf.Find("friends")->Items().size() == 1 && Str(bf.Find("friends")->Items()[0], "status") == "online");
+    // Alice plays Ranked (the queue fills with AI players after the fill time); Bob sees her in a match
+    q.Say(a, R"({"action": "queue", "mode": "ranked"})");
+    CHECK(Str(q.Last(b, "friends").Find("friends")->Items()[0], "status") == "searching");
+    q.Tick(80);
+    CHECK(Str(q.Last(a, "match_found"), "mode") == "ranked" && Num(q.Last(a, "match_found"), "bots") == 3);
+    CHECK(Str(q.Last(b, "friends").Find("friends")->Items()[0], "status") == "in_match");
+    const json::Value started = q.Last(a, "match_started");
+    const json::Value* names = started.Find("player_names");
+    CHECK(names != nullptr && names->Items().size() == 4 && names->Items()[0].AsString() == "Alice");
+    for (std::size_t i = 1; names != nullptr && i < names->Items().size(); ++i) CHECK(names->Items()[i].AsString().rfind("Bot", 0) != 0 && !names->Items()[i].AsString().empty());
+    q.Say(a, R"({"action": "get_profile", "username": "Bob"})");   // profiles work from inside a match
+    CHECK(Str(q.Last(a, "profile"), "username") == "Bob");
+    for (int tick = 0; tick < 40000 && q.CountType(a, "match_over") == 0; ++tick) q.Tick();
+    CHECK(q.CountType(a, "match_over") == 1);
+    const Account& alice = *store.Find("alice");
+    CHECK(alice.history.size() == 1 && alice.history[0].mode == "ranked" && alice.stats.rankedGames == 1 && alice.history[0].players.size() == 4);
+    CHECK(alice.history[0].placement >= 1 && alice.points == std::max(0, LpForPlacement(alice.history[0].placement)));   // (her board is empty: nobody played her seat)
+    const json::Value prof = q.Last(a, "profile");
+    CHECK(Str(prof, "username") == "Alice" && prof.Find("history")->Items().size() == 1);
+    q.Tick(80);
+    CHECK(Str(q.Last(b, "friends").Find("friends")->Items()[0], "status") == "online");
+    // logging in elsewhere logs the old connection out; logout forgets the session
+    const ConnectionId a2 = q.Connect();
+    q.Say(a2, std::string(R"({"action": "resume_session", "session": ")") + Str(auth, "session") + R"("})");
+    CHECK(q.CountType(a2, "auth") == 1 && Str(q.Last(a, "logged_out"), "reason") == "elsewhere");
+    q.Say(a2, R"({"action": "logout"})");
+    CHECK(Str(q.Last(a2, "logged_out"), "reason") == "logout" && Str(q.Last(b, "friends").Find("friends")->Items()[0], "status") == "offline");
+    q.Say(a2, R"({"action": "get_friends"})");
+    CHECK(Str(q.Last(a2, "error"), "code") == "not_logged_in");
+    // a server without accounts says so
+    QueueRig plain(2, 2000);
+    const ConnectionId c = plain.Connect();
+    plain.Say(c, R"({"action": "login", "username": "Alice", "password": "secret1"})");
+    CHECK(Str(plain.Last(c, "error"), "code") == "no_accounts");
+}
 
 static void TestQueueServer() {
     // 1. Bots queue: a match at once, you + AI players; when it is over you are back on the home screen with the socket still open.
@@ -1595,8 +1730,10 @@ static void TestQueueServer() {
     {
         QueueRig q(2, 1000);
         const ConnectionId a = q.Connect();
-        q.Say(a, R"({"action": "queue", "mode": "ranked"})");
+        q.Say(a, R"({"action": "queue", "mode": "solo"})");
         CHECK(Str(q.Last(a, "error"), "code") == "out_of_range" && q.hub->matches() == 0);
+        q.Say(a, R"({"action": "queue", "mode": "ranked"})");   // (revision 8) a mode, but it needs accounts
+        CHECK(Str(q.Last(a, "error"), "code") == "no_accounts" && q.hub->matches() == 0);
         q.Say(a, R"({"action": "queue"})");
         CHECK(Str(q.Last(a, "error"), "code") == "missing_field");
         Rig r(2);
@@ -2553,6 +2690,29 @@ static void TestJsonSchemas() {
         checkMessage(msg::Catalog(*r.champions, r.items.get(), r.traits.get(), r.encounters.get(), r.data.config.combat, r.display.get()));
     }
 
+    // 1b. Revision 8: the account messages (a full profile with history, a friend list in every status, both logout reasons) and match_started's names.
+    {
+        Account acc;
+        acc.name = "Alice"; acc.points = 2950; acc.peakPoints = 3400; acc.createdMs = 1790000000000ULL;
+        acc.stats.games = 3; acc.stats.rankedGames = 2;
+        HistoryEntry h;
+        h.timeMs = 1790000000001ULL; h.mode = "ranked"; h.placement = 3; h.level = 8; h.round = 25; h.lpChange = 20; h.pointsAfter = 2950;
+        h.board.push_back({9001, 3, {10, 11, 12}});
+        h.board.push_back({9002, 1, {}});
+        h.players = {"Alice", "ShadowFox", "Bob"};
+        acc.history.push_back(h);
+        h.mode = "bots"; h.placement = 8; h.lpChange = 0; h.board.clear();
+        acc.history.push_back(h);
+        checkMessage(msg::Auth(acc, "0123456789abcdef0123456789abcdef"));
+        checkMessage(msg::Profile(acc, true));
+        checkMessage(msg::Profile(Account{"Bob", "", "", 1, 0, 0, 0, {}, {}, {}, {}, {}, {}}, false));
+        checkMessage(msg::Friends({{"Bob", "online", 0}, {"Cara", "in_match", 450}, {"Dan", "searching", 3300}, {"Eve", "offline", 2800}}, {"Finn"}, {"Gus"}));
+        checkMessage(msg::Friends({}, {}, {}));
+        checkMessage(msg::LoggedOut("logout"));
+        checkMessage(msg::LoggedOut("elsewhere"));
+        checkMessage(msg::MatchStarted(GameConfig{}, 3, 0, 3, {2}, {"Alice", "Player 2", "LunarSage42"}));
+    }
+
     // 2. Whole matches: everything every client is sent (state, public_state, phases, fights, results, gifts, drops, events...).
     for (int variant = 0; variant < 2; ++variant) {
         std::unique_ptr<MotherNatureDatabase> mn;
@@ -2608,7 +2768,11 @@ static void TestJsonSchemas() {
                                R"({"action": "move_unit", "unit_id": 5, "location": "board", "x": 6, "y": 3})", R"({"action": "equip_item", "unit_id": 5, "item_id": 3})",
                                R"({"action": "unequip_item", "unit_id": 5, "slot": 2})", R"({"action": "get_state"})", R"({"action": "get_fight", "fight_index": 7})", R"({"action": "get_catalog"})",
                                R"({"action": "ping", "id": 9007199254740991})", R"({"action": "queue", "mode": "bots"})", R"({"action": "queue", "mode": "normal", "id": 2})",
-                               R"({"action": "leave_queue"})", R"({"action": "leave_match"})"};
+                               R"({"action": "leave_queue"})", R"({"action": "leave_match"})", R"({"action": "queue", "mode": "ranked"})",
+                               R"({"action": "register", "username": "Alice", "password": "secret1"})", R"({"action": "login", "username": "Alice", "password": "secret1", "id": 4})",
+                               R"({"action": "resume_session", "session": "0123456789abcdef0123456789abcdef"})", R"({"action": "logout"})", R"({"action": "get_profile"})",
+                               R"({"action": "get_profile", "username": "Bob"})", R"({"action": "get_friends"})", R"({"action": "friend_request", "username": "Bob"})",
+                               R"({"action": "friend_accept", "username": "Bob"})", R"({"action": "friend_decline", "username": "Bob"})", R"({"action": "friend_remove", "username": "Bob"})"};
         for (const char* text : valid) {
             const json::Value v = ParseJson(text);
             const std::string why = client.Check(clientSchema, v);
@@ -2619,7 +2783,8 @@ static void TestJsonSchemas() {
                                  R"({"action": "buy_unit", "shop_index": 1, "extra": 1})", R"({"action": "fly"})", R"({"action": "sell_unit", "unit_id": "1"})", R"({"action": "pick_gift", "gift_index": 4})",
                                  R"({"action": "move_unit", "unit_id": 5, "location": "moon", "x": 1})", R"({"action": "equip_item", "unit_id": 5, "item_id": 0})", R"({"action": "unequip_item", "unit_id": 5, "slot": 3})",
                                  R"({"action": "get_fight", "fight_index": 8})", R"({"action": "ping", "id": -1})", R"({"action": 5})", R"({})", R"([])",
-                                 R"({"action": "queue"})", R"({"action": "queue", "mode": "ranked"})", R"({"action": "leave_queue", "mode": "bots"})"};
+                                 R"({"action": "queue"})", R"({"action": "queue", "mode": "solo"})", R"({"action": "leave_queue", "mode": "bots"})",
+                                 R"({"action": "login", "username": "a"})", R"({"action": "register", "username": "", "password": "x"})", R"({"action": "friend_request"})"};
         for (const char* text : invalid) {
             json::Value v;
             std::string e;
@@ -3147,6 +3312,8 @@ int main() {
         {"Soak: 8 real clients, a whole match, 3 reconnects", TestEightClientSoak},
         {"Catalog message", TestCatalog},
         {"Queue server: bots / normal queues, many matches, back to the home screen", TestQueueServer},
+        {"Accounts: password hashing, the ladder, the store and its file", TestAccounts},
+        {"Queue server with accounts: log in, friends and presence, ranked, match history", TestQueueAccounts},
     };
     int failedTests = 0;
     for (const Test& t : tests) {

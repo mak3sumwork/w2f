@@ -8,6 +8,9 @@
 //   * bots:   a match starts at once, the player + (seats - 1) AI players;
 //   * normal: players wait together; the match starts when `seats` players are searching, or when the longest waiter has waited
 //             `fillMs`, with AI players in the empty seats.
+//   * ranked (revision 8): like normal, but the result moves the players' rank (needs accounts).
+// With accounts (QueueServerConfig::accounts) a connection logs in first (register / login / resume_session) and can then look at profiles and
+// manage friends (get_profile, get_friends, friend_*) -- also from inside a match.
 // The player gets `match_found`, then exactly the messages a single-lobby server sends (welcome, lobby, match_started, ...): the match itself
 // is an unchanged GameServer. When it ends (or the player sends leave_match) the connection is idle again -- the socket stays open -- and
 // can queue for the next one. A reconnect with a match's token (?token=...) goes straight back into that match.
@@ -18,6 +21,7 @@
 #include <memory>
 #include <string_view>
 
+#include "w2f/net/Accounts.h"
 #include "w2f/net/GameServer.h"
 
 namespace w2f::net {
@@ -28,6 +32,10 @@ struct QueueServerConfig {
     long long statusEveryMs = 1'000;  // searching players get a queue_status this often
     int abandonTicks = kTicksPerSecond * 120;   // a running match nobody is connected to is closed after this long
     int maxMatches = 64;              // at most this many matches at once; more queue up
+    // (revision 8, demo 1.5) Accounts: with a store, players must register / log in before they queue; matches go into their history, the Ranked
+    // queue moves their rank, and friends see each other's status. nullptr = the old anonymous behaviour.
+    AccountStore* accounts = nullptr;
+    std::function<std::uint64_t()> wallClockMs;   // unix ms for the match history (default: 0)
 };
 
 class QueueServer : public IServerHandler {

@@ -19,6 +19,7 @@
 #include "w2f/Pve.h"
 #include "w2f/Text.h"
 #include "w2f/Trait.h"
+#include "w2f/net/Accounts.h"
 #include "w2f/net/Protocol.h"
 
 namespace w2f::net::msg {
@@ -50,7 +51,7 @@ std::string QueueStatus(const QueueInfo& info);
 std::string MatchFound(QueueMode mode, int humans, int bots);
 
 // `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never). `botSeats` = the AI players' seats.
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {});
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {}, const std::vector<std::string>& names = {});
 // `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
 // `shopClosed`: no shop this round (Mother Nature's, or the opening round: the free unit was dealt at the start).
 std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, int durationTicks, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed);
@@ -77,6 +78,21 @@ std::string Combat(int round, int index, const CombatOutcome& outcome, const Mat
 
 std::string PlayerDamaged(PlayerId player, int damage, int healthAfter);
 std::string PlayerEliminated(PlayerId player, int placement);
+
+// ---- revision 8: accounts (a QueueServer with --accounts) ----
+struct FriendInfo {
+    std::string name;
+    std::string status;   // "offline" | "online" | "searching" | "in_match"
+    int points = 0;
+};
+// `auth`: logged in (register / login / resume_session): the username, a session token to remember, the rank.
+std::string Auth(const Account& account, std::string_view session);
+// `profile`: rank, stats and the match history of a player (anyone may look at anyone's).
+std::string Profile(const Account& account, bool online);
+// `friends`: the friend list with their status and rank, the requests in and out.
+std::string Friends(const std::vector<FriendInfo>& friends, const std::vector<std::string>& incoming, const std::vector<std::string>& outgoing);
+// `logged_out`: after logout (or when another device logged in to the same account: reason "elsewhere").
+std::string LoggedOut(std::string_view reason);
 std::string MatchOver(const MatchManager& match);
 std::string Income(PlayerId player, int round, const IncomeBreakdown& income);
 std::string PveDropMsg(const PveDrop& drop);

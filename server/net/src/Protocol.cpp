@@ -41,6 +41,14 @@ struct Reader {
         out = v->AsBool();
         return true;
     }
+    bool String(const char* key, std::size_t minLen, std::size_t maxLen, bool required, std::string& out) {
+        const json::Value* v = Take(key);
+        if (v == nullptr) return required ? Fail("missing_field", std::string("\"") + key + "\" is required") : true;
+        if (!v->IsString()) return Fail("wrong_type", std::string("\"") + key + "\" must be a string");
+        if (v->AsString().size() < minLen || v->AsString().size() > maxLen) return Fail("out_of_range", std::string("\"") + key + "\" must be " + std::to_string(minLen) + "-" + std::to_string(maxLen) + " characters");
+        out = v->AsString();
+        return true;
+    }
     bool Required(const char* key, long long lo, long long hi, long long& out) {
         bool present = false;
         return Int(key, lo, hi, true, out, present);
@@ -87,7 +95,10 @@ ParseResult ParseCommand(std::string_view text) {
                                    {"sell_unit", CommandType::SellUnit}, {"move_unit", CommandType::MoveUnit}, {"equip_item", CommandType::EquipItem},
                                    {"unequip_item", CommandType::UnequipItem}, {"combine_items", CommandType::CombineItems}, {"get_state", CommandType::GetState}, {"get_fight", CommandType::GetFight},
                                    {"ping", CommandType::Ping}, {"get_catalog", CommandType::GetCatalog}, {"pick_trait_choice", CommandType::PickTraitChoice},
-                                   {"queue", CommandType::JoinQueue}, {"leave_queue", CommandType::LeaveQueue}, {"leave_match", CommandType::LeaveMatch}};
+                                   {"queue", CommandType::JoinQueue}, {"leave_queue", CommandType::LeaveQueue}, {"leave_match", CommandType::LeaveMatch},
+                                   {"register", CommandType::Register}, {"login", CommandType::Login}, {"resume_session", CommandType::ResumeSession}, {"logout", CommandType::Logout},
+                                   {"get_profile", CommandType::GetProfile}, {"get_friends", CommandType::GetFriends}, {"friend_request", CommandType::FriendRequest},
+                                   {"friend_accept", CommandType::FriendAccept}, {"friend_decline", CommandType::FriendDecline}, {"friend_remove", CommandType::FriendRemove}};
     bool found = false;
     for (const Known& k : kKnown) {
         if (name == k.name) { c.type = k.type; found = true; }
@@ -108,6 +119,16 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::GetFight: allowed = {"id", "action", "fight_index"}; break;
         case CommandType::PickTraitChoice: allowed = {"id", "action", "index"}; break;
         case CommandType::JoinQueue: allowed = {"id", "action", "mode"}; break;
+        case CommandType::Register:
+        case CommandType::Login: allowed = {"id", "action", "username", "password"}; break;
+        case CommandType::ResumeSession: allowed = {"id", "action", "session"}; break;
+        case CommandType::GetProfile:
+        case CommandType::FriendRequest:
+        case CommandType::FriendAccept:
+        case CommandType::FriendDecline:
+        case CommandType::FriendRemove: allowed = {"id", "action", "username"}; break;
+        case CommandType::Logout:
+        case CommandType::GetFriends:
         case CommandType::LeaveQueue:
         case CommandType::LeaveMatch:
         case CommandType::RerollShop:
@@ -196,12 +217,31 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::JoinQueue: {
             const json::Value* mode = in.Take("mode");
             if (mode == nullptr) { ok = in.Fail("missing_field", "\"mode\" is required"); break; }
-            if (!mode->IsString()) { ok = in.Fail("wrong_type", "\"mode\" must be \"bots\" or \"normal\""); break; }
+            if (!mode->IsString()) { ok = in.Fail("wrong_type", "\"mode\" must be \"bots\", \"normal\" or \"ranked\""); break; }
             if (mode->AsString() == "bots") c.queueMode = QueueMode::Bots;
             else if (mode->AsString() == "normal") c.queueMode = QueueMode::Normal;
-            else ok = in.Fail("out_of_range", "\"mode\" must be \"bots\" or \"normal\"");
+            else if (mode->AsString() == "ranked") c.queueMode = QueueMode::Ranked;
+            else ok = in.Fail("out_of_range", "\"mode\" must be \"bots\", \"normal\" or \"ranked\"");
             break;
         }
+        case CommandType::Register:
+        case CommandType::Login:
+            ok = in.String("username", 1, 32, true, c.username) && in.String("password", 1, 128, true, c.password);
+            break;
+        case CommandType::ResumeSession:
+            ok = in.String("session", 1, 64, true, c.session);
+            break;
+        case CommandType::GetProfile:
+            ok = in.String("username", 1, 32, false, c.username);
+            break;
+        case CommandType::FriendRequest:
+        case CommandType::FriendAccept:
+        case CommandType::FriendDecline:
+        case CommandType::FriendRemove:
+            ok = in.String("username", 1, 32, true, c.username);
+            break;
+        case CommandType::Logout:
+        case CommandType::GetFriends:
         case CommandType::LeaveQueue:
         case CommandType::LeaveMatch:
         case CommandType::RerollShop:

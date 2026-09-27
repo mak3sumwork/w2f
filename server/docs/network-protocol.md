@@ -202,6 +202,34 @@ While searching the server sends `queue_status` every second (`state` `searching
 `leave_queue` are answered with `error` `in_match`; idle, a match command is answered with `error` `not_in_match`. A single-lobby server answers all three with
 `error` `no_queue`. A match nobody is connected to is closed after 2 minutes; at most 64 matches run at once (more players wait in the queue).
 
+## Accounts, profiles, friends and Ranked (revision 8, demo 1.5)
+`w2f_server --queue --accounts FILE` keeps player accounts in FILE (one JSON file, rewritten after every change: `net/include/w2f/net/Accounts.h`).
+With accounts a connection must log in before it can `queue`; profiles and friends work from the home screen AND from inside a match.
+
+| Command | Fields | Meaning |
+|---|---|---|
+| `register` | `username`, `password` | create an account (username 3-16 letters / digits / `_`, unique ignoring case; password 6-64 characters) and log in |
+| `login` | `username`, `password` | log in (`error` `bad_credentials`) |
+| `resume_session` | `session` | log in with the token from an earlier `auth` ("remember me"; `bad_session`) |
+| `logout` | | forget this session |
+| `get_profile` | [`username`] | anyone's profile; yours without a name |
+| `get_friends` | | your friend list |
+| `friend_request` / `friend_accept` / `friend_decline` / `friend_remove` | `username` | a request (asking back someone who asked you = friends), accept, refuse or cancel, remove |
+| `queue` | `mode` `"ranked"` | like `normal`, and the placement moves your rank |
+
+Messages: `auth` (`username`, `session`, `rank`) after a login, followed by `profile` and `friends`; `profile` (`username`, `online`, `created_ms`, `rank`,
+`peak_points`, `stats`, `history`: the last 20 matches, newest first, each with `mode`, `placement`, `level`, `round`, `lp_change`, `points_after`, the `board`
+the player last fought with, the lobby's `players` in placement order); `friends` (`friends`: `username`, `status` offline / online / searching / in_match,
+`rank`; `incoming`; `outgoing`) after a login, every change and whenever a friend's status changes; `logged_out` (`reason` logout / elsewhere: one
+connection per account, a newer login logs the older one out). A finished match sends each logged-in player their new `profile`.
+`rank` = `tier` (Iron, Bronze, Silver, Gold, Platinum, Emerald, Diamond, Master, Grandmaster, Challenger), `division` (4 = IV .. 1 = I; 0 from Master),
+`lp`, `points` (LP from Iron IV 0; 100 per division, Master at 2800, Grandmaster 3000, Challenger 3300). Ranked LP by placement: +40 +30 +20 +10 -10 -20 -30 -40,
+never below Iron IV 0. `match_started.player_names` (every server) names every seat: the players' usernames, the AI players' generated usernames.
+Errors: `no_accounts` (a server without `--accounts`), `not_logged_in`, `invalid_name`, `invalid_password`, `name_taken`, `bad_credentials`, `bad_session`,
+`unknown_user`, `self`, `already_friends`, `already_requested`, `no_request`, `not_friends`, `too_many_friends`.
+Passwords: PBKDF2-HMAC-SHA-256 with a random 16-byte salt per account (20 000 rounds); they travel in the clear over `ws://`, so an online server must sit
+behind TLS (`wss://`, docs/deploy.md).
+
 ## Crash recovery and private servers
 `--autosave FILE` writes ONE file at the start of every Planning phase: the engine snapshot plus a small JSON "seats" record (each human seat's reconnect token, which seats are bots, the bots' state). `--resume FILE` restores
 a match from it; the players reconnect with their tokens and are resynced exactly as after a dropped connection. A finished match deletes the file. `--join-code CODE` makes every connection bring `?code=CODE`.
@@ -210,7 +238,7 @@ Details, Docker and TLS: `docs/deploy.md`.
 ## Not built yet (deliberately)
 * **TLS.** Terminate it in a proxy (`docs/deploy.md` has a Caddy setup).
 * **Windows.** The socket layer has a Winsock branch that has never been compiled or run; Linux and macOS are tested.
-* **Accounts, names, ranks.** Players are anonymous connections; the queue server has no persistence (roadmap phase F). `--queue` has no `--autosave` / `--resume` yet.
+* **Parties, invites, chat.** Friends see each other's status but cannot yet invite each other into a lobby. `--queue` has no `--autosave` / `--resume` yet.
 
 ## Testing
 `make test-net` (`net/tests/net_tests.cpp`): the encoders against RFC vectors; the handshake and frame parser against the RFC's own examples and ~30 malformed cases each, plus fuzzing;

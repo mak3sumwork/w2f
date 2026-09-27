@@ -10,6 +10,8 @@
 // The protocol is documented in docs/network-protocol.md.
 
 #include <atomic>
+#include <chrono>
+#include <random>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -51,6 +53,7 @@ struct Options {
     bool fast = false;   // development: much shorter phases, so a client can be tried against a whole match in minutes
     bool queue = false;  // matchmaking: many matches at once, players queue from the client (QueueServer)
     int fillSeconds = 30;   // --queue: a normal queue starts with AI players in the empty seats after this long
+    std::string accounts;   // --queue --accounts FILE: player accounts (log in, profile, match history, friends, ranked) kept in FILE
 };
 
 bool ParseArgs(int argc, char** argv, Options& o) {
@@ -70,17 +73,19 @@ bool ParseArgs(int argc, char** argv, Options& o) {
         else if (a == "--fast") { o.fast = true; }
         else if (a == "--queue") { o.queue = true; }
         else if (a == "--fill-seconds") { if (!(v = value("--fill-seconds"))) return false; o.fillSeconds = std::atoi(v); }
+        else if (a == "--accounts") { if (!(v = value("--accounts"))) return false; o.accounts = v; }
         else if (a == "--give-items") { o.giveItems = true; }
         else if (a == "--resume") { if (!(v = value("--resume"))) return false; o.resume = v; }
         else if (a == "--join-code") { if (!(v = value("--join-code"))) return false; o.joinCode = v; }
         else if (a == "--autosave") { if (!(v = value("--autosave"))) return false; o.autosave = v; }
         else {
-            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items] [--queue [--fill-seconds N]]\n", a.c_str());
+            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items] [--queue [--fill-seconds N] [--accounts FILE]]\n", a.c_str());
             return false;
         }
     }
     if (o.players < 2 || o.players > kMaxPlayers) { std::fprintf(stderr, "--players must be between 2 and %d\n", kMaxPlayers); return false; }
     if (o.queue && (o.bots != 0 || !o.resume.empty() || !o.autosave.empty())) { std::fprintf(stderr, "--queue decides the bots itself and has no autosave / resume\n"); return false; }
+    if (!o.accounts.empty() && !o.queue) { std::fprintf(stderr, "--accounts needs --queue\n"); return false; }
     if (o.fillSeconds < 0) { std::fprintf(stderr, "--fill-seconds must be 0 or more\n"); return false; }
     if (o.bots < 0 || o.bots > o.players - 1) { std::fprintf(stderr, "--bots must be between 0 and %d (at least one seat has to be a human)\n", o.players - 1); return false; }
     return true;
@@ -213,6 +218,17 @@ int main(int argc, char** argv) {
         qc.match = gsc;
         qc.match.bots = 0;
         qc.fillMs = static_cast<long long>(opt.fillSeconds) * 1000;
+        std::unique_ptr<AccountStore> accounts;
+        if (!opt.accounts.empty()) {
+            accounts = std::make_unique<AccountStore>(opt.accounts, [] {
+                static std::random_device device;
+                return (static_cast<std::uint64_t>(device()) << 32) ^ device();
+            });
+            if (!accounts->Load(&error) || !accounts->Save(&error)) { std::fprintf(stderr, "Accounts: %s\n", error.c_str()); return 2; }
+            std::printf("Accounts: %d in %s\n", accounts->size(), opt.accounts.c_str());
+            qc.accounts = accounts.get();
+            qc.wallClockMs = [] { return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()); };
+        }
         QueueServer hub(qc, data, tcp);
         QueueLogging logging(hub);
         tcp.SetHandler(&logging);
