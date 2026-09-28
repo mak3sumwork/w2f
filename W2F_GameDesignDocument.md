@@ -222,7 +222,44 @@ Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon,
 - Traits shown in the tracker stay for the whole fight, even as units die.
 
 
-## 3. FULL CHAMPION ROSTER (49 / 49)
+### 2D. Roster pass v3 — APPROVED and implemented (2026-09-28, FEEDBACK V6; balance-pass numbers in server/docs/balance.md)
+
+Compared against TFT Set 18 (65 champions, 25 shared traits + 10 one-champion traits; the biggest normal trait has 7 champions). Kept on purpose:
+top breakpoints stay emblem-only (prismatic chase), Coregons 8 stays a 2-emblem goal, Protector stays the Les + Lum duo. The problems it fixes:
+every 5-cost carry is a Sorcerer (Vega, Aureon, Nihila), Sorcerer has 11 champions, 2-cost and 4-cost have only 2 tanks each, Najmi has no frontliner,
+Hexagon and Gunslinger are thin, Omnilium is a trait with no bonus.
+
+**New champions (5; 48 -> 53 shop champions, 11 / 12 / 11 / 11 / 8 by cost):**
+
+**PULSAR - "The Star Anvil"** [NEW] (Najmi / Bruiser) · 2-cost tank | HP 700/1260/2268 | Armor/MR 35 | AD 50 | AS 0.65 | Range 1 | Mana 30/80
+- *Ability (Event Horizon):* Gains a 250/375/560 shield for 4s and pulls the 2 nearest enemies 1 hex toward him, dealing 80/120/180 (+50% AP) Magic Damage. Najmi's first frontliner.
+
+**RAMPART - "The Iron Frame"** [NEW] (Hexagon / Bastion) · 2-cost tank | HP 700/1260/2268 | Armor/MR 45 | AD 45 | AS 0.60 | Range 1 | Mana 40/90
+- *Ability (Deploy Barrier):* Plants a barrier: shields himself for 300/450/675 and adjacent allies for 120/180/270 for 4s. Bastion's first 2-cost unit.
+
+**SKARN - "The Void Spitter"** [NEW] (Phaisa / Marksman) · 3-cost carry | HP 650/1170/2106 | Armor/MR 25 | AD 65 | AS 0.75 | Range 4 | Mana 20/70
+- *Ability (Acid Spine):* Fires a spine that pierces every enemy in a 3-hex line: 200/300/480 (+100% AD) Physical Damage and -20% Armor for 4s. Marksman's missing 3-cost.
+
+**MAREN - "The Undertow"** [NEW] (Selini / Bruiser) · 4-cost tank | HP 1000/1800/3240 | Armor/MR 50 | AD 65 | AS 0.70 | Range 1 | Mana 40/100
+- *Ability (Undertow):* Drags a wave through the enemies in a 2-hex cone: 250/375/900 (+10% max HP) Magic Damage and a 1s stun; she takes 30% less damage for 4s. Selini's late frontline.
+
+**VECTOR - "The Calculated Shot"** [NEW] (Hexagon / Gunslinger) · 5-cost physical carry | HP 950/1710/3078 | Armor/MR 45 | AD 90 | AS 0.85 | Range 4 | Mana 30/100
+- *Passive:* Every 3rd attack ricochets to a second enemy for 60% damage.
+- *Ability (Calculated Barrage):* Fires 15 shots over 1.5s, each at the enemy with the least HP at that moment (re-chosen every shot), each 60/90/400 (+30% AD) Physical Damage ignoring 40% Armor. The first 5-cost carry that is not a Sorcerer.
+
+**Re-tags:** Faire loses Sorcerer (Hexagon / Najmi) · Lich Sorcerer -> Mystic (Coregons / Mystic) · Les and Lum lose the Omnilium tag (lore only; Omnilium Seed/Orb stay).
+**Protector (1/2):** (1) the Protector takes 15% less damage; (2) unchanged (all allies 10% amp + 10% Armor/MR, Protectors +10% more), and the Protectors keep the 15%.
+
+**Counts after the pass:** Helios 9 · Nature 9 · Selini 8 · Phaisa 8 · Najmi 7 · Hexagon 6 (+ Hexa) · Coregons 6 ·
+Sorcerer 9 · Bruiser 9 · Bastion 8 · Mystic 7 · Marksman 6 · Duelist 6 · Assassin 5 · Gunslinger 4 (+ Hexa) · Protector 2.
+Tanks per cost: 6 / 4 / 4 / 3 / 4 (was 6 / 2 / 4 / 2 / 4). 5-costs: 4 tanks + Vega, Aureon, Nihila (Sorcerer) and Vector (Gunslinger).
+Side effects: Hexagon (6) and Gunslinger (4) become reachable without an emblem (both are 3- / 2-breakpoint traits, like TFT's Defender 6 of 6),
+and Hexa's unlock (7 Hexagon star levels) gets a little easier. Later: one-champion traits for the 5-costs (TFT gives almost every 5-cost one).
+
+
+## 3. FULL CHAMPION ROSTER (54 / 54)
+
+*Roster pass v3 (section 2D) added Pulsar (2), Rampart (2), Skarn (3), Maren (4) and Vector (5); their sheets are in section 2D. Faire is now Hexagon / Najmi, Lich Coregons / Mystic, Les Protector / Bastion, Lum Protector / Bruiser.*
 
 *Natural trait counts (trait system v2, see section 2B):* **Helios 9** · **Selini 7** · **Phaisa 7** (+ the Rift Herald and the Queen) · Coregons 6 · Hexagon 5 · Najmi 6 · **Nature 9** · Omnilium 2 · Bastion 7 · Bruiser 7 · Sorcerer 11 · Marksman 5 · Mystic 6 · Duelist 6 · Assassin 5 · Gunslinger 4 · Protector 2. Numbers in this section are the design sheet; the engine's balance pass trims some (server/docs/balance.md).
 

@@ -78,3 +78,22 @@ Numbers moved away from the design sheet (each marked `balance pass` in the data
   Prosperity 6/20/40% + 2 per gold.
 Still worth watching: Aureon (~62%), Kael / Oakheart (~58%), Nature (3) and Selini (3) (~59%), Rot (~41%).
 
+
+## Roster pass v3 (September 2026, design doc section 2D)
+
+Five champions joined (Pulsar, Rampart, Skarn, Maren, Vector), Faire and Lich lost Sorcerer (Lich became a Mystic), Les and Lum lost the Omnilium tag and
+Protector gained a (1) tier (15% less damage taken). The design sheet's numbers stay in `tests/data/designer_spec_champions.json`. At the sheet's numbers
+(tanks HP x0.68, armor x0.78; carries HP x0.9) all five won 61-63% and overtime rose to 15.6%. After two trims (`make balance ARGS="--matches 300 --seed 1000"`,
+full report in `balance/roster-v3.txt`):
+
+| champion | changed (balance pass) | win rate |
+|---|---|---|
+| Pulsar | HP 430/775/1395, shield 175/260/400 (sheet 250/375/560) | 54.9% |
+| Rampart | HP 430/775/1395, armor/MR 28, shields 200/300/450 self and 80/120/180 allies (sheet 300/450/675, 120/180/270) | 54.8% |
+| Skarn | none | 54.3% |
+| Maren | HP 600/1080/1944, 20% damage reduction (sheet 30%), wave 190/285/680 +8% max HP (sheet 250/375/900 +10%) | 56.5% |
+| Vector | barrage shots 35/55/250 +20% AD (sheet 60/90/400 +30%) | 61.5% (5-costs run high: Aureon 60%, Yggra 59%) |
+| Faire | AP 38/58/75 (sheet 28/45/60) after losing Sorcerer | 40.9% -- still weak |
+
+Fights: mean 20.1 s, overtime 12.7% (8.7% before trait system v2 + v3), 0.6% reach the safety limit; shield units (Moss, Ignis, Sunna, Fern, Rampart,
+Aureon) are 2-3x as common in long fights. Left for the full balance pass: Faire, the shield stall, Vector / Aureon / Yggra / Aphel near 60%.

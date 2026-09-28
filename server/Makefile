@@ -22,7 +22,7 @@ SERVER   := build/w2f_server
 BALANCE  := build/w2f_balance
 RECORD   := build/w2f_record_fights
 
-.PHONY: all test test-engine test-net check-isolation demo server balance golden sample-fights blockouts crafted clean
+.PHONY: all test test-engine test-net check-isolation demo server server-release balance golden sample-fights blockouts crafted clean
 all: $(TEST) $(NET_TEST) $(DEMO) $(SERVER)
 
 build/engine/%.o: src/%.cpp $(HDR)
@@ -89,6 +89,14 @@ $(BALANCE): $(ENGINE_SRC) tools/balance_sim.cpp $(HDR)
 	$(CXX) $(BALANCE_FLAGS) $(ENGINE_INC) $(DEFINES) tools/balance_sim.cpp $(ENGINE_SRC) -o $@
 balance: $(BALANCE)
 	./$(BALANCE) $(ARGS)
+
+# The server the Mac app carries inside it (demo 1.6: the app starts its own server on this Mac): optimised, no sanitizers, and no data path baked in
+# (the app passes --data). UE's copy: <project>/Content/W2F/Server/ (tools/unreal/stage_server.sh copies this binary and data/ there).
+SERVER_RELEASE := build/release/w2f_server
+$(SERVER_RELEASE): $(ENGINE_SRC) $(NET_SRC) tools/w2f_server.cpp $(HDR)
+	@mkdir -p build/release
+	$(CXX) $(BALANCE_FLAGS) -pthread $(NET_INC) tools/w2f_server.cpp $(NET_SRC) $(ENGINE_SRC) -o $@
+server-release: $(SERVER_RELEASE)
 
 # Headless 8-player match (7 bots + 1 scripted seat): `make demo`, `make demo SEED=7`, or with another data file:
 # `make demo SEED=7 DATA=path/to/champions.json`

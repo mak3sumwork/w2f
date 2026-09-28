@@ -259,7 +259,7 @@ def portraits(out, champs, blockouts):
 
 
 def splash(out, champs, folder):
-    """The designer's splash art (<repo>/splash_arts/<ChampionName>.jpg) becomes T_Splash_<id>.png (480 px wide), used on the shop cards and the info panel. Needs macOS `sips`; skipped elsewhere."""
+    """The designer's splash art (<repo>/splash_arts/<ChampionName>.jpg) becomes T_Splash_<id>.png (up to 1920 px wide: demo 1.6 shows it full screen in the client), used on the shop cards, the info panel and the client. Needs macOS `sips`; skipped elsewhere."""
     import shutil, subprocess
     if not os.path.isdir(folder) or shutil.which("sips") is None: return 0
     ids = {c["name"].lower(): c["id"] for c in champs}
@@ -268,7 +268,7 @@ def splash(out, champs, folder):
         name, ext = os.path.splitext(f)
         if ext.lower() not in (".jpg", ".jpeg", ".png") or name.lower() not in ids: continue
         target = os.path.join(out, "T_Splash_%d.png" % ids[name.lower()])
-        subprocess.run(["sips", "-Z", "480", "-s", "format", "png", os.path.join(folder, f), "--out", target], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["sips", "-Z", "1920", "-s", "format", "png", os.path.join(folder, f), "--out", target], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         made += 1
     return made
 
@@ -277,8 +277,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=os.path.join(HERE, "..", "data")); ap.add_argument("--blockouts", default=os.path.join(HERE, "..", "docs", "blockouts"))
     ap.add_argument("--out", default=os.path.join(HERE, "..", "docs", "icons")); ap.add_argument("--splash", default=os.path.join(HERE, "..", "..", "splash_arts"))
+    ap.add_argument("--splash-only", action="store_true", help="only convert splash_arts/*.jpg (demo 1.6); a full run rewrites every icon, and later tools "
+                    "(make_item_icons.py, make_ui_icons.py, make_hud_art.py) replace most of them")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    if a.splash_only:
+        champs = mb.load_json(os.path.join(a.data, "champions.json"))["champions"]
+        print("wrote %d splash arts to %s" % (splash(a.out, champs, a.splash), a.out))
+        return
     for f in os.listdir(a.out):
         if f.endswith(".png"): os.remove(os.path.join(a.out, f))
     items = mb.load_json(os.path.join(a.data, "items.json"))["items"]

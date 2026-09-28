@@ -958,6 +958,81 @@
    ],
    "attack": "slash",
    "cast": "bulwark_roar"
+  },
+  "9055": {
+   "name": "Pulsar",
+   "colour": [
+    1.0,
+    0.8,
+    0.35
+   ],
+   "accent": [
+    0.55,
+    0.45,
+    1.0
+   ],
+   "attack": "heavy",
+   "cast": "gravity_well"
+  },
+  "9056": {
+   "name": "Rampart",
+   "colour": [
+    0.2,
+    0.9,
+    1.0
+   ],
+   "accent": [
+    0.8,
+    1.0,
+    1.0
+   ],
+   "attack": "slash",
+   "cast": "crystal_wall"
+  },
+  "9057": {
+   "name": "Skarn",
+   "colour": [
+    0.7,
+    1.0,
+    0.2
+   ],
+   "accent": [
+    0.55,
+    0.15,
+    0.8
+   ],
+   "attack": "orb",
+   "cast": "piercing_arrow"
+  },
+  "9058": {
+   "name": "Maren",
+   "colour": [
+    0.3,
+    0.85,
+    1.0
+   ],
+   "accent": [
+    0.85,
+    0.95,
+    1.0
+   ],
+   "attack": "heavy",
+   "cast": "crescent_cone"
+  },
+  "9059": {
+   "name": "Vector",
+   "colour": [
+    0.2,
+    0.95,
+    1.0
+   ],
+   "accent": [
+    1.0,
+    0.85,
+    0.4
+   ],
+   "attack": "bullet",
+   "cast": "death_volley"
   }
  },
  "statuses": {

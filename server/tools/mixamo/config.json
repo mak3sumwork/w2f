@@ -2720,6 +2720,371 @@
     ]
    }
   },
+  "9055": {
+   "name": "Pulsar",
+   "model": "Brute.fbx",
+   "height": 2.15,
+   "set": "mutant",
+   "attack": "atk_punch",
+   "cast": "cast_slam",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.22,
+      0.2,
+      0.42
+     ],
+     "keep": 0.25,
+     "value": 1.1
+    },
+    "props": [
+     {
+      "kind": "hammer",
+      "slot": "right_hand",
+      "colour": [
+       0.2,
+       0.18,
+       0.35
+      ],
+      "colour2": [
+       0.85,
+       0.7,
+       0.35
+      ],
+      "glow": [
+       1.0,
+       0.85,
+       0.4
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "left_shoulder",
+      "colour": [
+       0.2,
+       0.18,
+       0.35
+      ],
+      "colour2": [
+       0.85,
+       0.7,
+       0.35
+      ],
+      "scale": 1.2
+     },
+     {
+      "kind": "halo",
+      "slot": "head",
+      "glow": [
+       1.0,
+       0.85,
+       0.45
+      ],
+      "scale": 0.9
+     }
+    ]
+   }
+  },
+  "9056": {
+   "name": "Rampart",
+   "model": "exo_red.fbx",
+   "height": 2.05,
+   "set": "sword",
+   "attack": "atk_sword",
+   "cast": "cast_block",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.42,
+      0.45,
+      0.5
+     ],
+     "keep": 0.2,
+     "value": 1.1
+    },
+    "glow": {
+     "from": "saturated",
+     "colour": [
+      0.2,
+      0.9,
+      1.0
+     ],
+     "strength": 2.0
+    },
+    "props": [
+     {
+      "kind": "tower_shield",
+      "slot": "left_hand",
+      "colour": [
+       0.45,
+       0.48,
+       0.52
+      ],
+      "colour2": [
+       0.2,
+       0.8,
+       0.95
+      ],
+      "glow": [
+       0.2,
+       0.9,
+       1.0
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "right_shoulder",
+      "colour": [
+       0.4,
+       0.42,
+       0.46
+      ],
+      "colour2": [
+       0.2,
+       0.8,
+       0.95
+      ],
+      "scale": 1.2
+     },
+     {
+      "kind": "mech_pack",
+      "slot": "back",
+      "colour": [
+       0.35,
+       0.37,
+       0.4
+      ],
+      "glow": [
+       0.2,
+       0.9,
+       1.0
+      ]
+     }
+    ]
+   }
+  },
+  "9057": {
+   "name": "Skarn",
+   "model": "Ch30_nonPBR.fbx",
+   "height": 1.9,
+   "set": "zombie",
+   "attack": "atk_magic2",
+   "cast": "cast_scream",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.32,
+      0.2,
+      0.42
+     ],
+     "keep": 0.2,
+     "value": 0.9
+    },
+    "props": [
+     {
+      "kind": "antlers",
+      "slot": "crown",
+      "spread": 1.1,
+      "scale": 0.9,
+      "colour": [
+       0.3,
+       0.12,
+       0.4
+      ],
+      "colour2": [
+       0.3,
+       0.12,
+       0.4
+      ],
+      "glow": [
+       0.75,
+       1.0,
+       0.25
+      ]
+     },
+     {
+      "kind": "claws",
+      "slot": "right_hand",
+      "colour": [
+       0.3,
+       0.12,
+       0.4
+      ],
+      "glow": [
+       0.75,
+       1.0,
+       0.25
+      ]
+     }
+    ]
+   }
+  },
+  "9058": {
+   "name": "Maren",
+   "model": "Paladin J Nordstrom.fbx",
+   "height": 2.2,
+   "set": "sword",
+   "attack": "atk_heavy",
+   "cast": "cast_sweep",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.16,
+      0.42,
+      0.5
+     ],
+     "keep": 0.3,
+     "value": 1.15
+    },
+    "glow": {
+     "from": "saturated",
+     "colour": [
+      0.45,
+      0.9,
+      1.0
+     ],
+     "strength": 1.8
+    },
+    "props": [
+     {
+      "kind": "trident",
+      "slot": "right_hand",
+      "colour": [
+       0.75,
+       0.8,
+       0.85
+      ],
+      "colour2": [
+       0.2,
+       0.5,
+       0.6
+      ],
+      "glow": [
+       0.5,
+       0.95,
+       1.0
+      ]
+     },
+     {
+      "kind": "round_shield",
+      "slot": "left_hand",
+      "colour": [
+       0.2,
+       0.45,
+       0.55
+      ],
+      "colour2": [
+       0.8,
+       0.85,
+       0.9
+      ]
+     },
+     {
+      "kind": "crescent",
+      "slot": "head",
+      "glow": [
+       0.7,
+       0.85,
+       1.0
+      ],
+      "scale": 0.8
+     }
+    ]
+   }
+  },
+  "9059": {
+   "name": "Vector",
+   "model": "Ely By K.Atienza.fbx",
+   "height": 1.9,
+   "set": "bow",
+   "attack": "atk_rifle",
+   "cast": "cast_2h_push",
+   "look": {
+    "recolour": {
+     "mode": "tint",
+     "tint": [
+      0.5,
+      0.42,
+      0.25
+     ],
+     "keep": 0.35,
+     "value": 1.1
+    },
+    "glow": {
+     "from": "saturated",
+     "colour": [
+      0.2,
+      0.95,
+      1.0
+     ],
+     "strength": 2.0
+    },
+    "props": [
+     {
+      "kind": "rifle",
+      "slot": "right_hand",
+      "rotate": [
+       0,
+       0,
+       0
+      ],
+      "offset": [
+       0.0,
+       -0.04,
+       0.07
+      ],
+      "colour": [
+       0.85,
+       0.7,
+       0.35
+      ],
+      "colour2": [
+       0.2,
+       0.2,
+       0.24
+      ],
+      "glow": [
+       0.2,
+       0.95,
+       1.0
+      ]
+     },
+     {
+      "kind": "mech_pack",
+      "slot": "back",
+      "colour": [
+       0.7,
+       0.58,
+       0.3
+      ],
+      "glow": [
+       0.2,
+       0.95,
+       1.0
+      ]
+     },
+     {
+      "kind": "pauldron",
+      "slot": "left_shoulder",
+      "colour": [
+       0.7,
+       0.58,
+       0.3
+      ],
+      "colour2": [
+       0.2,
+       0.2,
+       0.24
+      ],
+      "scale": 0.9
+     }
+    ]
+   }
+  },
   "9041": {
    "name": "RiftHerald",
    "model": "Mutant.fbx",

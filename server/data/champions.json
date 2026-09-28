@@ -92,10 +92,10 @@
     // Role changed to Damage because the sheet now calls her a mage (it only decides which row bots put her in).
     {
       "id": 9005, "name": "Faire", "cost": 3, "role": "Damage",
-      "traits": ["Hexagon", "Najmi", "Sorcerer"],
+      "traits": ["Hexagon", "Najmi"],
       "stats": {
         "hp": [200, 300, 385], "armor": [20, 32, 41], "magicResist": [15, 20, 25], "attackDamage": [25, 30, 35],
-        "abilityDamage": [28, 45, 60],
+        "abilityDamage": [38, 58, 75],   // balance pass (roster v3, she lost Sorcerer): sheet 28/45/60
         "attackSpeed": 0.75, "range": 3,          // range 3 (per the designer)
         "maxMana": 50, "manaRegen": 10.0,
         // Passive "Leeching Arm": her basic attacks don't hit at once; they are a damage-over-time dealing her attack
@@ -130,7 +130,7 @@
     // Role Tank; range ASSUMED 1 (melee).
     {
       "id": 9006, "name": "Les", "cost": 5, "role": "Tank",
-      "traits": ["Omnilium", "Protector", "Bastion"],
+      "traits": ["Protector", "Bastion"],
       "stats": {
         "hp": [675, 1350, 2360], "armor": [47, 63, 235], "magicResist": [39, 55, 223], "attackDamage": [40, 60, 70],
         "attackSpeed": 1.0, "range": 1,
@@ -162,7 +162,7 @@
     // Role Tank (front row); range ASSUMED 1 (melee).
     {
       "id": 9007, "name": "Lum", "cost": 5, "role": "Tank",
-      "traits": ["Omnilium", "Protector", "Bruiser"],
+      "traits": ["Protector", "Bruiser"],
       "stats": {
         "hp": [405, 675, 1690], "armor": [35, 39, 78], "magicResist": [28, 31, 78], "attackDamage": [40, 60, 70],
         "attackSpeed": 1.0, "range": 1,
@@ -543,7 +543,7 @@
     // ---------------------------------------------------------------- LICH (3-cost mage) [Coregons]
     {
       "id": 9027, "name": "Lich", "cost": 3, "role": "Damage",
-      "traits": ["Coregons", "Sorcerer"],
+      "traits": ["Coregons", "Mystic"],
       "stats": { "hp": [540, 970, 1750], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 55, "attackSpeed": 0.65, "range": 3, "maxMana": 70 },
       // Drain: 250/375/600 magic damage over 2 s (a tick every 0.5 s, ASSUMED); each tick heals Lich for 100% of the damage it does.
       "ability": {
@@ -973,6 +973,99 @@
           { "type": "Damage", "target": { "mode": "AreaAroundSelf", "radius": 3, "includeCenter": false }, "damageType": "Magic", "delaySeconds": 0.2,
             "amount": { "flat": [220, 330, 1500], "terms": [ { "source": "SelfAbilityDamage", "percent": 75 } ] } },   // balance pass: sheet 300/450/2000 +100% AP
           { "type": "Heal", "target": "AllAllies", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 20 } ] } }
+        ]
+      }
+    },
+
+    // ================================================================ ROSTER PASS v3 (September 2026, design doc section 2D)
+    // ---------------------------------------------------------------- PULSAR (2-cost Najmi bruiser: Najmi's first frontliner)
+    {
+      "id": 9055, "name": "Pulsar", "cost": 2, "role": "Tank",
+      "traits": ["Najmi", "Bruiser"],
+      "stats": { "hp": [430, 775, 1395], "armor": 27, "magicResist": 27, "attackDamage": 50, "abilityDamage": 20, "attackSpeed": 0.65, "range": 1, "maxMana": 80, "startMana": 30 },
+      // Event Horizon: a 250/375/560 shield for 4 s, then the 2 nearest enemies take 80/120/180 (+50% AP) magic damage and are pulled 1 hex toward him.
+      "ability": {
+        "id": 75, "name": "Event Horizon", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": [175, 260, 400], "durationSeconds": 4 },   // balance pass: sheet 250/375/560
+          { "type": "Damage", "target": { "mode": "ClosestEnemies", "count": 2 }, "damageType": "Magic", "delaySeconds": 0.2,
+            "amount": { "flat": [80, 120, 180], "terms": [ { "source": "SelfAbilityDamage", "percent": 50 } ] } },
+          { "type": "Displace", "target": { "mode": "ClosestEnemies", "count": 2 }, "direction": "Toward", "hexes": 1, "delaySeconds": 0.2 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- RAMPART (2-cost Hexagon bastion)
+    {
+      "id": 9056, "name": "Rampart", "cost": 2, "role": "Tank",
+      "traits": ["Hexagon", "Bastion"],
+      "stats": { "hp": [430, 775, 1395], "armor": 28, "magicResist": 28, "attackDamage": 45, "attackSpeed": 0.60, "range": 1, "maxMana": 90, "startMana": 40 },
+      // Deploy Barrier: shields himself for 300/450/675 and the allies next to him for 120/180/270, for 4 s.
+      "ability": {
+        "id": 76, "name": "Deploy Barrier", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Shield", "target": "Self", "amount": [200, 300, 450], "durationSeconds": 4 },   // balance pass: sheet 300/450/675
+          { "type": "Shield", "target": { "mode": "AreaAroundSelf", "radius": 1, "includeCenter": false, "side": "Allies" }, "amount": [80, 120, 180], "durationSeconds": 4 }   // balance pass: sheet 120/180/270
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- SKARN (3-cost Phaisa marksman)
+    {
+      "id": 9057, "name": "Skarn", "cost": 3, "role": "Damage",
+      "traits": ["Phaisa", "Marksman"],
+      "stats": { "hp": [585, 1053, 1895], "armor": 25, "magicResist": 25, "attackDamage": 65, "attackSpeed": 0.75, "range": 4, "maxMana": 70, "startMana": 20,
+                 "projectileSpeed": 16 },
+      // Acid Spine: pierces the target and the 2 hexes behind it for 200/300/480 (+100% AD) physical damage; everything hit loses 20% Armor for 4 s.
+      "ability": {
+        "id": 77, "name": "Acid Spine", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical",
+            "amount": { "flat": [200, 300, 480], "terms": [ { "source": "SelfAttackDamage", "percent": 100 } ] } },
+          { "type": "Damage", "target": { "mode": "LineBehindTarget", "length": 2 }, "damageType": "Physical",
+            "amount": { "flat": [200, 300, 480], "terms": [ { "source": "SelfAttackDamage", "percent": 100 } ] } },
+          { "type": "Status", "target": "CurrentTarget", "status": "Armor", "percent": -20, "durationSeconds": 4 },
+          { "type": "Status", "target": { "mode": "LineBehindTarget", "length": 2 }, "status": "Armor", "percent": -20, "durationSeconds": 4 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- MAREN (4-cost Selini bruiser)
+    {
+      "id": 9058, "name": "Maren", "cost": 4, "role": "Tank",
+      "traits": ["Selini", "Bruiser"],
+      "stats": { "hp": [600, 1080, 1944], "armor": 39, "magicResist": 39, "attackDamage": 65, "attackSpeed": 0.70, "range": 1, "maxMana": 100, "startMana": 40 },
+      // Undertow: a wave through a 2-hex cone: 250/375/900 (+10% max HP) magic damage and a 1 s stun; she takes 30% less damage for 4 s.
+      "ability": {
+        "id": 78, "name": "Undertow", "trigger": "Mana", "castLockTicks": 18,
+        "effects": [
+          { "type": "Status", "target": "Self", "status": "DamageTaken", "percent": -20, "durationSeconds": 4 },   // balance pass: sheet -30%
+          { "type": "Damage", "target": { "mode": "ConeTowardTarget", "length": 2 }, "damageType": "Magic", "delaySeconds": 0.2,
+            "amount": { "flat": [190, 285, 680], "terms": [ { "source": "SelfMaxHp", "percent": 8 } ] } },   // balance pass: sheet 250/375/900 +10% max HP
+          { "type": "Status", "target": { "mode": "ConeTowardTarget", "length": 2 }, "status": "Stun", "durationSeconds": 1, "delaySeconds": 0.2 }
+        ]
+      }
+    },
+
+    // ---------------------------------------------------------------- VECTOR (5-cost Hexagon gunslinger: the 5-cost physical carry)
+    {
+      "id": 9059, "name": "Vector", "cost": 5, "role": "Damage",
+      "traits": ["Hexagon", "Gunslinger"],
+      "stats": { "hp": [855, 1539, 2770], "armor": 45, "magicResist": 45, "attackDamage": 90, "attackSpeed": 0.85, "range": 4, "maxMana": 100, "startMana": 30,
+                 "projectileSpeed": 20 },
+      // Passive (Ricochet): every 3rd attack also hits the enemy nearest his target for 60% of his AD.
+      "triggers": [
+        { "id": 79, "name": "Ricochet", "trigger": "EveryNthAttack", "attackCount": 3,
+          "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 2, "includeCenter": false, "count": 1 }, "damageType": "Physical",
+                        "amount": { "terms": [ { "source": "SelfAttackDamage", "percent": 60 } ] } } ] }
+      ],
+      // Calculated Barrage: 15 shots over 1.5 s, each at the enemy with the least HP at that moment (re-chosen every shot), 60/90/400 (+30% AD)
+      // physical damage ignoring 40% Armor.
+      "ability": {
+        "id": 80, "name": "Calculated Barrage", "trigger": "Mana", "castLockTicks": 45,
+        "effects": [
+          { "type": "Damage", "target": "LowestHpEnemy", "damageType": "Physical", "armorPenPercent": 40, "repeat": { "count": 15, "everySeconds": 0.1 },
+            "amount": { "flat": [35, 55, 250], "terms": [ { "source": "SelfAttackDamage", "percent": 20 } ] } }   // balance pass: sheet 60/90/400 +30% AD
         ]
       }
     },

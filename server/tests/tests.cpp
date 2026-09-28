@@ -3442,8 +3442,8 @@ static void TestProductionDataMatchesDesignerSpec() {
     auto db = w2f::LoadChampionDatabaseFromFile(sample::SpecChampionsPath(), &err);
     CHECK(db != nullptr);
     if (!db) { std::printf("  %s\n", err.c_str()); return; }
-    {   // The whole roster of the design doc: 49 champions (11 / 10 / 10 / 10 / 8 per cost tier; Sept. 2026: + Tide, Sunna, Kael, Aphel, Sola, Morrah, Aureon,
-        // Nihila; trait system v2: + Rivet, Hexa and the 9 Nature champions), 4 summons (Skeleton, Lost Soul, Baron Nashor, the Invention), 3 plants and
+    {   // The whole roster of the design doc: 54 champions (11 / 12 / 11 / 11 / 9 per cost tier; Sept. 2026: + Tide, Sunna, Kael, Aphel, Sola, Morrah, Aureon,
+        // Nihila; trait system v2: + Rivet, Hexa and the 9 Nature champions; roster pass v3: + Pulsar, Rampart, Skarn, Maren, Vector), 4 summons (Skeleton, Lost Soul, Baron Nashor, the Invention), 3 plants and
         // 2 special units (the Rift Herald and the Phaisa Queen).
         int perTier[kMaxCostTier + 1] = {}, summons = 0, plants = 0, specials = 0;
         for (const ChampionDefinition& c : db->All()) {
@@ -3452,8 +3452,8 @@ static void TestProductionDataMatchesDesignerSpec() {
             else if (c.special) ++specials;
             else ++perTier[c.cost];
         }
-        CHECK(db->All().size() == 58 && summons == 4 && plants == 3 && specials == 2);
-        CHECK(perTier[1] == 11 && perTier[2] == 10 && perTier[3] == 10 && perTier[4] == 10 && perTier[5] == 8);
+        CHECK(db->All().size() == 63 && summons == 4 && plants == 3 && specials == 2);
+        CHECK(perTier[1] == 11 && perTier[2] == 12 && perTier[3] == 11 && perTier[4] == 11 && perTier[5] == 9);
         CHECK(db->Find(9101) && db->Find(9101)->summon && db->Find(9102) && db->Find(9102)->summon && db->Find(9102)->stats.attackType == DamageType::Magic);
         const ChampionDefinition* queen = db->Find(9043);
         CHECK(queen && queen->special && queen->Price() == 7 && queen->teamSlots == 2 && !queen->IsPooled());
@@ -3531,7 +3531,7 @@ static void TestProductionDataMatchesDesignerSpec() {
     }
 
     const ChampionDefinition* les = db->Find(kChampionLes);
-    CHECK(les && les->name == "Les" && les->cost == 5 && les->role == ChampionRole::Tank && trait(les, "Omnilium") && trait(les, "Protector"));
+    CHECK(les && les->name == "Les" && les->cost == 5 && les->role == ChampionRole::Tank && !trait(les, "Omnilium") && trait(les, "Protector"));   // roster pass v3 dropped Omnilium
     if (les) {
         CHECK(les->stats.maxHp == StarValue({{1000, 2000, 3500}}) && les->stats.armor == StarValue({{60, 80, 300}}));
         CHECK(les->stats.magicResist == StarValue({{50, 70, 285}}) && les->stats.attackDamage == StarValue({{40, 60, 70}}));
@@ -3549,7 +3549,7 @@ static void TestProductionDataMatchesDesignerSpec() {
     }
 
     const ChampionDefinition* lum = db->Find(kChampionLum);
-    CHECK(lum && lum->name == "Lum" && lum->cost == 5 && trait(lum, "Omnilium") && trait(lum, "Protector"));
+    CHECK(lum && lum->name == "Lum" && lum->cost == 5 && !trait(lum, "Omnilium") && trait(lum, "Protector"));
     if (lum) {
         CHECK(lum->stats.maxHp == StarValue({{600, 1000, 2500}}) && lum->stats.armor == StarValue({{45, 50, 100}}));
         CHECK(lum->stats.magicResist == StarValue({{35, 40, 100}}) && lum->stats.attackDamage == StarValue({{40, 60, 70}}));
@@ -4675,20 +4675,25 @@ static void TestTraitDataAndLoader() {
         CHECK(b->breakpoints[0].effects[0].effect.target.mode == TargetMode::Self);   // implied
     }
 
-    // Production file: Protector is the one synergy defined, with the numbers from the design sheet.
+    // Production file: Protector (1/2) with the numbers from the design sheet; roster pass v3 added the one-Protector tier (15% less damage taken).
     auto prod = sample::LoadProductionTraits();
     CHECK(prod != nullptr);
     if (prod) {
         const TraitDefinition* protector = prod->FindByName("Protector");
-        CHECK(protector && protector->breakpoints.size() == 1 && protector->breakpoints[0].count == 2);
-        if (protector) {
-            int allAllies = 0, holders = 0;
-            for (const TraitEffect& te : protector->breakpoints[0].effects) {
+        CHECK(protector && protector->breakpoints.size() == 2 && protector->breakpoints[0].count == 1 && protector->breakpoints[1].count == 2);
+        if (protector && protector->breakpoints.size() == 2) {
+            int allAllies = 0, holders = 0, reduction = 0;
+            for (const TraitEffect& te : protector->breakpoints[1].effects) {
                 const auto* st = std::get_if<StatusEffect>(&te.effect.payload);
-                CHECK(st && st->permanent && st->percent == Same(10));
+                CHECK(st && st->permanent);
+                if (st && st->status == StatusType::DamageTaken) { CHECK(st->percent == Same(-15) && te.scope == TraitScope::TraitHolders); ++reduction; continue; }
+                CHECK(st && st->percent == Same(10));
                 (te.scope == TraitScope::AllAllies ? allAllies : holders) += 1;
             }
-            CHECK(allAllies == 3 && holders == 3);   // amp + armor + MR for everyone, and the same again for the holders
+            CHECK(allAllies == 3 && holders == 3 && reduction == 1);   // amp + armor + MR for everyone, the same again for the holders, and they keep (1)
+            const auto& one = protector->breakpoints[0].effects;
+            const auto* st = one.size() == 1 ? std::get_if<StatusEffect>(&one[0].effect.payload) : nullptr;
+            CHECK(st && st->status == StatusType::DamageTaken && st->percent == Same(-15) && one[0].scope == TraitScope::TraitHolders);
         }
         // Every trait tag used by the production champions is declared.
         auto champs = ProdDb();
@@ -4881,8 +4886,9 @@ static void TestFullRosterBrawlWithSynergies() {
         ++count[e.type];
         if (e.type == CombatEventType::StatusApplied) ++statuses[e.subtype];
     }
-    // Per team: Protector (Les + Lum), Hexagon 2 (Faire + Cyla), Bastion 2 (Les + Alesk) and Sorcerer 2 (Faire + Baira); trait system v2 added the classes.
-    CHECK(count[CombatEventType::TraitActivated] == 8);
+    // Per team: Protector (Les + Lum), Hexagon 2 (Faire + Cyla) and Bastion 2 (Les + Alesk); trait system v2 added the classes; roster pass v3 took
+    // Sorcerer off Faire, so Baira alone no longer activates Sorcerer 2.
+    CHECK(count[CombatEventType::TraitActivated] == 6);
     CHECK(count[CombatEventType::SpellCast] > 0 && count[CombatEventType::Heal] >= 0);
     auto st = [&](StatusType t) { return statuses[static_cast<int>(t)]; };
     CHECK(st(StatusType::DamageAmp) == 6 * 2 + 2 * 2 * 0 + 0 || st(StatusType::DamageAmp) > 0);
@@ -5943,20 +5949,23 @@ static void TestItemsInCombat() {
     {   // Les (Protector) + Alesk (Helios) wearing a Protector Emblem = two different Protectors.
         const FightResult r = fight({{kChampionLes, {}, 0}, {kChampionAlesk, {4}, 0}, {kChampionBaira, {}, 1}});
         const auto t = protector(r, 0);
-        CHECK(t.size() == 1 && t[0].amount == 2 && t[0].subtype == 1 && t[0].tick == 0);
+        CHECK(t.size() == 1 && t[0].amount == 2 && t[0].subtype == 2 && t[0].tick == 0);   // tier 2 of Protector (1/2)
         CHECK((amps(r, 1) == std::vector<int>{10, 10}));   // Les: ally bonus + holder bonus
         CHECK((amps(r, 2) == std::vector<int>{10, 10}));   // Alesk holds the trait through the emblem: he gets the holder bonus too
         CHECK(protector(r, 1).empty());
         // The item's own statuses do not exist for a trait-only item.
         CHECK(status(r, 2, StatusType::BonusAttackDamage).empty() && status(r, 2, StatusType::BonusMaxHp).empty());
     }
-    {   // No emblem, no synergy.
+    {   // No emblem: Les alone is Protector (1) -- his own damage reduction, no ally bonus.
         const FightResult r = fight({{kChampionLes, {}, 0}, {kChampionAlesk, {}, 0}, {kChampionBaira, {}, 1}});
-        CHECK(protector(r, 0).empty() && amps(r, 1).empty());
+        const auto t = protector(r, 0);
+        CHECK(t.size() == 1 && t[0].amount == 1 && t[0].subtype == 1 && amps(r, 1).empty());
+        CHECK(status(r, 1, StatusType::DamageTaken).size() == 1 && status(r, 2, StatusType::DamageTaken).empty());
     }
     {   // An emblem on a unit that already has the trait adds nothing: it is still one Protector.
         const FightResult r = fight({{kChampionLes, {4}, 0}, {kChampionAlesk, {}, 0}, {kChampionBaira, {}, 1}});
-        CHECK(protector(r, 0).empty());
+        const auto t = protector(r, 0);
+        CHECK(t.size() == 1 && t[0].amount == 1 && t[0].subtype == 1);
     }
     {   // Two copies of one champion wearing emblems count once (different CHAMPIONS are counted), plus Les = 2.
         const FightResult r = fight({{kChampionLes, {}, 0}, {kChampionAlesk, {4}, 0}, {kChampionAlesk, {4, 4}, 0}, {kChampionBaira, {}, 1}});
@@ -5967,11 +5976,11 @@ static void TestItemsInCombat() {
     {   // Les + Lum + an emblem-wearing Alesk: three Protectors.
         const FightResult r = fight({{kChampionLes, {}, 0}, {kChampionLum, {}, 0}, {kChampionAlesk, {4}, 0}, {kChampionBaira, {}, 1}});
         const auto t = protector(r, 0);
-        CHECK(t.size() == 1 && t[0].amount == 3 && t[0].subtype == 1);
+        CHECK(t.size() == 1 && t[0].amount == 3 && t[0].subtype == 2);
     }
     {   // The enemy's emblem does not help this team, and counts for the enemy alone.
         const FightResult r = fight({{kChampionLes, {}, 0}, {kChampionAlesk, {}, 0}, {kChampionLum, {}, 1}, {kChampionAlesk, {4}, 1}});
-        CHECK(protector(r, 0).empty() && protector(r, 1).size() == 1);
+        CHECK(protector(r, 0).size() == 1 && protector(r, 0)[0].amount == 1 && protector(r, 1).size() == 1 && protector(r, 1)[0].amount == 2);
     }
     {   // An emblem for a trait with no breakpoints (Coregons) is legal and simply does nothing yet.
         const FightResult r = fight({{kChampionSoul, {3}, 0}, {kChampionAlesk, {3}, 0}, {kChampionBaira, {}, 1}});
@@ -10496,6 +10505,98 @@ static void TestNewChampionAbilitiesPart1() {
     }
 }
 
+// Roster pass v3 (September 2026, design doc section 2D): Pulsar, Rampart, Skarn, Maren and Vector, one ability at a time (1-star, the design sheet's numbers).
+static void TestRosterPassV3Champions() {
+    auto prod = ProdDb();
+    CHECK(prod != nullptr);
+    if (!prod) return;
+    const CombatConfig cfg = NoManaConfig();
+    const auto has = [](const FightResult& r, UnitId unit, StatusType t) {
+        for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, unit)) if (e.subtype == static_cast<std::uint8_t>(t)) return true;
+        return false;
+    };
+
+    {   // PULSAR: a 250 shield for 4 s; 0.2 s later the 2 NEAREST enemies take 80 (+50% of 20 AP) = 90 magic and are pulled 1 hex toward him.
+        // (Range 4 in the test, so he casts from where he stands instead of walking up first.)
+        Duel d;
+        AddPrimed(d, *prod, 9055, 1, 0, {3, 3}, 4);
+        d.Add(Dummy(10, 100000), 10, 1, {3, 5});
+        d.Add(Dummy(11, 100000), 11, 1, {3, 6});
+        d.Add(Dummy(12, 100000), 12, 1, {3, 7});
+        const FightResult r = RunDuel(d, 10, cfg);
+        const auto shield = Events(r.log, CombatEventType::ShieldApplied, 1);
+        CHECK(shield.size() == 1 && shield[0].amount == 250 && shield[0].duration == 120);
+        auto hit = DamageAt(r, 6);
+        CHECK(hit.size() == 2 && hit[10] == 90 && hit[11] == 90);
+        CHECK(Events(r.log, CombatEventType::Teleport, 10).size() == 1 && Events(r.log, CombatEventType::Teleport, 11).size() == 1);
+        CHECK(Events(r.log, CombatEventType::Teleport, 12).empty());
+    }
+    {   // RAMPART: shields himself for 300 and the ally next to him for 120 (4 s); an ally two hexes away gets nothing.
+        Duel d;
+        AddPrimed(d, *prod, 9056, 1, 0, {3, 3});
+        d.Add(Dummy(20, 100000), 20, 0, {3, 2});
+        d.Add(Dummy(21, 100000), 21, 0, {3, 0});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg);
+        const auto self = Events(r.log, CombatEventType::ShieldApplied, 1);
+        const auto near = Events(r.log, CombatEventType::ShieldApplied, 20);
+        CHECK(self.size() == 1 && self[0].amount == 300 && self[0].duration == 120);
+        CHECK(near.size() == 1 && near[0].amount == 120 && near[0].duration == 120);
+        CHECK(Events(r.log, CombatEventType::ShieldApplied, 21).empty() && Events(r.log, CombatEventType::ShieldApplied, 10).empty());
+    }
+    {   // SKARN: 200 (+100% of 65 AD) = 265 physical to the target and the unit in line behind it, and both lose Armor; a bystander is untouched.
+        Duel d;
+        AddPrimed(d, *prod, 9057, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 100000), 11, 1, {2, 5});
+        d.Add(Dummy(12, 100000), 12, 1, {4, 5});
+        const FightResult r = RunDuel(d, 10, cfg);
+        auto hit = DamageAt(r, 0);
+        CHECK(hit[10] == 265 && hit[11] == 265 && hit.count(12) == 0);
+        CHECK(has(r, 10, StatusType::Armor) && has(r, 11, StatusType::Armor) && !has(r, 12, StatusType::Armor));
+    }
+    {   // MAREN: takes 30% less damage for 4 s; 0.2 s later the cone in front takes 250 + 10% of her max HP (magic) and is stunned for 1 s.
+        const int maxHp = prod->Find(9058)->stats.maxHp[0];
+        Duel d;
+        AddPrimed(d, *prod, 9058, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 100000), 11, 1, {3, 7});
+        const FightResult r = RunDuel(d, 10, cfg);
+        CHECK(has(r, 1, StatusType::DamageTaken));
+        auto hit = DamageAt(r, 6);
+        CHECK(hit[10] == 250 + maxHp / 10 && hit.count(11) == 0);
+        bool stun = false;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::StatusApplied, 10)) stun = stun || (e.subtype == static_cast<std::uint8_t>(StatusType::Stun) && e.duration == 30);
+        CHECK(stun && !has(r, 11, StatusType::Stun));
+    }
+    {   // VECTOR's barrage: 15 shots, 0.1 s apart, each 60 (+30% of 90 AD) = 87 at the enemy with the least HP.
+        Duel d;
+        AddPrimed(d, *prod, 9059, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        d.Add(Dummy(11, 50000), 11, 1, {1, 7});
+        const FightResult r = RunDuel(d, 60, cfg);
+        int shots = 0, total = 0, stray = 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage)) {
+            if ((e.flags & kFlagAbility) == 0) continue;
+            if (e.unit == 11) { ++shots; total += e.amount; } else ++stray;
+        }
+        CHECK(shots == 15 && total == 15 * 87 && stray == 0);
+    }
+    {   // VECTOR's Ricochet: every 3rd basic attack also hits the enemy nearest his target for 60% of 90 AD = 54 physical.
+        Duel d;
+        d.Add(*prod->Find(9059), 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 5});
+        d.Add(Dummy(11, 100000), 11, 1, {3, 6});
+        const FightResult r = RunDuel(d, 200, cfg);
+        int attacksOn10 = 0, ricochets = 0;
+        for (const CombatEvent& a : Events(r.log, CombatEventType::Attack, 1)) attacksOn10 += a.other == 10 ? 1 : 0;
+        for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 11)) {
+            if (e.flags & kFlagTriggered) { CHECK(e.amount == 54); ++ricochets; }
+        }
+        CHECK(attacksOn10 >= 6 && ricochets == attacksOn10 / 3);
+    }
+}
+
 static void TestNewChampionAbilitiesPart2() {
     auto prod = ProdDb();
     CHECK(prod != nullptr);
@@ -10991,7 +11092,7 @@ static void TestShopPoolExhaustionFallback() {
         for (int i = 0; i < kMaxPlayers; ++i) players.push_back(std::make_unique<PlayerState>(static_cast<PlayerId>(i), cfg.player, cfg.shop, pool, 100 + i));
         int totalCopies = 0;
         for (const ChampionDefinition& c : roster->All()) totalCopies += c.IsPooled() ? 1 : 0;
-        CHECK(totalCopies == 49);   // one copy of each of the 49 champions (trait system v2 roster; summons, plants and special units are never in the pool)
+        CHECK(totalCopies == 54);   // one copy of each of the 54 champions (roster pass v3; summons, plants and special units are never in the pool)
         Rng chooser(9);
         bool conserved = true, noStarvation = true;
         for (int step = 0; step < 600; ++step) {
@@ -11012,11 +11113,11 @@ static void TestShopPoolExhaustionFallback() {
         CHECK(conserved && noStarvation);
         int shownAtEnd = 0;
         for (const auto& q : players) for (const ChampionDefinition* slot : q->Shop().Slots()) shownAtEnd += slot != nullptr ? 1 : 0;
-        CHECK(shownAtEnd == 40);   // 8 shops x 5 slots = 40 slots for 49 copies: every slot is filled
+        CHECK(shownAtEnd == 40);   // 8 shops x 5 slots = 40 slots for 54 copies: every slot is filled
         for (auto& q : players) q->Shop().ReturnShopToPool();
         int back = 0;
         for (int tier = 1; tier <= kMaxCostTier; ++tier) back += pool.RemainingInTier(tier);
-        CHECK(back == 49);
+        CHECK(back == 54);
     }
     {   // A whole match with a pool this small (1 copy each): bots buy out tiers all game long, shops keep falling back, and the match still finishes
         // with every integrity check holding and a replay that is identical tick for tick.
@@ -12590,6 +12691,7 @@ int main(int argc, char** argv) {
         {"Shop: exhausted tiers fall back, never crash", TestShopPoolExhaustionFallback},
         {"Roster: champions 1-2 cost abilities (30-champion doc)", TestNewChampionAbilitiesPart1},
         {"Roster: the rest of the abilities", TestNewChampionAbilitiesPart2},
+        {"Roster pass v3: Pulsar, Rampart, Skarn, Maren, Vector", TestRosterPassV3Champions},
         {"Synergies: Helios, Phaisa, Hexagon, Selini, Najmi", TestHeliosPhaisaHexagonSeliniNajmi},
         {"Synergy: Coregons 3 / 6 / 8 from the design doc", TestCoregonsFromTheDesignDoc},
         {"Zone statuses: ExecuteBelow, HpPerSecond", TestZoneStatusesAndExecute},

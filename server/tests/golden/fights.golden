@@ -1,13 +1,13 @@
 # name events end_tick winner(0 home,1 away,2 draw) checksum -- see TestGoldenFights in tests/tests.cpp; re-record with `make golden`
-fight-1 379 472 0 7b638fdee938bb16
-fight-2 446 395 1 dd4c0e3d0c462846
-fight-3 140 86 1 7eab6ebc924f6858
-fight-4 751 585 1 d5e99a8d57318178
-fight-5 761 475 0 3436146de7f4ff95
-fight-6 649 343 0 b1b7361855010a89
-fight-7 875 485 0 97461933599fd94a
-fight-8 145 200 1 88067707bf9cbcc3
-fight-9 710 1002 0 c525dd56677580fb
-fight-10 429 429 0 f5f69c178158342b
-fight-11 462 290 1 147ea043af2f6ddc
-fight-12 656 359 0 5207b5b7f5a6e3eb
+fight-1 278 480 0 fd502b1a22b9ace7
+fight-2 283 226 1 f1a4ca9215da98d4
+fight-3 406 393 1 8b9699d55fb67fc0
+fight-4 1183 887 1 7b27d41c1c8c1916
+fight-5 751 434 0 fc64b73571ee01f4
+fight-6 1129 767 0 ad59e20d91e812d8
+fight-7 976 629 1 222e8202cc19232b
+fight-8 88 98 1 f616f66fff2481be
+fight-9 344 367 0 3054f5d5c87046d8
+fight-10 241 172 0 4afdac3ee5595a28
+fight-11 628 489 0 64ec9faf851b4d22
+fight-12 873 647 1 f07ebac324ac8348

@@ -224,8 +224,8 @@
       ]
     },
 
-    // OMNILIUM: the origin of Les and Lum; the doc gives it no synergy of its own (Protector is theirs).
-    { "id": 4, "name": "Omnilium" },
+    // OMNILIUM (id 4) was the origin of Les and Lum with no synergy of its own; roster pass v3 (September 2026) removed the tag. Omnilium stays lore
+    // (the Omnilium Seed / Orb components, the Nature plants).
 
     // COREGONS (3/6/8) "The Lost Life". Every breakpoint: Coregons units heal for 7 / 15 / 25% of the damage they deal, and the team gets
     // 3 untargetable Lost Souls (champion 9102). Their max HP is 14 / 40 / 60% of your TANKIEST ally's max HP (read when the fight starts);
@@ -279,18 +279,22 @@
       ]
     },
 
-    // PROTECTOR (Les, Lum): with 2 Protectors on the board, ALL allies get +10% damage amplification and +10% Armor/Magic
-    // Resist, and the Protectors themselves get another +10% of each on top.
+    // PROTECTOR (1/2) (Les, Lum; a duo like TFT's Rival): (1) the Protector takes 15% less damage; (2) ALL allies get +10% damage amplification and
+    // +10% Armor/Magic Resist, and the Protectors themselves get another +10% of each on top and keep the 15% damage reduction.
     {
       "id": 5, "name": "Protector",
       "breakpoints": [
+        { "count": 1, "effects": [
+          { "scope": "TraitHolders", "type": "Status", "status": "DamageTaken", "percent": -15, "permanent": true }
+        ] },
         { "count": 2, "effects": [
           { "scope": "AllAllies",    "type": "Status", "status": "DamageAmp",   "percent": 10, "permanent": true },
           { "scope": "AllAllies",    "type": "Status", "status": "Armor",       "percent": 10, "permanent": true },
           { "scope": "AllAllies",    "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true },
           { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp",   "percent": 10, "permanent": true },
           { "scope": "TraitHolders", "type": "Status", "status": "Armor",       "percent": 10, "permanent": true },
-          { "scope": "TraitHolders", "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true }
+          { "scope": "TraitHolders", "type": "Status", "status": "MagicResist", "percent": 10, "permanent": true },
+          { "scope": "TraitHolders", "type": "Status", "status": "DamageTaken", "percent": -15, "permanent": true }
         ] }
       ]
     },

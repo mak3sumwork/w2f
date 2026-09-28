@@ -1,0 +1,121 @@
+== W2F balance report: 300 matches (seeds 1000..1299), 26563 PvP fights, 25.2 s of computing ==
+match length: 33.7 rounds on average
+fight length: mean 20.1 s | median 17.9 s | 90th percentile 30.7 s | 99th 46.3 s | longest 120.0 s
+overtime in 12.7% of fights | 3.3% ran past 35 s | 154 hit the safety limit | 0.03% mutual wipe-outs (draws)
+home side won 49.8% of the decided fights (50 = no bias)
+
+-- win rate by cost (fights each champion of that cost was fielded in) --
+  1-cost   107892 fielded    49.3% won   avg star 1.83
+  2-cost    83830 fielded    51.5% won   avg star 1.60
+  3-cost    72296 fielded    49.9% won   avg star 1.64
+  4-cost    60233 fielded    51.7% won   avg star 1.15
+  5-cost    11760 fielded    54.5% won   avg star 1.03
+  damage   211862 fielded    50.8% won
+  tanks    124149 fielded    50.3% won
+
+-- champions, best win rate first (a fight counts once per champion fielded) --
+  champion     cost role    fielded    won %   star  dmg/fight
+  Vector          5 damage     1579    61.5%   1.02       2041   <- strong outlier
+  Stonebark Tree    1 tank       3450    61.0%   1.00          0   <- strong outlier
+  Omnilium Blossom    1 damage     3450    61.0%   1.00          0   <- strong outlier
+  Aureon          5 damage     1125    60.8%   1.05       2207   <- strong outlier
+  Aphel           4 damage     4270    59.2%   1.21       2098   <- strong outlier
+  Yggra           5 tank        939    59.0%   1.03        986   <- strong outlier
+  Talon           4 damage     3794    57.5%   1.22       1538 
+  Umbra           5 tank       1119    57.5%   1.06        777 
+  Sunna           2 damage     5378    57.5%   1.79        329 
+  Moss            1 tank       5715    57.2%   1.99        351 
+  Fern            2 damage     4898    57.2%   1.76        258 
+  Kael            3 tank       5217    56.7%   1.83       1142 
+  Maren           4 tank       4312    56.5%   1.21       1047 
+  Baira           3 damage     5123    56.3%   1.83       1936 
+  Oakheart        3 tank       5476    56.2%   1.79       1110 
+  Tide            1 tank       5430    56.1%   1.99        671 
+  Pulsar          2 tank       7100    54.9%   1.68        781 
+  Rampart         2 tank       6835    54.8%   1.61        337 
+  Sylva           4 damage     9257    54.4%   1.11       1903 
+  Skarn           3 damage    11482    54.3%   1.44       1696 
+  Nihila          5 damage     1595    53.2%   1.04       1733 
+  Lunis           2 damage    18598    53.1%   1.31       1571 
+  Vex             1 damage    15960    53.0%   1.81       1067 
+  Soul            3 tank       5008    52.9%   1.82        695 
+  Sola            4 damage     9012    52.9%   1.11       1182 
+  Les             5 tank       2115    52.9%   1.04        264 
+  Morrah          4 damage     5750    52.5%   1.15       1853 
+  Ignis           1 tank       5682    52.2%   1.98        238 
+  Pyra            1 damage     6717    51.3%   1.99       1014 
+  Orion           2 damage     7151    51.3%   1.58       1140 
+  Rivet           3 damage     3518    51.3%   2.00       1715 
+  Mortis          4 damage     3286    50.8%   1.21       1286 
+  Willow          3 damage     5004    50.6%   1.82       1521 
+  Briar           2 tank       5125    50.6%   1.72        966 
+  Cyla            2 damage     6895    49.9%   1.63       1091 
+  Thorn           1 damage     6085    49.9%   1.99       1041 
+  Vega            5 damage     1320    49.2%   1.03       1166 
+  Byte            2 damage     6629    48.7%   1.65        248 
+  Myna            4 damage     8439    48.6%   1.09        517 
+  Raa             4 damage     3369    48.3%   1.20       1094 
+  Lich            3 damage     4976    48.1%   1.81        758 
+  Lum             5 tank       1968    47.6%   1.02        451 
+  Solis           2 tank       4535    47.5%   1.78        669 
+  Bone            1 tank       5633    47.1%   1.99        421 
+  Flare           3 damage     4748    46.5%   1.79        980 
+  Null            1 tank      13962    45.2%   1.82        307 
+  Bit             1 tank      14511    44.9%   1.81        427 
+  Alesk           4 tank       3564    44.8%   1.19        179 
+  Nyx             3 tank      11273    44.6%   1.41        764 
+  Astra           1 damage    15752    44.2%   1.80        360 
+  Xul             2 damage     6352    43.8%   1.64        834 
+  Grave           2 damage     4334    43.8%   1.77        254 
+  Kryx            4 tank       5180    42.3%   1.12        416 
+  Rot             1 damage     5545    41.1%   2.00        557   <- weak outlier
+  Faire           3 damage    10471    40.9%   1.39        278   <- weak outlier
+
+-- stall suspects: the 192 fights longer than 60 s, and the champions over-represented in them (share of long fights / share of all fights) --
+  Moss         3.4x as common in long fights
+  Ignis        2.7x as common in long fights
+  Sunna        2.4x as common in long fights
+  Fern         2.1x as common in long fights
+  Rampart      2.0x as common in long fights
+  Aureon       1.9x as common in long fights
+
+-- synergies: teams whose highest active tier was this one --
+  synergy        tier (n)       teams    won %
+  Helios         1 (3)           2384    57.0% 
+  Helios         2 (5)            128    75.0% 
+  Phaisa         1 (2)          21729    49.2% 
+  Phaisa         2 (4)           1626    45.8% 
+  Phaisa         3 (6)             11    54.5% 
+  Hexagon        1 (2)          12874    46.8% 
+  Hexagon        2 (4)            273    56.0% 
+  Protector      1 (1)           6596    46.6% 
+  Protector      2 (2)           1174    58.1%  <- strong outlier
+  Selini         1 (3)           5127    57.6% 
+  Selini         2 (5)            323    68.4%  <- strong outlier
+  Najmi          1 (2)          16818    47.4% 
+  Najmi          2 (4)           1207    52.0% 
+  Najmi          3 (6)             12    25.0% 
+  Coregons       1 (3)            903    47.4% 
+  Assassin       1 (2)          14118    54.0% 
+  Assassin       2 (4)            392    58.9%  <- strong outlier
+  Bastion        1 (2)           9684    55.1% 
+  Bastion        2 (4)            207    65.2%  <- strong outlier
+  Bruiser        1 (2)          12336    56.3% 
+  Bruiser        2 (4)            759    56.8% 
+  Bruiser        3 (6)             15    60.0% 
+  Sorcerer       1 (2)           9250    49.1% 
+  Sorcerer       2 (4)            442    50.5% 
+  Sorcerer       3 (6)              4     0.0% 
+  Marksman       1 (2)          11772    55.3% 
+  Marksman       2 (4)            331    65.6%  <- strong outlier
+  Mystic         1 (2)          13688    49.3% 
+  Mystic         2 (4)            517    51.5% 
+  Duelist        1 (2)          19246    48.8% 
+  Duelist        2 (4)            815    47.7% 
+  Duelist        3 (6)              2   100.0% 
+  Gunslinger     1 (2)           3000    53.1% 
+  Gunslinger     2 (4)              6    50.0% 
+  Nature         1 (3)           3312    61.0%  <- strong outlier
+  Nature         2 (5)            138    60.9% 
+
+(Outliers: >= 150 samples and a win rate outside 42-58%. Not everything has to be 50%: a slightly stronger champion or synergy is fine.)
