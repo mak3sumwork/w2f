@@ -18,7 +18,7 @@ Server-side only: the UE client did not change.
 
 ## Running it
 * `cd server && make test` (6,436 engine + 1,976 network checks), `make balance ARGS="--matches 300 --seed 1000"`, `make ladder ARGS="--fights 1000 --mode both"`.
-* The Mac app carries its own server and data: rebuild it with `server/scripts/package_mac.sh` to play 1.7's numbers there (not done in this pass).
+* The Mac app (`~/Desktop/W2F_App/W2F.app`) is rebuilt with the 1.7.1 data (see below).
 
 ## Files
 * Server repo: `server/include/w2f/Config.h` (sudden death, `pveLossDamageFromStage`), `server/src/CombatSimulator.cpp` (sudden death, AP scaling),
@@ -33,8 +33,13 @@ Server-side only: the UE client did not change.
 * All of this was measured with bots and duels, not people. Play a few matches and say what feels off; that beats any number here.
 * PvE: bots still win 97-100% of monster rounds. Losing now hurts, so it was not pushed further. How hard should the X-7 bosses be?
 * Nature can only be read from bot games (58% at (3), the free plants); the ladder does not field plants.
-* One fight in 26,664 still reached the 120 s safety limit; the cause was not looked into (plants or untargetable Souls are the suspects).
 * `make ladder` is a Makefile target only (not in CMake / CI).
 * In the UE client, by hand (not looked at in this pass): the monsters' new abilities (their effect entries in `fx.json` predate them), the PvE loss damage,
   and sudden death (no new visuals: the usual damage numbers and the OVERTIME banner).
 * Strict build: the changed engine and tool files compile with `-Werror -fno-exceptions -fno-rtti` and the project's warning set; Windows / Linux are CI only.
+
+## 1.7.1 (2026-10-01)
+| # | Asked | Done | How it was checked |
+|---|---|---|---|
+| 1 | Rebuild the Mac app | `server/scripts/package_mac.sh` (from an automated shell it needs the Xcode mirror again, see update-1.5.md). The app's server and data are the repo's. | packaging exited 0; the app's `data/items.json` is byte-equal to the repo's; its bundled server starts and loads 63 champions / 55 items |
+| 2 | Look into the last 120 s fight | A lone Alesk with two **Guardians Armors** against four Lost Souls: the item's +6 Armor / +8 MR every 6th attack taken had no cap, and the Souls' fast overtime hits stacked it faster than sudden death ramps damage (he took 8 per hit at +900%). **Guardians Armor and Soldiers' Soul now stack at most 15 times** (text updated). `make balance` names the units still standing in any fight the safety limit decides. | 300 matches on seeds 1000 and 5000: 0 fights reach the safety limit (was 1); `make test` green (6,436 + 1,976); golden and sample fights re-recorded |

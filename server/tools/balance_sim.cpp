@@ -93,6 +93,7 @@ struct Collector : IMatchListener {
     std::map<ChampionId, long> slots;          // every fielded champion, for comparison
     std::vector<int> fightTicks;
     long pvpFights = 0, overtimeFights = 0, over35s = 0, mutualWipes = 0, homeWins = 0, decided = 0, hardLimit = 0;
+    std::vector<std::string> safetyLimitNotes;   // demo 1.7: who was still standing in each fight the 120 s safety limit had to decide
     const ChampionDatabase* db = nullptr;
 
     void RecordBoard(PlayerId seat, int team, const CombatLog& log) {
@@ -105,6 +106,29 @@ struct Collector : IMatchListener {
         }
         for (const CombatEvent& e : log.events) { if (e.type == CombatEventType::TraitActivated && e.team == team) b.tiers.push_back({e.traitId, e.subtype}); }
         lastBoard[seat] = b;
+    }
+
+    // The units alive when the safety limit ended a fight: where they stood and when each last dealt damage (a unit that never stops hitting is no stall).
+    void NoteSafetyLimit(int round, const CombatLog& log) {
+        struct Alive { ChampionId champion = kInvalidChampionId; int team = 0; HexCoord pos; bool alive = true; int lastHit = -1; };
+        std::map<UnitId, Alive> units;
+        for (const CombatEvent& e : log.events) {
+            switch (e.type) {
+                case CombatEventType::Spawn: units[e.unit] = Alive{e.champion, e.team, e.to, true, -1}; break;
+                case CombatEventType::Move: case CombatEventType::Teleport: if (units.count(e.unit) != 0 && e.subtype != 2) units[e.unit].pos = e.to; break;
+                case CombatEventType::Death: units[e.unit].alive = false; break;
+                case CombatEventType::Damage: if (units.count(e.other) != 0) units[e.other].lastHit = e.tick; break;
+                default: break;
+            }
+        }
+        std::string note = "round " + std::to_string(round) + ":";
+        for (const auto& [id, u] : units) {
+            if (!u.alive) continue;
+            const ChampionDefinition* def = db != nullptr ? db->Find(u.champion) : nullptr;
+            note += " [team " + std::to_string(u.team) + " " + (def != nullptr ? def->name : "?") + " at " + std::to_string(u.pos.x) + "," + std::to_string(u.pos.y) +
+                    ", last hit " + (u.lastHit < 0 ? std::string("never") : std::to_string(u.lastHit / kTicksPerSecond) + " s") + "]";
+        }
+        safetyLimitNotes.push_back(note);
     }
 
     void OnCombatSimulated(int round, const CombatOutcome& outcome) override {
@@ -149,6 +173,7 @@ struct Collector : IMatchListener {
         overtimeFights += overtime ? 1 : 0;
         over35s += log.endTick > Seconds(35) ? 1 : 0;
         hardLimit += log.endTick >= Seconds(120) ? 1 : 0;
+        if (log.endTick >= Seconds(120)) NoteSafetyLimit(round, log);
         const bool draw = outcome.winner == CombatWinner::Draw;
         mutualWipes += draw ? 1 : 0;
         if (!draw) {
@@ -284,6 +309,7 @@ int main(int argc, char** argv) {
                     r.t->damage / std::max<long>(r.t->appearances, 1), outlier ? (r.t->Rate() > 50 ? "  <- strong outlier" : "  <- weak outlier") : "");
     }
 
+    for (const std::string& note : collector.safetyLimitNotes) std::printf("  safety limit, %s\n", note.c_str());
     if (collector.longFights > 0) {
         std::printf("\n-- stall suspects: the %ld fights longer than 60 s, and the champions over-represented in them (share of long fights / share of all fights) --\n", collector.longFights);
         std::vector<std::pair<double, ChampionId>> lift;

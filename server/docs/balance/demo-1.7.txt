@@ -1,271 +1,271 @@
-== W2F balance report: 300 matches (seeds 1000..1299), 26664 PvP fights, 51.0 s of computing ==
+== W2F balance report: 300 matches (seeds 1000..1299), 26665 PvP fights, 52.5 s of computing ==
 match length: 33.5 rounds on average
-fight length: mean 19.2 s | median 17.8 s | 90th percentile 30.5 s | 99th 36.0 s | longest 120.0 s
-overtime in 12.0% of fights | 1.5% ran past 35 s | 1 hit the safety limit | 0.06% mutual wipe-outs (draws)
+fight length: mean 19.2 s | median 17.8 s | 90th percentile 30.5 s | 99th 36.0 s | longest 60.8 s
+overtime in 12.0% of fights | 1.5% ran past 35 s | 0 hit the safety limit | 0.06% mutual wipe-outs (draws)
 home side won 49.5% of the decided fights (50 = no bias)
 
 -- win rate by cost (fights each champion of that cost was fielded in) --
-  1-cost   108145 fielded    49.1% won   avg star 1.82
-  2-cost    82837 fielded    50.4% won   avg star 1.60
-  3-cost    73436 fielded    51.4% won   avg star 1.64
-  4-cost    61401 fielded    51.4% won   avg star 1.14
-  5-cost    11119 fielded    56.7% won   avg star 1.03
-  damage   213582 fielded    50.8% won
-  tanks    123356 fielded    50.3% won
+  1-cost   108189 fielded    49.1% won   avg star 1.82
+  2-cost    82863 fielded    50.4% won   avg star 1.60
+  3-cost    73432 fielded    51.4% won   avg star 1.64
+  4-cost    61373 fielded    51.4% won   avg star 1.14
+  5-cost    11129 fielded    56.7% won   avg star 1.03
+  damage   213557 fielded    50.8% won
+  tanks    123429 fielded    50.2% won
 
 -- champions, best win rate first (a fight counts once per champion fielded) --
   champion     cost role    fielded    won %   star  dmg/fight
-  Yggra           5 tank       1029    61.4%   1.02       1021   <- strong outlier
-  Vector          5 damage     1453    59.7%   1.02       2109   <- strong outlier
-  Umbra           5 tank       1032    59.7%   1.04       1238   <- strong outlier
-  Nihila          5 damage     1430    58.2%   1.05       2006   <- strong outlier
-  Stonebark Tree    1 tank       3465    58.0%   1.00          0   <- strong outlier
-  Omnilium Blossom    1 damage     3465    58.0%   1.00          0   <- strong outlier
+  Yggra           5 tank       1037    61.1%   1.02       1022   <- strong outlier
+  Vector          5 damage     1461    59.7%   1.02       2113   <- strong outlier
+  Umbra           5 tank       1035    59.6%   1.04       1243   <- strong outlier
+  Nihila          5 damage     1437    58.2%   1.05       2004   <- strong outlier
+  Stonebark Tree    1 tank       3481    58.1%   1.00          0   <- strong outlier
+  Omnilium Blossom    1 damage     3481    58.1%   1.00          0   <- strong outlier
   Aureon          5 damage      996    56.4%   1.04       2027 
-  Vega            5 damage     1166    55.1%   1.05       1705 
-  Aphel           4 damage     4230    55.0%   1.20       1920 
-  Maren           4 tank       4017    54.1%   1.20       1025 
-  Les             5 tank       2034    54.0%   1.03        282 
-  Sola            4 damage     9036    53.7%   1.11       1204 
-  Fern            2 damage     4874    53.5%   1.76        223 
-  Lum             5 tank       1979    53.4%   1.02       1083 
+  Vega            5 damage     1161    55.3%   1.05       1725 
+  Aphel           4 damage     4231    54.9%   1.20       1919 
+  Maren           4 tank       4012    54.2%   1.20       1023 
+  Les             5 tank       2031    54.0%   1.03        283 
+  Sola            4 damage     9015    53.7%   1.11       1205 
+  Fern            2 damage     4879    53.5%   1.76        223 
   Solis           2 tank       4790    53.4%   1.78       1012 
-  Baira           3 damage     5090    53.0%   1.83       1825 
-  Skarn           3 damage    11511    53.0%   1.44       1762 
-  Talon           4 damage     3894    53.0%   1.19       1436 
-  Faire           3 damage    12247    52.9%   1.41        732 
-  Sunna           2 damage     4838    52.8%   1.74        273 
-  Sylva           4 damage     9038    52.8%   1.10       1962 
-  Pulsar          2 tank       6833    52.7%   1.69        689 
-  Oakheart        3 tank       5076    52.3%   1.83        901 
-  Briar           2 tank       5463    51.9%   1.75       1105 
-  Willow          3 damage     4896    51.8%   1.84       1718 
-  Soul            3 tank       4761    51.7%   1.82        734 
-  Moss            1 tank       5814    51.2%   1.99        235 
-  Lich            3 damage     5208    51.0%   1.81       1035 
-  Tide            1 tank       5288    50.9%   1.99        499 
-  Rivet           3 damage     3269    50.7%   2.00       1710 
-  Mortis          4 damage     3792    50.6%   1.21       1453 
-  Lunis           2 damage    18070    50.6%   1.30       1394 
-  Kael            3 tank       5192    50.3%   1.82        871 
-  Myna            4 damage     8849    50.0%   1.10        544 
-  Pyra            1 damage     6529    50.0%   1.99       1105 
-  Vex             1 damage    16008    49.9%   1.80        991 
-  Bit             1 tank      14898    49.9%   1.82        685 
-  Raa             4 damage     3375    49.9%   1.18       1426 
-  Morrah          4 damage     6095    49.8%   1.14       1961 
+  Talon           4 damage     3901    53.1%   1.18       1435 
+  Lum             5 tank       1971    53.1%   1.02       1083 
+  Baira           3 damage     5090    53.0%   1.83       1826 
+  Skarn           3 damage    11525    53.0%   1.44       1762 
+  Faire           3 damage    12248    52.8%   1.41        732 
+  Sylva           4 damage     9045    52.8%   1.10       1959 
+  Sunna           2 damage     4841    52.8%   1.75        273 
+  Pulsar          2 tank       6831    52.7%   1.69        688 
+  Oakheart        3 tank       5076    52.3%   1.83        902 
+  Briar           2 tank       5471    52.0%   1.75       1105 
+  Willow          3 damage     4887    51.9%   1.84       1717 
+  Soul            3 tank       4769    51.8%   1.82        734 
+  Moss            1 tank       5820    51.3%   1.99        235 
+  Tide            1 tank       5294    50.9%   1.99        499 
+  Lich            3 damage     5190    50.9%   1.81       1036 
+  Rivet           3 damage     3266    50.7%   2.00       1713 
+  Mortis          4 damage     3784    50.7%   1.21       1455 
+  Lunis           2 damage    18070    50.6%   1.30       1395 
+  Kael            3 tank       5198    50.3%   1.82        870 
+  Myna            4 damage     8837    50.1%   1.10        545 
+  Vex             1 damage    16006    49.9%   1.80        990 
+  Pyra            1 damage     6525    49.9%   1.99       1104 
+  Bit             1 tank      14907    49.9%   1.82        685 
+  Raa             4 damage     3372    49.9%   1.18       1425 
+  Morrah          4 damage     6086    49.7%   1.14       1963 
   Orion           2 damage     7357    49.4%   1.59       1202 
-  Thorn           1 damage     5905    49.2%   1.99       1104 
-  Rampart         2 tank       6374    49.0%   1.58        270 
-  Alesk           4 tank       3551    49.0%   1.20        291 
+  Thorn           1 damage     5906    49.2%   1.99       1104 
+  Rampart         2 tank       6377    49.1%   1.58        270 
+  Alesk           4 tank       3548    49.0%   1.20        291 
   Cyla            2 damage     6668    49.0%   1.62       1136 
-  Flare           3 damage     4914    48.7%   1.81       1342 
-  Nyx             3 tank      11272    48.6%   1.41       1074 
-  Byte            2 damage     6336    48.4%   1.62        251 
-  Rot             1 damage     5989    48.2%   2.00        889 
-  Ignis           1 tank       5432    48.2%   1.99        193 
-  Xul             2 damage     6479    48.1%   1.65       1099 
-  Bone            1 tank       5628    47.5%   1.99        447 
+  Flare           3 damage     4907    48.6%   1.81       1344 
+  Nyx             3 tank      11276    48.6%   1.41       1075 
+  Byte            2 damage     6347    48.5%   1.62        252 
+  Rot             1 damage     5989    48.2%   2.00        888 
+  Ignis           1 tank       5429    48.1%   1.99        193 
+  Xul             2 damage     6477    48.1%   1.65       1099 
   Grave           2 damage     4755    47.5%   1.79        222 
-  Kryx            4 tank       5524    46.2%   1.13        688 
-  Null            1 tank      13904    45.9%   1.81        305 
-  Astra           1 damage    15820    45.7%   1.80        340 
+  Bone            1 tank       5629    47.5%   1.99        447 
+  Kryx            4 tank       5542    46.1%   1.13        688 
+  Null            1 tank      13905    45.9%   1.81        305 
+  Astra           1 damage    15817    45.7%   1.80        340 
 
--- stall suspects: the 2 fights longer than 60 s, and the champions over-represented in them (share of long fights / share of all fights) --
-  Lich         4.8x as common in long fights
-  Byte         3.9x as common in long fights
-  Rampart      3.9x as common in long fights
-  Cyla         3.7x as common in long fights
-  Raa          3.7x as common in long fights
-  Alesk        3.5x as common in long fights
+-- stall suspects: the 1 fights longer than 60 s, and the champions over-represented in them (share of long fights / share of all fights) --
+  Raa          9.1x as common in long fights
+  Kael         5.9x as common in long fights
+  Ignis        5.6x as common in long fights
+  Byte         4.8x as common in long fights
+  Rampart      4.8x as common in long fights
+  Cyla         4.6x as common in long fights
 
 -- synergies: teams whose highest active tier was this one --
   synergy        tier (n)       teams    won %
-  Helios         1 (3)           2371    55.4% 
+  Helios         1 (3)           2364    55.4% 
   Helios         2 (5)             70    77.1% 
-  Phaisa         1 (2)          21874    49.3% 
-  Phaisa         2 (4)           1709    49.6% 
+  Phaisa         1 (2)          21855    49.3% 
+  Phaisa         2 (4)           1723    49.6% 
   Phaisa         3 (6)             22    31.8% 
-  Hexagon        1 (2)          13215    52.4% 
-  Hexagon        2 (4)            295    43.7% 
-  Protector      1 (1)           6638    49.5% 
+  Hexagon        1 (2)          13220    52.5% 
+  Hexagon        2 (4)            299    44.1% 
+  Protector      1 (1)           6627    49.4% 
   Protector      2 (2)           1193    59.4%  <- strong outlier
-  Selini         1 (3)           5131    58.5%  <- strong outlier
-  Selini         2 (5)            336    70.5%  <- strong outlier
+  Selini         1 (3)           5125    58.6%  <- strong outlier
+  Selini         2 (5)            331    70.4%  <- strong outlier
   Selini         3 (7)              7    85.7% 
-  Najmi          1 (2)          17536    49.8% 
-  Najmi          2 (4)           1248    60.6%  <- strong outlier
+  Najmi          1 (2)          17542    49.9% 
+  Najmi          2 (4)           1246    60.6%  <- strong outlier
   Najmi          3 (6)             53    62.3% 
   Coregons       1 (3)           1077    54.9% 
-  Assassin       1 (2)          13938    52.7% 
+  Assassin       1 (2)          13928    52.7% 
   Assassin       2 (4)            318    58.2%  <- strong outlier
-  Bastion        1 (2)           9547    55.0% 
-  Bastion        2 (4)            132    73.5% 
-  Bruiser        1 (2)          12318    54.6% 
-  Bruiser        2 (4)            576    57.6% 
+  Bastion        1 (2)           9548    54.9% 
+  Bastion        2 (4)            134    73.9% 
+  Bruiser        1 (2)          12340    54.7% 
+  Bruiser        2 (4)            568    57.0% 
   Bruiser        3 (6)              3   100.0% 
-  Sorcerer       1 (2)           9570    54.1% 
+  Sorcerer       1 (2)           9580    54.1% 
   Sorcerer       2 (4)            413    53.3% 
   Sorcerer       3 (6)             11    63.6% 
-  Marksman       1 (2)          11771    54.2% 
+  Marksman       1 (2)          11779    54.3% 
   Marksman       2 (4)            404    56.7% 
-  Mystic         1 (2)          14036    51.5% 
-  Mystic         2 (4)            504    56.2% 
-  Duelist        1 (2)          19349    51.5% 
+  Mystic         1 (2)          14031    51.5% 
+  Mystic         2 (4)            502    56.2% 
+  Duelist        1 (2)          19345    51.5% 
   Duelist        2 (4)           1012    61.1%  <- strong outlier
   Duelist        3 (6)             10    90.0% 
-  Gunslinger     1 (2)           3100    56.7% 
+  Gunslinger     1 (2)           3093    56.7% 
   Gunslinger     2 (4)             32    34.4% 
-  Nature         1 (3)           3255    58.0%  <- strong outlier
-  Nature         2 (5)            210    58.1%  <- strong outlier
+  Nature         1 (3)           3274    58.0%  <- strong outlier
+  Nature         2 (5)            207    58.9%  <- strong outlier
 
 -- champions on FINAL boards, best average placement first (4.5 = average; each board counts a champion once, at its best star) --
   champion       cost  boards     avg  top4 %  1st %  2-star  3-star
-  Lum               5     370    2.75   84.1%  29.2%      18       0  <- strong
-  Les               5     387    2.88   82.9%  25.8%      19       0  <- strong
-  Umbra             5     146    2.99   77.4%  31.5%      15       0  <- strong
-  Nihila            5     224    2.99   77.2%  30.8%      23       0  <- strong
-  Vega              5     205    3.04   77.6%  25.9%      21       0  <- strong
-  Yggra             5     151    3.05   76.8%  27.8%       9       0  <- strong
-  Vector            5     226    3.07   77.9%  25.7%      14       0  <- strong
+  Lum               5     370    2.75   84.1%  28.6%      18       0  <- strong
+  Les               5     388    2.87   83.2%  26.0%      19       0  <- strong
+  Umbra             5     147    2.99   77.6%  31.3%      16       0  <- strong
+  Nihila            5     223    2.99   77.1%  30.5%      23       0  <- strong
+  Vega              5     203    3.05   77.3%  26.1%      21       0  <- strong
+  Vector            5     227    3.07   77.5%  25.6%      14       0  <- strong
+  Yggra             5     154    3.07   76.6%  27.3%      10       0  <- strong
   Aureon            5     144    3.25   70.8%  28.5%      13       0  <- strong
   Baira             3     449    3.83   63.3%  16.9%     439       0  <- strong
-  Aphel             4     314    3.89   59.2%  22.3%     145       0  <- strong
-  Willow            3     438    3.98   58.7%  16.0%     427       0  <- strong
-  Skarn             3     664    4.04   59.0%  13.6%     516       0
-  Faire             3     696    4.05   59.1%  15.7%     536       0
-  Oakheart          3     448    4.06   57.6%  14.7%     436       0
-  Sola              4     868    4.06   58.2%  17.9%     172       0
-  Rivet             3     326    4.06   60.1%  11.3%     326       0
-  Lich              3     456    4.07   58.1%  14.0%     446       0
-  Soul              3     427    4.09   56.9%  13.8%     416       0
-  Fern              2     281    4.14   56.9%  14.9%     270       0
-  Flare             3     454    4.17   56.8%  11.0%     441       0
-  Kael              3     469    4.18   57.4%  12.8%     459       0
-  Talon             4     304    4.20   54.6%  14.1%     124       0
-  Mortis            4     312    4.20   58.7%  13.1%     143       0
-  Pulsar            2     370    4.20   54.9%  15.4%     341       0
-  Sunna             2     267    4.21   56.6%  13.9%     255       0
-  Myna              4     901    4.22   54.5%  15.6%     172       0
-  Sylva             4     883    4.25   53.9%  13.9%     153       0
+  Aphel             4     314    3.90   59.2%  22.0%     145       0  <- strong
+  Willow            3     437    3.97   58.8%  16.0%     426       0  <- strong
+  Skarn             3     665    4.04   58.9%  13.7%     517       0
+  Oakheart          3     447    4.06   57.5%  14.8%     435       0
+  Faire             3     695    4.06   59.0%  15.5%     536       0
+  Rivet             3     326    4.06   60.4%  11.3%     326       0
+  Sola              4     865    4.06   58.0%  17.8%     173       0
+  Lich              3     456    4.07   58.1%  13.8%     446       0
+  Soul              3     428    4.08   57.2%  14.0%     417       0
+  Fern              2     281    4.16   56.2%  14.9%     270       0
+  Talon             4     304    4.17   54.9%  14.5%     124       0
+  Flare             3     454    4.18   56.6%  11.0%     441       0
+  Kael              3     470    4.19   57.4%  12.8%     459       0
+  Pulsar            2     370    4.21   54.6%  15.4%     341       0
+  Sunna             2     266    4.21   56.8%  13.9%     255       0
+  Myna              4     902    4.22   54.5%  15.7%     172       0
+  Mortis            4     310    4.22   58.1%  13.2%     141       0
+  Sylva             4     884    4.25   54.0%  14.0%     154       0
   Solis             2     268    4.28   53.7%  12.7%     259       0
-  Maren             4     296    4.30   53.4%  19.6%     139       0
-  Briar             2     312    4.51   52.2%  11.5%     296       0
-  Alesk             4     308    4.52   49.0%  14.6%     135       0
+  Maren             4     295    4.28   53.9%  20.0%     138       0
+  Briar             2     313    4.50   52.1%  11.5%     297       0
+  Alesk             4     307    4.52   48.9%  14.7%     134       0
   Raa               4     283    4.53   50.5%  13.8%     114       0
-  Nyx               3     672    4.54   48.2%  11.8%     502       0
-  Lunis             2     667    4.59   48.4%  13.8%     406       0
-  Xul               2     350    4.62   47.1%  10.0%     321       0
+  Nyx               3     672    4.53   48.4%  11.6%     502       0
+  Lunis             2     666    4.58   48.6%  14.0%     406       0
+  Xul               2     350    4.63   47.1%   9.7%     321       0
+  Byte              2     350    4.63   47.4%  12.3%     311       0
   Cyla              2     366    4.63   46.7%  10.7%     334       0
-  Byte              2     350    4.65   47.1%  12.0%     311       0
   Orion             2     390    4.65   48.5%   8.7%     346       0
   Rampart           2     337    4.65   47.8%  12.5%     294       0
-  Morrah            4     512    4.76   43.4%  11.5%     142       0
+  Morrah            4     512    4.76   43.2%  11.5%     142       0
   Grave             2     300    4.86   45.0%   9.3%     285       0
-  Kryx              4     500    4.93   43.2%   7.0%     153       0
-  Tide              1     123    5.05   37.4%  11.4%     123       0  <- weak
-  Moss              1     135    5.10   40.0%   8.9%     134       0  <- weak
-  Bit               1     425    5.12   38.4%   8.7%     387       0  <- weak
-  Thorn             1     139    5.13   35.3%  10.8%     139       0  <- weak
-  Ignis             1     131    5.25   34.4%   5.3%     131       0  <- weak
-  Pyra              1     166    5.27   37.3%   7.2%     166       0  <- weak
-  Vex               1     461    5.32   34.1%   5.6%     411       0  <- weak
-  Bone              1     122    5.34   31.1%   8.2%     121       0  <- weak
-  Astra             1     458    5.41   31.0%   8.5%     416       0  <- weak
-  Null              1     400    5.42   32.0%   7.2%     368       0  <- weak
+  Kryx              4     504    4.94   43.1%   6.9%     154       0
+  Tide              1     122    5.03   37.7%  11.5%     122       0  <- weak
+  Moss              1     134    5.10   40.3%   9.0%     133       0  <- weak
+  Bit               1     426    5.12   38.3%   8.7%     388       0  <- weak
+  Thorn             1     139    5.15   34.5%  10.8%     139       0  <- weak
+  Pyra              1     166    5.28   37.3%   7.2%     166       0  <- weak
+  Ignis             1     132    5.28   33.3%   5.3%     132       0  <- weak
+  Vex               1     460    5.32   34.1%   5.7%     410       0  <- weak
+  Bone              1     122    5.32   32.0%   8.2%     121       0  <- weak
+  Astra             1     456    5.42   31.1%   8.3%     414       0  <- weak
+  Null              1     400    5.43   31.8%   7.2%     368       0  <- weak
   Rot               1     151    5.54   27.2%   4.6%     151       0  <- weak
 
 -- traits on final boards: the player's highest active tier, average placement --
-  Helios         1 (3)       209 boards   avg 3.77   top4  61.7%  <- strong
+  Helios         1 (3)       208 boards   avg 3.77   top4  61.5%  <- strong
   Helios         2 (5)         8 boards   avg 1.50   top4 100.0%
-  Phaisa         1 (2)      1221 boards   avg 4.66   top4  47.3%
-  Phaisa         2 (4)       136 boards   avg 4.56   top4  46.3%
+  Phaisa         1 (2)      1219 boards   avg 4.67   top4  47.1%
+  Phaisa         2 (4)       138 boards   avg 4.56   top4  46.4%
   Phaisa         3 (6)         4 boards   avg 2.75   top4  75.0%
-  Hexagon        1 (2)       778 boards   avg 4.23   top4  54.5%
+  Hexagon        1 (2)       779 boards   avg 4.23   top4  54.6%
   Hexagon        2 (4)        39 boards   avg 4.08   top4  59.0%
-  Protector      1 (1)       756 boards   avg 3.82   top4  64.8%  <- strong
+  Protector      1 (1)       757 boards   avg 3.82   top4  65.0%  <- strong
   Protector      2 (2)       231 boards   avg 2.33   top4  90.0%  <- strong
-  Selini         1 (3)       486 boards   avg 3.61   top4  67.5%  <- strong
-  Selini         2 (5)        48 boards   avg 2.48   top4  81.2%
+  Selini         1 (3)       484 boards   avg 3.61   top4  67.6%  <- strong
+  Selini         2 (5)        47 boards   avg 2.38   top4  83.0%
   Selini         3 (7)         1 boards   avg 1.00   top4 100.0%
-  Najmi          1 (2)      1260 boards   avg 4.38   top4  52.5%
-  Najmi          2 (4)       137 boards   avg 3.39   top4  68.6%  <- strong
+  Najmi          1 (2)      1262 boards   avg 4.37   top4  52.6%
+  Najmi          2 (4)       136 boards   avg 3.40   top4  68.4%  <- strong
   Najmi          3 (6)         9 boards   avg 1.56   top4 100.0%
   Coregons       1 (3)       105 boards   avg 4.18   top4  52.4%
-  Assassin       1 (2)       830 boards   avg 4.38   top4  51.3%
+  Assassin       1 (2)       826 boards   avg 4.38   top4  51.3%
   Assassin       2 (4)        30 boards   avg 3.90   top4  56.7%
-  Bastion        1 (2)       580 boards   avg 3.84   top4  62.2%  <- strong
-  Bastion        2 (4)        22 boards   avg 2.27   top4  86.4%
-  Bruiser        1 (2)       992 boards   avg 4.07   top4  57.6%
+  Bastion        1 (2)       581 boards   avg 3.85   top4  62.0%  <- strong
+  Bastion        2 (4)        23 boards   avg 2.22   top4  87.0%
+  Bruiser        1 (2)       993 boards   avg 4.06   top4  57.8%
   Bruiser        2 (4)        83 boards   avg 2.95   top4  79.5%  <- strong
   Bruiser        3 (6)         1 boards   avg 1.00   top4 100.0%
-  Sorcerer       1 (2)       912 boards   avg 3.88   top4  61.1%  <- strong
+  Sorcerer       1 (2)       913 boards   avg 3.89   top4  60.9%  <- strong
   Sorcerer       2 (4)        70 boards   avg 3.20   top4  71.4%  <- strong
   Sorcerer       3 (6)         1 boards   avg 2.00   top4 100.0%
-  Marksman       1 (2)       800 boards   avg 4.18   top4  55.8%
+  Marksman       1 (2)       800 boards   avg 4.18   top4  55.6%
   Marksman       2 (4)        46 boards   avg 3.07   top4  76.1%
   Mystic         1 (2)       995 boards   avg 4.35   top4  52.3%
-  Mystic         2 (4)        57 boards   avg 4.18   top4  54.4%
+  Mystic         2 (4)        56 boards   avg 4.16   top4  55.4%
   Duelist        1 (2)      1061 boards   avg 4.51   top4  50.0%
   Duelist        2 (4)        77 boards   avg 3.34   top4  71.4%  <- strong
   Duelist        3 (6)         1 boards   avg 3.00   top4 100.0%
-  Gunslinger     1 (2)       331 boards   avg 3.54   top4  68.9%  <- strong
+  Gunslinger     1 (2)       330 boards   avg 3.55   top4  68.5%  <- strong
   Gunslinger     2 (4)         7 boards   avg 2.71   top4 100.0%
-  Nature         1 (3)       312 boards   avg 3.54   top4  67.3%  <- strong
+  Nature         1 (3)       314 boards   avg 3.56   top4  66.9%  <- strong
   Nature         2 (5)        29 boards   avg 3.31   top4  72.4%
 
 -- items: final-board average placement and fight win rate (every copy carried into a decided fight) --
-  Twin Snipers              554 boards   avg 3.71   top4  65.3%   fights    8615  won  57.2%  <- strong
-  HeartBroke                629 boards   avg 3.72   top4  64.2%   fights   10938  won  57.9%  <- strong
-  Blue Whale                641 boards   avg 3.80   top4  62.4%   fights   10786  won  56.8%  <- strong
-  Gunfire                   648 boards   avg 3.85   top4  60.5%   fights   11435  won  55.3%  <- strong
-  Bastion Emblem            403 boards   avg 3.89   top4  58.8%   fights    4875  won  54.0%  <- strong
+  Twin Snipers              555 boards   avg 3.71   top4  65.4%   fights    8625  won  57.3%  <- strong
+  HeartBroke                629 boards   avg 3.72   top4  64.4%   fights   10951  won  57.9%  <- strong
+  Blue Whale                640 boards   avg 3.79   top4  62.5%   fights   10794  won  56.9%  <- strong
+  Gunfire                   648 boards   avg 3.84   top4  60.8%   fights   11432  won  55.3%  <- strong
+  Bastion Emblem            403 boards   avg 3.89   top4  58.6%   fights    4884  won  54.1%  <- strong
   Bruiser Emblem            386 boards   avg 3.89   top4  59.3%   fights    5027  won  52.2%  <- strong
-  Marksman Emblem           381 boards   avg 3.90   top4  60.9%   fights    4442  won  50.6%  <- strong
-  Fishscale                 677 boards   avg 3.96   top4  59.2%   fights   12190  won  54.6%  <- strong
-  Full Kit                  716 boards   avg 3.97   top4  59.9%   fights   12961  won  54.9%  <- strong
-  Soul's Sword              496 boards   avg 3.99   top4  61.5%   fights    6952  won  53.1%  <- strong
-  Selini Emblem             459 boards   avg 4.00   top4  59.5%   fights    5150  won  50.1%  <- strong
-  Najmi Emblem              396 boards   avg 4.00   top4  59.8%   fights    4644  won  48.8%
-  Mystic Emblem             395 boards   avg 4.00   top4  55.7%   fights    4706  won  52.4%
-  Gunslinger Emblem         382 boards   avg 4.01   top4  60.2%   fights    4269  won  48.5%
-  Helios Emblem             394 boards   avg 4.02   top4  57.4%   fights    4453  won  49.2%
-  Sorcerer Emblem           382 boards   avg 4.02   top4  59.7%   fights    4664  won  50.7%
+  Marksman Emblem           380 boards   avg 3.90   top4  60.8%   fights    4441  won  50.7%  <- strong
+  Fishscale                 676 boards   avg 3.96   top4  59.0%   fights   12184  won  54.6%  <- strong
+  Full Kit                  716 boards   avg 3.97   top4  59.9%   fights   12960  won  54.8%  <- strong
+  Soul's Sword              495 boards   avg 3.98   top4  61.8%   fights    6958  won  53.1%  <- strong
+  Selini Emblem             459 boards   avg 3.98   top4  59.7%   fights    5164  won  50.2%  <- strong
+  Najmi Emblem              396 boards   avg 3.99   top4  60.1%   fights    4647  won  48.8%  <- strong
+  Mystic Emblem             395 boards   avg 4.00   top4  55.9%   fights    4704  won  52.4%  <- strong
+  Helios Emblem             393 boards   avg 4.01   top4  57.8%   fights    4460  won  49.2%
+  Gunslinger Emblem         382 boards   avg 4.01   top4  60.2%   fights    4266  won  48.5%
+  Sorcerer Emblem           382 boards   avg 4.03   top4  59.4%   fights    4656  won  50.6%
   Protector Emblem          428 boards   avg 4.04   top4  58.2%   fights    4806  won  50.9%
-  Tear Of Mother            566 boards   avg 4.07   top4  58.7%   fights    7635  won  50.2%
-  Duelist Emblem            407 boards   avg 4.11   top4  57.2%   fights    4705  won  49.2%
-  Deadbeat                  749 boards   avg 4.11   top4  57.8%   fights   12811  won  51.6%
-  Guardians Armor           796 boards   avg 4.12   top4  57.2%   fights   15874  won  52.6%
-  Nature Emblem             348 boards   avg 4.13   top4  59.2%   fights    3946  won  48.6%
-  Phaisa Emblem             413 boards   avg 4.14   top4  58.6%   fights    4701  won  47.5%
-  Hexagon Emblem            439 boards   avg 4.15   top4  54.4%   fights    4688  won  47.9%
-  Mage Shield               616 boards   avg 4.15   top4  57.5%   fights    9276  won  50.3%
+  Tear Of Mother            566 boards   avg 4.07   top4  58.7%   fights    7624  won  50.1%
+  Deadbeat                  750 boards   avg 4.12   top4  57.7%   fights   12817  won  51.6%
+  Duelist Emblem            407 boards   avg 4.12   top4  56.8%   fights    4703  won  49.2%
+  Nature Emblem             348 boards   avg 4.12   top4  59.5%   fights    3951  won  48.6%
+  Guardians Armor           795 boards   avg 4.13   top4  57.0%   fights   15892  won  52.7%
+  Hexagon Emblem            439 boards   avg 4.14   top4  54.7%   fights    4694  won  48.0%
   Magic Stick               599 boards   avg 4.16   top4  55.3%   fights    7910  won  48.2%
-  Sayona's Casket           620 boards   avg 4.19   top4  56.0%   fights    8829  won  48.9%
-  Guardian Destroyer        743 boards   avg 4.19   top4  55.5%   fights   13492  won  51.8%
-  Soldiers' Soul            524 boards   avg 4.21   top4  55.7%   fights    7595  won  47.7%
-  Mother's Hands            716 boards   avg 4.22   top4  55.0%   fights   12650  won  52.0%
-  Electroblade              684 boards   avg 4.22   top4  56.3%   fights   10413  won  48.8%
-  Unalive Sword             639 boards   avg 4.24   top4  53.7%   fights   10067  won  50.1%
+  Phaisa Emblem             413 boards   avg 4.16   top4  58.1%   fights    4695  won  47.4%
+  Mage Shield               616 boards   avg 4.16   top4  57.3%   fights    9275  won  50.3%
+  Sayona's Casket           620 boards   avg 4.19   top4  56.1%   fights    8835  won  48.9%
+  Guardian Destroyer        744 boards   avg 4.19   top4  55.5%   fights   13475  won  51.8%
+  Soldiers' Soul            524 boards   avg 4.21   top4  55.7%   fights    7594  won  47.7%
+  Mother's Hands            715 boards   avg 4.22   top4  55.0%   fights   12647  won  52.0%
+  Electroblade              683 boards   avg 4.23   top4  55.9%   fights   10407  won  48.8%
+  Unalive Sword             640 boards   avg 4.24   top4  53.6%   fights   10076  won  50.1%
   Assassin Emblem           394 boards   avg 4.25   top4  54.6%   fights    4656  won  46.9%
-  Betrayed Heart            720 boards   avg 4.26   top4  55.3%   fights   13018  won  50.7%
-  Fishtank                  723 boards   avg 4.27   top4  55.0%   fights   13094  won  50.5%
-  Divine Magic              659 boards   avg 4.29   top4  52.7%   fights    9755  won  49.3%
-  Head Shot                 676 boards   avg 4.30   top4  53.1%   fights   10491  won  48.3%
-  Omnilium's Book           700 boards   avg 4.30   top4  52.9%   fights   11563  won  47.8%
-  Water Gun                 645 boards   avg 4.32   top4  51.0%   fights   10647  won  48.5%
-  Phaisa's Magic            690 boards   avg 4.37   top4  52.2%   fights   11759  won  48.4%
-  Gylachster                546 boards   avg 4.38   top4  51.3%   fights    7091  won  46.2%
+  Betrayed Heart            718 boards   avg 4.26   top4  55.4%   fights   13019  won  50.7%
+  Fishtank                  723 boards   avg 4.28   top4  54.8%   fights   13084  won  50.5%
+  Head Shot                 676 boards   avg 4.29   top4  53.1%   fights   10491  won  48.3%
+  Divine Magic              659 boards   avg 4.29   top4  52.7%   fights    9753  won  49.3%
+  Omnilium's Book           699 boards   avg 4.30   top4  53.1%   fights   11564  won  47.9%
+  Water Gun                 645 boards   avg 4.32   top4  51.2%   fights   10659  won  48.6%
+  Gylachster                547 boards   avg 4.37   top4  51.6%   fights    7104  won  46.3%
+  Phaisa's Magic            690 boards   avg 4.37   top4  52.5%   fights   11767  won  48.4%
   Coregons Sword            107 boards   avg 4.38   top4  50.5%   fights    2340  won  49.4%
-  Big Helmet                531 boards   avg 4.39   top4  52.2%   fights    8015  won  48.6%
-  Coregons Emblem           397 boards   avg 4.44   top4  52.6%   fights    4179  won  44.1%
-  Resist Puncher            784 boards   avg 4.45   top4  51.4%   fights   13711  won  46.1%
-  Selini's Water            113 boards   avg 4.46   top4  50.4%   fights    2477  won  47.8%
-  Phaisa's Bow              169 boards   avg 4.52   top4  49.7%   fights    3750  won  47.2%
-  Omnilium Heart            422 boards   avg 4.61   top4  48.3%   fights   12266  won  50.6%
+  Big Helmet                531 boards   avg 4.39   top4  52.0%   fights    8019  won  48.7%
+  Coregons Emblem           397 boards   avg 4.44   top4  52.4%   fights    4179  won  44.0%
+  Selini's Water            114 boards   avg 4.47   top4  50.0%   fights    2475  won  47.8%
+  Resist Puncher            781 boards   avg 4.48   top4  51.1%   fights   13704  won  46.0%
+  Phaisa's Bow              171 boards   avg 4.50   top4  50.3%   fights    3756  won  47.0%
+  Omnilium Heart            424 boards   avg 4.61   top4  48.1%   fights   12277  won  50.6%
   Phaisa Stick              169 boards   avg 4.61   top4  47.9%   fights    3642  won  48.2%
-  Omnilium Vest             609 boards   avg 4.64   top4  45.8%   fights   19629  won  50.3%
-  Selinis Gloves            365 boards   avg 4.74   top4  42.7%   fights   10469  won  46.6%
+  Omnilium Vest             609 boards   avg 4.64   top4  45.8%   fights   19637  won  50.3%
+  Selinis Gloves            365 boards   avg 4.74   top4  42.7%   fights   10475  won  46.6%
   Omnilium's Helmet         171 boards   avg 4.75   top4  44.4%   fights    3482  won  48.2%
 
 -- PvE: how often the bots beat each monster round --

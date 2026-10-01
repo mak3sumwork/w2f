@@ -147,11 +147,13 @@ Grave's Skeleton 450/750/1150 HP and 45 AD (the earlier "abil x1.2" notes on Gra
 Sunna heal x0.79, Aphel x0.87 / AD x0.95, Baira x0.93, Oakheart HP x0.96.
 
 ### Where it stands (`make balance ARGS="--matches 300 --seed 1000"`, report `balance/demo-1.7.txt`; roster v3 before it in brackets)
-* Fights: mean 19.2 s (20.1), 99th percentile 36.0 s (46.3), overtime 12.0% (12.7%), **1 fight in 26,664 hit the safety limit (154)**.
+* Fights: mean 19.2 s (20.1), 99th percentile 36.0 s (46.3), overtime 12.0% (12.7%), **no fight hit the safety limit (154)**, longest 60.8 s.
 * Champions: every one of the 53 between **45.7% (Astra) and 61.4% (Yggra)** (40-64% before); only 5-costs are above 58% (Yggra, Vector, Umbra, Nihila: 5-costs
   run high as a group, 56.7%). Ladder: every champion 40-57% at equal gold; the lowest there (Bit 40%, Faire 41%, Solis 42%, Talon 42%) win 50-53% in bot games, so they were left alone.
 * Synergies in bot games: Selini (3) 58.5%, Nature (3) 58.0% (free plants), Protector (2) 59.4%, Duelist (4) 61.1%, Najmi (4) 60.6%.
 * PvE: the bots still win 97-100% of monster rounds (99.6% at 3-7, 98.8% at 4-7, 98.1% at 5-7). A loss now costs health, so the rounds were made harder but not
   turned into a coin flip; how hard they should be is the designer's call.
-* The one 120 s fight was not looked into (sudden death should end any fight where both sides can still hit each other; plants and untargetable Souls are the
-  likely suspects). The safety limit decides it as before (more survivors, then HP).
+* The last 120 s fight (demo 1.7.1): a lone Alesk with **two Guardians Armors** against four Lost Souls. Every 6th attack taken gave +6 Armor / +8 MR with no cap,
+  and the Souls' fast hits in 4x overtime stacked his resists faster than sudden death ramps damage (hits of 8 at +900%). Guardians Armor and Soldiers' Soul now
+  stack at most **15 times**. Two 300-match runs (seeds 1000 and 5000, ~53,000 fights): 0 reach the safety limit. `make balance` now prints who was standing
+  in any fight the safety limit decides ("safety limit, round N: ...").
