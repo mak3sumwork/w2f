@@ -97,6 +97,9 @@ struct MatchConfig {
     // pveRoundInLaterStages is (X-7 by default; 0 = no PvE after stage 1).
     int firstStagePveRounds = 3;
     int pveRoundInLaterStages = 7;
+    // Demo 1.7 (FEEDBACK V7): from this stage on, LOSING a PvE round costs health like losing to a player (PlayerDamage: the stage's base + 1 per monster
+    // left standing). Stage 1's creeps stay free. 0 = PvE never hurts (the old rule).
+    int pveLossDamageFromStage = 2;
 
     // The opening (TFT's first PvE round): before round 1 every player is dealt one random unit of each cost in openingUnitCosts (from the shared
     // pool; free). The shop can also be kept closed for rounds 1..shopClosedOpeningRounds; FEEDBACK V1 (demo 1.1) opens it in every Planning phase: 0.
@@ -153,6 +156,11 @@ struct CombatConfig {
     // total HP, then a coin from the fight's seed -- so a fight ALWAYS has a winner. (Only a mutual wipe-out on the same tick is a draw.)
     int regulationTicks = Seconds(30);
     int overtimeSpeed = 4;
+    // SUDDEN DEATH (demo 1.7, FEEDBACK V7: shield and heal teams stalled for minutes): in overtime every heal and shield a unit receives is cut by
+    // `overtimeHealingCutPercent`, and every hit grows by `overtimeDamageRampPercent` for each whole second the fight has been in overtime (+10%/s:
+    // after 10 s of overtime hits are doubled). A stall cannot outlast it.
+    int overtimeHealingCutPercent = 50;
+    int overtimeDamageRampPercent = 10;
     int hardLimitTicks = Seconds(120);
 
     // Presentation defaults (see CombatEvent: windup / flight). Per champion `stats.attackWindup` / `stats.projectileSpeed` and per ability `windup` override them.

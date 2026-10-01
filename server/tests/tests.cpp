@@ -1588,8 +1588,11 @@ static bool ValidateCombatLog(const CombatLog& log, const ChampionDatabase& db, 
                 if (e.hpAfter != victim.hp) return fail("damage: hp arithmetic", e);
                 // A plain, uncrit basic attack between unmodified units must match the armor formula exactly.
                 if (e.flags == kFlagBasic && !victim.everShielded && !victim.everStatus && !a->second.everStatus) {
-                    const int expected = MitigatedDamage(a->second.def->stats.attackDamage[static_cast<std::size_t>(a->second.star - 1)],
-                                                         victim.def->stats.armor[static_cast<std::size_t>(victim.star - 1)], cfg.minDamage);
+                    // sudden death (demo 1.7): each whole second of overtime adds overtimeDamageRampPercent to the hit, before armor
+                    const int ramp = overtimeEvents > 0 && e.tick > overtimeAt ? std::min(100000, (e.tick - overtimeAt) / kTicksPerSecond * std::max(0, cfg.overtimeDamageRampPercent)) : 0;
+                    const int ad = a->second.def->stats.attackDamage[static_cast<std::size_t>(a->second.star - 1)];
+                    const int raw = static_cast<int>(std::min<long long>(std::numeric_limits<int>::max(), static_cast<long long>(ad) * (100 + ramp) / 100));
+                    const int expected = MitigatedDamage(raw, victim.def->stats.armor[static_cast<std::size_t>(victim.star - 1)], cfg.minDamage);
                     if (e.amount != expected) return fail("damage: wrong amount for a basic attack", e);
                 }
                 break;
@@ -1734,14 +1737,48 @@ static void TestCombatOvertime() {
         d.Add(Fighter(1, 1000000, 0, 10), 1, 0, {3, 3});
         d.Add(Fighter(2, 1500, 0, 1), 2, 1, {3, 4});
         d.Finish();
-        const FightResult r = CombatSimulator{defaults}.RunFight(d.specs, Seconds(125));
+        CombatConfig noSuddenDeath = defaults;
+        noSuddenDeath.overtimeDamageRampPercent = 0;
+        noSuddenDeath.overtimeHealingCutPercent = 0;
+        const FightResult r = CombatSimulator{noSuddenDeath}.RunFight(d.specs, Seconds(125));
         CHECK(r.winner == CombatWinner::Home && r.log.survivors[1] == 0 && r.log.survivors[0] == 1);
         CHECK(overtimeEvents(r.log).size() == 1 && r.log.endTick > Seconds(50) && r.log.endTick < Seconds(70));   // far past the old 35 s cap
-        CHECK(ValidateCombatLog(r.log, *d.db, defaults, Seconds(125)));
+        CHECK(ValidateCombatLog(r.log, *d.db, noSuddenDeath, Seconds(125)));
+        // SUDDEN DEATH (demo 1.7): with the default +10% per second of overtime the same fight ends much sooner (~44 s), every overtime hit bigger than 10
+        const FightResult s = CombatSimulator{defaults}.RunFight(d.specs, Seconds(125));
+        CHECK(defaults.overtimeDamageRampPercent == 10 && defaults.overtimeHealingCutPercent == 50);
+        CHECK(s.winner == CombatWinner::Home && s.log.endTick > Seconds(38) && s.log.endTick < Seconds(50));
+        int grown = 0, normal = 0;
+        for (const CombatEvent& e : s.log.events) {
+            if (e.type != CombatEventType::Damage || e.unit != 2) continue;
+            if (e.tick < Seconds(31)) normal += e.amount == 10 ? 1 : 0;
+            else grown += e.amount == 10 * (100 + (e.tick - Seconds(30)) / kTicksPerSecond * 10) / 100 ? 1 : 0;
+        }
+        CHECK(normal >= 29 && grown > 30);
+        CHECK(ValidateCombatLog(s.log, *d.db, defaults, Seconds(125)));
         CombatConfig noOvertime = defaults;
         noOvertime.overtimeSpeed = 1;   // without the speed-up the same fight needs 150 s: the safety limit decides it instead (Home is ahead)
         const FightResult slow = CombatSimulator{noOvertime}.RunFight(d.specs, Seconds(125));
         CHECK(slow.winner == CombatWinner::Home && slow.log.endTick == Seconds(120) && overtimeEvents(slow.log).empty() && slow.log.survivors[1] == 1);
+    }
+    {   // Sudden death halves heals and shields received in overtime (a Heal of 100 on a hurt ally shows 50 after 30 s)
+        ChampionDefinition healer = Fighter(3, 100000, 0, 1, 1000, 30);   // heals itself for 100 with every attack (one a second, 4 a second in overtime)
+        AbilityDefinition heal;
+        heal.id = 9901; heal.name = "Test heal"; heal.trigger = CastTrigger::EveryNthAttack; heal.attackCount = 1;
+        AbilityEffect e; e.target = TargetSpec::Self(); e.payload = HealEffect{FlatAmount(Same(100))};
+        heal.effects.push_back(e);
+        healer.ability = heal;
+        Duel d;
+        d.Add(healer, 3, 0, {3, 3});
+        d.Add(Fighter(4, 100000, 0, 300), 4, 1, {3, 4});   // keeps it hurt, so no heal is capped
+        d.Finish();
+        const FightResult r = CombatSimulator{defaults}.RunFight(d.specs, Seconds(45));
+        int early = 0, late = 0;
+        for (const CombatEvent& ev : r.log.events) {
+            if (ev.type != CombatEventType::Heal || ev.unit != 3) continue;
+            if (ev.tick < Seconds(30)) early += ev.amount == 100 ? 1 : 0; else late += ev.amount == 50 ? 1 : 0;
+        }
+        CHECK(early >= 4 && late >= 2);
     }
     {   // Both teams wiped out on the same tick is the only draw (nobody is left to win).
         Duel d;
@@ -7294,10 +7331,11 @@ static void TestEncounterDataAndSelection() {
     auto prod = w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), champions.get(), items.get(), &err);
     CHECK(champions && items && prod != nullptr);
     if (!prod) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(prod->Monsters().All().size() == 4 && prod->All().size() == 4 && prod->DefaultDrops().size() == 4);   // gold, champion, any item, Item Remover
-    // 1-1 / 1-2 / 1-3 have their own boards; X-7 of ANY stage is the boss (stage 0 = any); nothing is defined for the other rounds.
+    CHECK(prod->Monsters().All().size() == 4 && prod->All().size() == 8 && prod->DefaultDrops().size() == 4);   // gold, champion, any item, Item Remover
+    // 1-1 / 1-2 / 1-3 have their own boards; demo 1.7: X-7 has a boss board per stage (2..5) and stage 6+ falls to the any-stage one (id 8).
     CHECK(prod->Select(1, 1, 0)->id == 1 && prod->Select(1, 2, 0)->id == 2 && prod->Select(1, 3, 0)->id == 3);
-    CHECK(prod->Select(2, 7, 0)->id == 4 && prod->Select(3, 7, 99)->id == 4 && prod->Select(9, 7, 5)->id == 4);
+    CHECK(prod->Select(2, 7, 0)->id == 4 && prod->Select(3, 7, 99)->id == 5 && prod->Select(4, 7, 1)->id == 6 && prod->Select(5, 7, 1)->id == 7);
+    CHECK(prod->Select(6, 7, 0)->id == 8 && prod->Select(9, 7, 5)->id == 8);
     CHECK(prod->Select(2, 2, 0) == nullptr && prod->Select(1, 4, 0) == nullptr);
     // The boss has its own table (items, Item Removers and gold only); the others use the defaults.
     CHECK(prod->DropsFor(*prod->Find(4)).size() == 3 && &prod->DropsFor(*prod->Find(1)) == &prod->DefaultDrops());
@@ -7939,7 +7977,7 @@ static void TestFullMatchWithPveRounds() {
     struct Result {
         std::vector<std::uint64_t> hashes;
         int pveRounds = 0, pveFights = 0, pveWins = 0, pvpFights = 0, drops[4] = {}, logsChecked = 0;
-        int damageDuringPve = 0, streakOrHealthChangedInPve = 0, pveOnWrongRound = 0;
+        int damageDuringPve = 0, streakOrHealthChangedInPve = 0, pveOnWrongRound = 0, pveLossesHurt = 0;
         bool logsValid = true, integrity = true, finished = false;
         std::string firstProblem;
         PlayerId winner = kInvalidPlayerId;
@@ -7985,10 +8023,17 @@ static void TestFullMatchWithPveRounds() {
             r.integrity = r.integrity && live->match->VerifyPoolIntegrity() && live->match->VerifyRosterLayouts();
             if (phaseBefore != MatchPhase::Resolution && live->match->Phase() == MatchPhase::Resolution && live->match->IsPveRound()) {
                 ++r.pveRounds;
-                r.damageDuringPve += listener.damageNow ? 1 : 0;
+                // demo 1.7: a PvE LOSS from stage 2 on costs health (MatchConfig::pveLossDamageFromStage); a win, or any stage-1 round, never does,
+                // and streaks never change in PvE
+                const bool lossesHurt = live->match->CurrentStageRound().stage >= GameConfig{}.match.pveLossDamageFromStage;
+                std::set<PlayerId> losers;
+                for (const CombatOutcome& o : live->match->CurrentCombatOutcomes()) { if (o.winner != CombatWinner::Home) losers.insert(o.matchup.home); }
+                r.damageDuringPve += listener.damageNow && (!lossesHurt || losers.empty()) ? 1 : 0;
                 for (int s = 0; s < kMaxPlayers; ++s) {
                     const PlayerState& p = *live->match->Players().Get(static_cast<PlayerId>(s));
-                    if (p.Health() != healthBefore[s] || p.Streak() != streakBefore[s]) ++r.streakOrHealthChangedInPve;
+                    const bool mayLoseHealth = lossesHurt && losers.count(static_cast<PlayerId>(s)) > 0;
+                    if ((p.Health() != healthBefore[s] && !mayLoseHealth) || p.Streak() != streakBefore[s]) ++r.streakOrHealthChangedInPve;
+                    if (mayLoseHealth) r.pveLossesHurt += p.Health() < healthBefore[s] ? 1 : 0;
                 }
                 for (const CombatOutcome& o : live->match->CurrentCombatOutcomes()) {
                     ++r.drops[static_cast<int>(o.drop.type)];
@@ -8009,7 +8054,7 @@ static void TestFullMatchWithPveRounds() {
         if (!r->logsValid) std::printf("  first bad log: %s\n", r->firstProblem.c_str());
         CHECK(r->pveOnWrongRound == 0);                     // PvE exactly on 1-1, 1-2, 1-3, 2-7, 3-7 ...
         CHECK(r->pveRounds >= 5 && r->pveFights >= 3 * 8 && r->pvpFights > 20);
-        CHECK(r->damageDuringPve == 0 && r->streakOrHealthChangedInPve == 0);
+        CHECK(r->damageDuringPve == 0 && r->streakOrHealthChangedInPve == 0);   // (health only moves for a player who lost a stage-2+ PvE round)
         CHECK(r->pveWins > 0 && r->drops[static_cast<int>(PveDropType::Gold)] + r->drops[static_cast<int>(PveDropType::Champion)] + r->drops[static_cast<int>(PveDropType::Item)] == r->pveWins);
     }
     CHECK(a.hashes == b.hashes && a.winner == b.winner && a.rounds == b.rounds);
@@ -10597,6 +10642,26 @@ static void TestRosterPassV3Champions() {
     }
 }
 
+// Demo 1.7: ability power scales a champion's whole ability (the flat part too), like TFT's AP; hooks keep their flat numbers.
+static void TestAbilityPowerScalesFlatAbilities() {
+    auto prod = ProdDb();
+    CHECK(prod != nullptr);
+    if (!prod) return;
+    const CombatConfig cfg = NoManaConfig();
+    const auto pyraHit = [&](int apPercent) {   // PYRA: a flat 120 to the target (and the unit behind it)
+        Duel d;
+        ChampionDefinition pyra = Primed(*prod, 9014);
+        if (apPercent != 0) pyra = WithPassive(pyra, 9902, {PermanentStatus(StatusType::AbilityPower, apPercent)});
+        d.Add(pyra, 1, 0, {3, 3});
+        d.Add(Dummy(10, 100000), 10, 1, {3, 4});
+        const FightResult r = RunDuel(d, 10, cfg);
+        return DamageAt(r, 0)[10];
+    };
+    CHECK(pyraHit(0) == 120);
+    CHECK(pyraHit(50) == 180);    // +50% ability power: 120 -> 180
+    CHECK(pyraHit(-50) == 60);
+}
+
 static void TestNewChampionAbilitiesPart2() {
     auto prod = ProdDb();
     CHECK(prod != nullptr);
@@ -12073,17 +12138,20 @@ static void TestTraitV2Classes() {
         const int ticks = Seconds(40);
         std::vector<FightUnitSpec> specs = {v.Unit(1, 9040, 0, 3, 2), v.Unit(2, 9003, 0, 4, 2), v.Unit(900, 9101, 1, 3, 3)};
         specs[2] = v.Unit(900, 9999, 1, 3, 3);   // a practice dummy the whole fight
+        const int keepRamp = v.cfg.overtimeDamageRampPercent;
+        v.cfg.overtimeDamageRampPercent = 0;   // (the 40 s fight runs into overtime: sudden death would change the exact amounts counted below)
         const FightResult r = v.Run(specs, ticks);
+        v.cfg.overtimeDamageRampPercent = keepRamp;
         const auto gun = TraitsOf(r, 16, 0);
         CHECK(gun.size() == 1 && gun[0].amount == 2 && gun[0].subtype == 1);
         for (UnitId u : {UnitId{1}, UnitId{2}}) {
             const auto ad = StatusOn(r, u, StatusType::AttackDamage);
-            CHECK(!ad.empty() && ad[0].amount == 22 && ad[0].tick == 0);
+            CHECK(!ad.empty() && ad[0].amount == 28 && ad[0].tick == 0);   // (demo 1.7 balance: 22 -> 28)
         }
         int quickDraws = 0, rockets = 0;
         for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 900)) {
-            if ((e.flags & kFlagTriggered) != 0 && e.amount == 100) ++quickDraws;
-            if (e.other == 2 && (e.flags & kFlagTriggered) != 0 && e.amount == 58) ++rockets;
+            if ((e.flags & kFlagTriggered) != 0 && e.amount == 160) ++quickDraws;   // (demo 1.7 balance: 100 -> 160)
+            if (e.other == 2 && (e.flags & kFlagTriggered) != 0 && e.amount == 64) ++rockets;   // (demo 1.7 balance: 58 -> 64)
         }
         const int rivetAttacks = static_cast<int>(Events(r.log, CombatEventType::Attack, 1).size());
         const int cylaAttacks = static_cast<int>(Events(r.log, CombatEventType::Attack, 2).size());
@@ -12093,7 +12161,7 @@ static void TestTraitV2Classes() {
         CHECK(fishbones.size() == 2 && fishbones[1].amount == -100);
         std::printf("  Rivet %d + Cyla %d attacks: %d quick draws, %d Fishbones rockets\n", rivetAttacks, cylaAttacks, quickDraws, rockets);
     }
-    {   // Duelist (Bit + Briar): +4% Attack Speed per attack, 12 times at most. Bastion (Moss + Ignis): 20 flat resists on holders, 10 on everyone.
+    {   // Duelist (Bit + Briar): +6% Attack Speed per attack, 12 times at most. Bastion (Moss + Ignis): 40 flat resists on holders, 10 on everyone (demo 1.7 balance).
         std::vector<FightUnitSpec> specs = {v.Unit(1, 9019, 0, 3, 3), v.Unit(2, 9048, 0, 4, 3), v.Unit(3, 9046, 0, 2, 3), v.Unit(4, 9013, 0, 5, 3),
                                             v.Unit(5, 9032, 0, 1, 1)};   // Tide: no Bastion, no Duelist
         specs.push_back(FightUnitSpec{900, v.db->Find(9999), 1, 1, BoardToArena(3, 3, ArenaSide::Away), {}});
@@ -12101,17 +12169,17 @@ static void TestTraitV2Classes() {
         for (UnitId u : {UnitId{1}, UnitId{2}}) {
             const auto as = StatusOn(r, u, StatusType::AttackSpeed);
             CHECK(as.size() == 12);
-            for (const CombatEvent& e : as) CHECK(e.amount == 4);
+            for (const CombatEvent& e : as) CHECK(e.amount == 6);
         }
         const auto armor = [&](UnitId u) { int sum = 0; for (const CombatEvent& e : StatusOn(r, u, StatusType::BonusArmor)) if (e.tick == 0) sum += e.amount; return sum; };
-        CHECK(armor(3) == 30 && armor(4) == 30 && armor(5) == 10 && armor(1) == 10);
+        CHECK(armor(3) == 50 && armor(4) == 50 && armor(5) == 10 && armor(1) == 10);
     }
 }
 
 static void TestTraitV2HeliosRally() {
     V2 v;
     if (!v.ok) return;
-    // 7 Helios (Ignis, Pyra, Solis, Sunna, Flare, Kael, Alesk) against 3 heavy hitters: Rally at 75 / 50 / 25%, each smiting every enemy for 15%.
+    // 7 Helios (Ignis, Pyra, Solis, Sunna, Flare, Kael, Alesk) against 3 heavy hitters: Rally at 75 / 50 / 25%, each smiting every enemy for 5%.
     std::vector<FightUnitSpec> specs;
     const ChampionId helios[7] = {9013, 9014, 9020, 9033, 9026, 9034, 9001};
     for (int i = 0; i < 7; ++i) specs.push_back(v.Unit(static_cast<UnitId>(1 + i), helios[i], 0, i, i < 4 ? 3 : 2));
@@ -12129,9 +12197,9 @@ static void TestTraitV2HeliosRally() {
         rallies = std::max(rallies, static_cast<int>(mc.size()));
     }
     CHECK(rallies >= 1);
-    // One smite per rally for the whole team: 15% of each brute's max HP (60000 -> 9000), true damage.
+    // One smite per rally for the whole team: 5% of each brute's max HP (60000 -> 3000), true damage (demo 1.7 balance: was 15%).
     int smites = 0;
-    for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 100)) smites += (e.flags & kFlagTriggered) != 0 && e.amount == 9000 ? 1 : 0;
+    for (const CombatEvent& e : Events(r.log, CombatEventType::Damage, 100)) smites += (e.flags & kFlagTriggered) != 0 && e.amount == 3000 ? 1 : 0;
     CHECK(smites >= 1 && smites <= 3);
     // The first rally comes the tick the team drops below 75% of its total max HP.
     std::printf("  7 Helios vs 3 brutes: %d rallies, %d smites on the first brute\n", rallies, smites);
@@ -12692,6 +12760,7 @@ int main(int argc, char** argv) {
         {"Roster: champions 1-2 cost abilities (30-champion doc)", TestNewChampionAbilitiesPart1},
         {"Roster: the rest of the abilities", TestNewChampionAbilitiesPart2},
         {"Roster pass v3: Pulsar, Rampart, Skarn, Maren, Vector", TestRosterPassV3Champions},
+        {"Ability power scales flat abilities (demo 1.7)", TestAbilityPowerScalesFlatAbilities},
         {"Synergies: Helios, Phaisa, Hexagon, Selini, Najmi", TestHeliosPhaisaHexagonSeliniNajmi},
         {"Synergy: Coregons 3 / 6 / 8 from the design doc", TestCoregonsFromTheDesignDoc},
         {"Zone statuses: ExecuteBelow, HpPerSecond", TestZoneStatusesAndExecute},

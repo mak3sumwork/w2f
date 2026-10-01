@@ -472,6 +472,7 @@ private:
     // already running are shortened to match, so the change is felt at once rather than up to a whole attack interval later.
     void EnterOvertime(int tick) {
         overtimeFactor_ = config_.overtimeSpeed;
+        overtimeStartTick_ = tick;
         for (FightUnit& u : units_) {
             u.nextAttackTick = tick + std::max(0, u.nextAttackTick - tick) / overtimeFactor_;
             u.nextMoveTick = tick + std::max(0, u.nextMoveTick - tick) / overtimeFactor_;
@@ -1235,10 +1236,19 @@ private:
     }
 
     // value = flat[star] + sum(source * percent[star] / 100), evaluated for one victim.
-    long long Evaluate(const Amount& amount, const CastRecord& cast, int victim, int tick) const {
+    // Demo 1.7 (FEEDBACK V7): ability power scales a champion's WHOLE ability, like TFT's AP -- not only the terms that read SelfAbilityDamage. A cast of the
+    // champion's own ability multiplies the flat part of its damage, heals and shields by the caster's ability power (abilityPower + AbilityPower statuses:
+    // Sorcerer, Continuum Cogs ...). Hooks (items, traits, passives) keep their flat numbers.
+    bool OwnAbility(const CastRecord& cast) const {
+        if (cast.fromHook || cast.ability == nullptr || cast.caster < 0) return false;
+        const FightUnit& caster = units_[static_cast<std::size_t>(cast.caster)];
+        return caster.champion != nullptr && cast.ability == &caster.champion->ability;
+    }
+    long long Evaluate(const Amount& amount, const CastRecord& cast, int victim, int tick, bool scaleFlatByPower = false) const {
         const FightUnit& caster = units_[static_cast<std::size_t>(cast.caster)];
         const auto si = static_cast<std::size_t>(caster.star - 1);
         long long value = amount.flat[si];
+        if (scaleFlatByPower) value = value * std::max(0, caster.champion->stats.abilityPower + StatusPercent(caster, StatusType::AbilityPower)) / 100;
         for (const ScalingTerm& term : amount.terms) {
             long long source = 0;
             switch (term.source) {
@@ -1296,7 +1306,7 @@ private:
 
         if (const auto* damage = std::get_if<DamageEffect>(&effect.payload)) {
             for (int t : targets_) {
-                const long long scaled = Evaluate(damage->amount, cast, t, tick) * damage->multiplierPercent / 100;
+                const long long scaled = Evaluate(damage->amount, cast, t, tick, OwnAbility(cast)) * damage->multiplierPercent / 100;
                 if (scaled <= 0) continue;
                 int raw = Clamp32(scaled);
                 std::uint8_t flags = kFlagAbility;
@@ -1349,7 +1359,7 @@ private:
             }
         } else if (const auto* shield = std::get_if<ShieldEffect>(&effect.payload)) {
             for (int t : targets_) {
-                int amount = Clamp32(Evaluate(shield->amount, cast, t, tick));
+                int amount = Clamp32(Evaluate(shield->amount, cast, t, tick, OwnAbility(cast)));
                 const int duration = shield->permanent ? 0 : Clamp32(Evaluate(shield->duration, cast, t, tick));
                 if (amount <= 0 || (!shield->permanent && duration <= 0)) continue;
                 FightUnit& holder = units_[static_cast<std::size_t>(t)];
@@ -1361,6 +1371,7 @@ private:
                 }
                 const int amp = StatusPercent(holder, StatusType::HealingAmp);   // Tuned Oscillator: shields received are stronger too
                 if (amp != 0) amount = ApplyPercent(amount, amp);
+                if (SuddenDeathHealing() != 0) amount = ApplyPercent(amount, SuddenDeathHealing());
                 if (amount <= 0) continue;
                 holder.shields.push_back(ShieldInst{amount, shield->permanent ? std::numeric_limits<int>::max() : tick + duration,
                                                     shield->damageReductionPercent[si], cast.ability != nullptr ? cast.ability->id : kNoAbility, 0});
@@ -1419,10 +1430,10 @@ private:
         } else if (const auto* displace = std::get_if<DisplaceEffect>(&effect.payload)) {
             for (int t : targets_) DisplaceUnit(cast.caster, t, *displace, tick);
         } else if (const auto* heal = std::get_if<HealEffect>(&effect.payload)) {
-            for (int t : targets_) HealUnit(cast.caster, t, Clamp32(Evaluate(heal->amount, cast, t, tick)), tick);
+            for (int t : targets_) HealUnit(cast.caster, t, Clamp32(Evaluate(heal->amount, cast, t, tick, OwnAbility(cast))), tick);
         } else if (const auto* dot = std::get_if<DotEffect>(&effect.payload)) {
             for (int t : targets_) {
-                long long amount = Evaluate(dot->amount, cast, t, tick);
+                long long amount = Evaluate(dot->amount, cast, t, tick, OwnAbility(cast));   // (demo 1.7: ability power scales it too)
                 const int duration = Clamp32(Evaluate(dot->duration, cast, t, tick));
                 if (amount <= 0 || duration <= 0) continue;
                 const int hits = std::max(1, duration / dot->intervalTicks);
@@ -1535,7 +1546,8 @@ private:
             // A spell shield swallows the next enemy ABILITY hit whole (not damage over time), and is used up.
             if ((h.flags & kFlagAbility) != 0 && (h.flags & kFlagDot) == 0 && attacker.team != victim.team && ConsumeSpellShield(victim, tick)) continue;
             // Damage amp multiplies what the attacker deals, before armor / resist.
-            const int raw = ApplyPercent(h.raw, StatusPercent(attacker, StatusType::DamageAmp));
+            int raw = ApplyPercent(h.raw, StatusPercent(attacker, StatusType::DamageAmp));
+            if (const int ramp = SuddenDeathDamage(tick); ramp > 0) raw = ApplyPercent(raw, ramp);   // sudden death: hits grow every second of overtime
 
             int damage = raw;
             const int penetration = h.effect != nullptr ? std::clamp(h.effect->armorPenPercent, 0, 100) : 0;
@@ -1981,6 +1993,7 @@ private:
         if (!target.alive || amount <= 0) return;
         const int amp = StatusPercent(target, StatusType::HealingAmp);   // Tuned Oscillator
         if (amp != 0) amount = ApplyPercent(amount, amp);
+        if (SuddenDeathHealing() != 0) amount = ApplyPercent(amount, SuddenDeathHealing());   // sudden death: heals are cut in overtime
         if (amount <= 0) return;
         const int wound = std::clamp(WoundPercent(target), 0, 100);
         const int effective = Clamp32(static_cast<long long>(amount) * (100 - wound) / 100);  // wound 30% -> x0.7
@@ -2494,6 +2507,12 @@ private:
     const ChampionDatabase* summons2_;
     int maxTicks_;
     int overtimeFactor_ = 1;   // 1 in regulation, CombatConfig::overtimeSpeed in overtime
+    int overtimeStartTick_ = -1;   // sudden death: the tick overtime began (-1 = regulation)
+    // Sudden death (CombatConfig::overtimeHealingCutPercent / overtimeDamageRampPercent): the change to heals and shields received, and to every hit, at `tick`.
+    int SuddenDeathHealing() const { return overtimeStartTick_ >= 0 ? -std::clamp(config_.overtimeHealingCutPercent, 0, 100) : 0; }
+    int SuddenDeathDamage(int tick) const {
+        return overtimeStartTick_ >= 0 && tick > overtimeStartTick_ ? std::min(100000, (tick - overtimeStartTick_) / kTicksPerSecond * std::max(0, config_.overtimeDamageRampPercent)) : 0;
+    }
     Rng rng_;
     HexGrid grid_;
     HexPathfinder pathfinder_;

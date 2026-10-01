@@ -3,7 +3,8 @@
 //
 // PLACEHOLDERS: every number and every board here is for the lead designer to replace. What the ENGINE guarantees:
 //  * In a PvE round (1-1, 1-2, 1-3 and X-7 of every later stage, see MatchConfig) each player fights the encounter chosen for
-//    that round on their own copy of the board. Nobody takes damage and streaks do not change.
+//    that round on their own copy of the board. Streaks do not change. Demo 1.7 (FEEDBACK V7): from stage 2 on, LOSING a PvE round costs health
+//    like losing to a player (MatchConfig::pveLossDamageFromStage); stage 1 stays free.
 //  * Winning drops ONE thing, picked from the drop table by weight: gold, a champion from the shared pool, or an item.
 //  * On top of that an encounter's "guaranteedDrops" are always paid, win or lose: every line "count" times (weights ignored).
 //  * Monsters are ordinary champion definitions in their own list: never sold in the shop, never in the pool. Ids must not
@@ -15,19 +16,31 @@
   "version": 1,
 
   "monsters": [
+    // Demo 1.7: every monster has an ability now (the stage-2+ boss rounds field them at 2 and 3 stars).
     { "id": 10001, "name": "Gloop", "role": "Tank",
-      "stats": { "hp": [220, 400, 720], "armor": 10, "magicResist": 10, "attackDamage": [12, 20, 36], "attackSpeed": 0.6, "range": 1 } },
+      "stats": { "hp": [220, 1000, 2400], "armor": 10, "magicResist": 10, "attackDamage": [12, 50, 110], "attackSpeed": 0.6, "range": 1, "maxMana": 60 },
+      // Regrow: heals 20% of its max HP.
+      "ability": { "id": 202, "name": "Regrow", "trigger": "Mana", "castLockTicks": 10,
+        "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "SelfMaxHp", "percent": 20 } ] } } ] } },
     { "id": 10002, "name": "Spitter",
-      "stats": { "hp": [150, 270, 486], "armor": 5, "magicResist": 5, "attackDamage": [14, 25, 45], "attackSpeed": 0.7, "range": 3 } },
+      "stats": { "hp": [150, 650, 1500], "armor": 5, "magicResist": 5, "attackDamage": [14, 60, 140], "attackSpeed": 0.7, "range": 3, "maxMana": 50 },
+      // Acid Glob: magic damage to its target and -20% Armor for 4 s.
+      "ability": { "id": 203, "name": "Acid Glob", "trigger": "Mana", "castLockTicks": 12,
+        "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [70, 220, 500] },
+                     { "type": "Status", "target": "CurrentTarget", "status": "Armor", "percent": -20, "durationSeconds": 4 } ] } },
     { "id": 10003, "name": "Boulder", "role": "Tank",
-      "stats": { "hp": [500, 900, 1620], "armor": 30, "magicResist": 20, "attackDamage": [20, 36, 65], "attackSpeed": 0.5, "range": 1 } },
+      "stats": { "hp": [500, 1800, 4000], "armor": 30, "magicResist": 20, "attackDamage": [20, 70, 160], "attackSpeed": 0.5, "range": 1, "maxMana": 80 },
+      // Rockfall: physical damage and a 1.5 s stun on its target.
+      "ability": { "id": 204, "name": "Rockfall", "trigger": "Mana", "castLockTicks": 15,
+        "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": [60, 200, 450] },
+                     { "type": "Status", "target": "CurrentTarget", "status": "Stun", "durationSeconds": 1.5 } ] } },
     // The X-7 boss: crushes everything around its target every ~10 attacks' worth of mana.
     { "id": 10004, "name": "Elder Wraith", "role": "Tank",
-      "stats": { "hp": [1500, 2700, 4860], "armor": 40, "magicResist": 40, "attackDamage": [45, 80, 145], "attackSpeed": 0.6, "range": 1, "maxMana": 100 },
+      "stats": { "hp": [1500, 4500, 10000], "armor": 40, "magicResist": 40, "attackDamage": [45, 150, 320], "attackSpeed": 0.6, "range": 1, "maxMana": 100 },
       "ability": {
         "id": 201, "name": "Crush", "trigger": "Mana", "castLockTicks": 20,
         "effects": [ { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": true },
-                       "damageType": "Physical", "amount": [90, 160, 290] } ]
+                       "damageType": "Physical", "amount": [90, 300, 700] } ]
       } }
   ],
 
@@ -50,11 +63,27 @@
     { "id": 3, "name": "Boulder Pass", "stage": 1, "round": 3,
       "units": [ { "monster": 10003, "x": 3, "y": 3 }, { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ],
       "guaranteedDrops": [ { "type": "Item", "items": [1, 2, 3, 4, 5, 6, 7, 8], "count": 3 } ] },
-    // X-7 of every stage from 2 on (stage 0 = any). The rewards here are better: items only.
-    { "id": 4, "name": "The Elder Wraith", "round": 7,
-      "units": [ { "monster": 10004, "x": 3, "y": 3 }, { "monster": 10003, "x": 1, "y": 3 }, { "monster": 10003, "x": 5, "y": 3 },
-                 { "monster": 10002, "x": 2, "y": 2 }, { "monster": 10002, "x": 4, "y": 2 } ],
+    // X-7 (demo 1.7): a boss board per stage that grows with it (they used to meet stage 6 with the stage-2 board, all 1-star). The rewards: items.
+    { "id": 4, "name": "The Spitter Den", "stage": 2, "round": 7,
+      "units": [ { "monster": 10003, "x": 3, "y": 3, "star": 2 }, { "monster": 10001, "x": 1, "y": 3, "star": 2 }, { "monster": 10001, "x": 5, "y": 3, "star": 1 }, { "monster": 10002, "x": 2, "y": 1, "star": 1 }, { "monster": 10002, "x": 4, "y": 1, "star": 1 } ],
       "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ],
-      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] }   // two items (components or finished) from every boss
+      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] },   // two items (components or finished) from every boss
+    { "id": 5, "name": "The Elder Wraith", "stage": 3, "round": 7,
+      "units": [ { "monster": 10004, "x": 3, "y": 3, "star": 1 }, { "monster": 10003, "x": 1, "y": 3, "star": 2 }, { "monster": 10003, "x": 5, "y": 3, "star": 2 }, { "monster": 10002, "x": 2, "y": 1, "star": 2 }, { "monster": 10002, "x": 4, "y": 1, "star": 2 } ],
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ],
+      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] },
+    { "id": 6, "name": "The Wraith Court", "stage": 4, "round": 7,
+      "units": [ { "monster": 10004, "x": 3, "y": 3, "star": 2 }, { "monster": 10003, "x": 1, "y": 3, "star": 2 }, { "monster": 10003, "x": 5, "y": 3, "star": 2 }, { "monster": 10002, "x": 1, "y": 1, "star": 2 }, { "monster": 10002, "x": 3, "y": 1, "star": 2 }, { "monster": 10002, "x": 5, "y": 1, "star": 2 }, { "monster": 10001, "x": 3, "y": 2, "star": 2 } ],
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ],
+      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] },
+    { "id": 7, "name": "The Wraith King", "stage": 5, "round": 7,
+      "units": [ { "monster": 10004, "x": 3, "y": 3, "star": 2 }, { "monster": 10003, "x": 1, "y": 3, "star": 3 }, { "monster": 10003, "x": 5, "y": 3, "star": 2 }, { "monster": 10002, "x": 1, "y": 1, "star": 3 }, { "monster": 10002, "x": 3, "y": 1, "star": 2 }, { "monster": 10002, "x": 5, "y": 1, "star": 2 }, { "monster": 10001, "x": 3, "y": 2, "star": 3 } ],
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ],
+      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] },
+    // stage 6 and later (stage 0 = any stage not listed above)
+    { "id": 8, "name": "The Endless Wraiths", "round": 7,
+      "units": [ { "monster": 10004, "x": 2, "y": 3, "star": 2 }, { "monster": 10004, "x": 4, "y": 3, "star": 2 }, { "monster": 10003, "x": 0, "y": 3, "star": 3 }, { "monster": 10003, "x": 6, "y": 3, "star": 3 }, { "monster": 10002, "x": 1, "y": 1, "star": 3 }, { "monster": 10002, "x": 3, "y": 1, "star": 2 }, { "monster": 10002, "x": 5, "y": 1, "star": 2 }, { "monster": 10001, "x": 3, "y": 2, "star": 3 } ],
+      "drops": [ { "type": "Item", "weight": 70 }, { "type": "Item", "weight": 15, "items": [50] }, { "type": "Gold", "weight": 30, "minGold": 4, "maxGold": 6 } ],
+      "guaranteedDrops": [ { "type": "Item", "count": 2 } ] }
   ]
 }

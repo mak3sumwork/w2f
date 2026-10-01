@@ -231,8 +231,8 @@ void MatchManager::ApplyCombatOutcomes() {
         outcome.drop = PveDrop{};
 
         if (outcome.matchup.awayIsMonsters) {
-            // PvE: the encounter's guaranteed loot is paid win or lose, a win adds one random drop; nothing else changes -- no damage,
-            // and streaks are left alone.
+            // PvE: the encounter's guaranteed loot is paid win or lose, a win adds one random drop; from MatchConfig::pveLossDamageFromStage a loss
+            // costs health (demo 1.7); streaks are left alone.
             outcome.loot.clear();
             GrantGuaranteedDrops(*home, outcome.matchup.encounter, dropRng, outcome.loot);
             if (outcome.winner == CombatWinner::Home) {
@@ -240,6 +240,13 @@ void MatchManager::ApplyCombatOutcomes() {
                 if (outcome.drop.type != PveDropType::None) {
                     for (IMatchListener* listener : listeners_) listener->OnPveDrop(outcome.matchup.home, outcome.drop);
                 }
+            } else if (outcome.winner == CombatWinner::Away && config_.match.pveLossDamageFromStage > 0 &&
+                       config_.match.StageOf(round_).stage >= config_.match.pveLossDamageFromStage) {
+                // demo 1.7: the monsters won -- that hurts like a lost fight (streaks are still left alone)
+                const int damage = config_.PlayerDamage(round_, outcome.winnerSurvivors);
+                home->ApplyDamage(damage);
+                outcome.damageToLoser = damage;
+                for (IMatchListener* listener : listeners_) listener->OnPlayerDamaged(home->Id(), damage, home->Health());
             }
             GrantTraitRewards(*home, outcome, true, false);
             continue;

@@ -97,3 +97,61 @@ full report in `balance/roster-v3.txt`):
 
 Fights: mean 20.1 s, overtime 12.7% (8.7% before trait system v2 + v3), 0.6% reach the safety limit; shield units (Moss, Ignis, Sunna, Fern, Rampart,
 Aureon) are 2-3x as common in long fights. Left for the full balance pass: Faire, the shield stall, Vector / Aureon / Yggra / Aphel near 60%.
+
+## Demo 1.7: the full balance pass (FEEDBACK V7, 2026-09-28..10-01)
+
+Two yardsticks now. `make balance` (bot matches, above) mixes a champion's power with how the bots play it, and the bots almost never build a trait past its
+first breakpoints (out of ~8,000 final boards Helios (5) came up 39 times, Coregons (6) never). So there is a second tool:
+
+**`make ladder ARGS="--fights 1000 --mode both"`** (`tools/trait_ladder.cpp`, `build/w2f_ladder`, ~1 min): fights between two boards of **exactly the same gold, cost by cost**.
+* `traits`: for every trait tier, board A holds that many different trait champions (a prismatic tier gets one emblem holder; a tier with too few champions gets
+  emblems on fillers), filled to 8 units (or the tier's count) with random others; board B is one random champion of the same cost for each of A's units. A's win
+  rate is the tier's worth: 50% = nothing.
+* `champions`: the champion + 7 random others against the same costs at random.
+* 1- to 3-costs are 2-star, 4- and 5-costs 1-star; tanks stand in front. `--items` adds a random finished item per unit. **Nature's plants are not fielded** (the
+  match puts them on the board, not the duel), so read Nature from `make balance`. At 400 fights a rate moves about +-5 points between seeds; use 1,000.
+
+### Rules changed
+* **Sudden death** (`CombatConfig::overtimeHealingCutPercent` 50, `overtimeDamageRampPercent` 10): in overtime heals and shields received are halved and every
+  hit grows +10% per whole second of overtime. Shield / heal teams used to stall to the 120 s safety limit.
+* **Ability power scales the whole ability** (TFT's AP): a champion's own cast multiplies the flat part of its damage, heals, shields and DoTs by its ability power
+  (base + AbilityPower statuses: Sorcerer, Selini, Continuum Cogs ...). Item / trait / passive hooks keep their flat numbers. (`TestAbilityPowerScalesFlatAbilities`)
+* **PvE has teeth**: from stage 2 a LOST monster round costs health like a lost fight (`MatchConfig::pveLossDamageFromStage` 2; stage 1 stays free). Every monster
+  has an ability (Regrow, Acid Glob, Rockfall ...), each X-7 round has its own boss board per stage (2..5, plus one for stage 6+) at 2-3 stars, bosses always drop 2 items.
+* Helios and Nature top tiers **11 -> 10** (a board holds 10 units: 11 could never switch on).
+
+### Traits (equal-gold win rate of the trait board, ladder, 1,000 fights)
+| trait | changed | ladder after |
+|---|---|---|
+| Helios | (5) 35 -> 28 resists; Solar Smite 15% -> 5% max HP per Rally | 57 / 69 / 89 / 100% |
+| Selini | Enlightenment 5/8/12% + 1.5/1.8/2.5 per level; Prosperity 6/14/28% + 2 per gold | 60 / 72 / 86% and 55 / 65 / 85% |
+| Coregons | (3) 3 Souls at 30% HP, heal 18%, echo 6/8/12%; (6) mana tax 15 -> 5, regen 2 -> 0.5/s, **no HP drain / execute**; (8) drain 2%/s, execute 6% | 63 / 89 / 100% (was 51 / 95 / 100) |
+| Assassin | crit damage / chance 30/25 and 50/40 (was 20/15, 30/25) | |
+| Bastion | every ally 10 / 15 / 25 resists | |
+| Bruiser | every ally +100 / 150 / 200 HP, holders 20 / 45 / 70% | 56 / 61 / 78% |
+| Sorcerer | holders 20 / 40 / 60 / 90% AP | |
+| Marksman | (2) 20% AS, 12% amp | |
+| Mystic | 25 / 60 MR, 2 / 4 mana per second | |
+| Duelist | + 8 / 15 / 20% damage reduction; 6 / 9 / 12% AS per attack | 47 / 61 / 86% |
+| Gunslinger | 28 / 38% AD, Quick Draw 160 / 200 | |
+
+A trait's natural top tier (every champion of it, no emblem) now wins **84-89%** of equal-gold fights (Hexagon 6 84%, Selini 7 85-86%, Duelist 6 86%, Helios 7 89%,
+Coregons 6 89%); emblem-only tiers (Helios 10, Phaisa 9, Coregons 8) ~100%. That is on purpose: a full vertical should beat a random board of the same gold, as in TFT.
+Full report: `balance/ladder-1.7.txt`.
+
+### Champions
+Scaled in rounds (each marked `// balance 1.7:` above the champion in `data/champions.json`; only champions weak or strong in BOTH tools were touched).
+Final round of this session: Rot DoT x1.32 and HP x1.21, Pyra x1.15 / AD x1.1, Null HP x1.12, Bit x1.1 / HP x1.1, Kryx HP x1.19 / AD x1.08 / Frenzy 60/90/170% AS,
+Mortis bonus hits x1.32, Alesk HP x1.19 / shield 20/31/50% max HP, Astra HP x1.15 / tether 30/40/60% AS, Faire AP 42/64/83, Cyla HP x1.08 / rockets 64/97/175,
+Grave's Skeleton 450/750/1150 HP and 45 AD (the earlier "abil x1.2" notes on Grave never touched the summon: they did nothing); Ignis x0.9 / HP x0.95,
+Sunna heal x0.79, Aphel x0.87 / AD x0.95, Baira x0.93, Oakheart HP x0.96.
+
+### Where it stands (`make balance ARGS="--matches 300 --seed 1000"`, report `balance/demo-1.7.txt`; roster v3 before it in brackets)
+* Fights: mean 19.2 s (20.1), 99th percentile 36.0 s (46.3), overtime 12.0% (12.7%), **1 fight in 26,664 hit the safety limit (154)**.
+* Champions: every one of the 53 between **45.7% (Astra) and 61.4% (Yggra)** (40-64% before); only 5-costs are above 58% (Yggra, Vector, Umbra, Nihila: 5-costs
+  run high as a group, 56.7%). Ladder: every champion 40-57% at equal gold; the lowest there (Bit 40%, Faire 41%, Solis 42%, Talon 42%) win 50-53% in bot games, so they were left alone.
+* Synergies in bot games: Selini (3) 58.5%, Nature (3) 58.0% (free plants), Protector (2) 59.4%, Duelist (4) 61.1%, Najmi (4) 60.6%.
+* PvE: the bots still win 97-100% of monster rounds (99.6% at 3-7, 98.8% at 4-7, 98.1% at 5-7). A loss now costs health, so the rounds were made harder but not
+  turned into a coin flip; how hard they should be is the designer's call.
+* The one 120 s fight was not looked into (sudden death should end any fight where both sides can still hit each other; plants and untargetable Souls are the
+  likely suspects). The safety limit decides it as before (more survivors, then HP).

@@ -7,6 +7,8 @@
 //   * per champion: how often it was fielded, the win rate of the fights it was fielded in, its average star level and the damage it dealt per fight;
 //   * per synergy tier: how often a team had it active and how those teams did;
 //   * win rate by champion cost and by role, the win share of the home side (a bias check), and the length of a match in rounds.
+// Demo 1.7 adds what TFT balances by: the AVERAGE PLACEMENT of every champion, trait tier and item on the players' final boards (the board each player last
+// fielded before they were knocked out / won), the PvE rounds (how often the bots beat each monster round), and each item's fight win rate.
 // It only READS what the engine logs: nothing here can change a match. Bots are the players (all 8 seats), so the numbers describe how the bots
 // play the game, which is a good relative yardstick (which champion or synergy is far ahead or behind) and not a claim about human play.
 // Same seeds -> same report on every platform.
@@ -35,6 +37,8 @@ using namespace w2f;
 
 namespace {
 
+double Pct(long part, long whole) { return whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0; }
+
 struct Tally {
     long appearances = 0;
     long wins = 0;
@@ -43,7 +47,43 @@ struct Tally {
     double Rate() const { return appearances > 0 ? 100.0 * static_cast<double>(wins) / static_cast<double>(appearances) : 0.0; }
 };
 
+struct Placing {
+    long boards = 0, sum = 0, top4 = 0, firsts = 0;
+    double Avg() const { return boards > 0 ? static_cast<double>(sum) / static_cast<double>(boards) : 0.0; }
+    double Top4() const { return Pct(top4, boards); }
+    void Add(int placement) { ++boards; sum += placement; top4 += placement <= 4 ? 1 : 0; firsts += placement == 1 ? 1 : 0; }
+};
+
+struct FinalBoard {   // what a player last fielded
+    std::vector<std::pair<ChampionId, int>> units;   // champion, star
+    std::vector<ItemId> items;
+    std::vector<std::pair<TraitId, int>> tiers;
+};
+
 struct Collector : IMatchListener {
+    const MatchManager* match = nullptr;
+    std::map<PlayerId, FinalBoard> lastBoard;
+    std::map<ChampionId, Placing> placeChampion;
+    std::map<std::pair<ChampionId, int>, Placing> placeChampionStar;
+    std::map<std::pair<TraitId, int>, Placing> placeTrait;
+    std::map<ItemId, Placing> placeItem;
+    std::map<ItemId, Tally> itemFights;
+    std::map<int, Tally> pveByRound;              // round -> the bots' PvE fights and wins
+    std::map<int, long> pveUnitsLeft;             // round -> monsters' survivors summed over the rounds the bots lost
+
+    void Score(PlayerId player, int placement) {
+        const auto it = lastBoard.find(player);
+        if (it == lastBoard.end()) return;
+        std::map<ChampionId, int> best;
+        for (const auto& [champion, star] : it->second.units) best[champion] = std::max(best[champion], star);
+        for (const auto& [champion, star] : best) { placeChampion[champion].Add(placement); placeChampionStar[{champion, star}].Add(placement); }
+        std::map<ItemId, bool> seen;
+        for (ItemId item : it->second.items) { if (!seen[item]) { seen[item] = true; placeItem[item].Add(placement); } }
+        for (const auto& tier : it->second.tiers) placeTrait[tier].Add(placement);
+    }
+    void OnPlayerEliminated(PlayerId player, int placement) override { Score(player, placement); }
+    void OnMatchEnded(PlayerId winner) override { if (winner != kInvalidPlayerId) Score(winner, 1); lastBoard.clear(); }
+
     std::map<ChampionId, Tally> champions;
     std::map<std::pair<TraitId, int>, Tally> traitTiers;   // (trait, tier) -> teams that had at least that tier, and how they did
     std::map<int, Tally> byCost;
@@ -55,8 +95,30 @@ struct Collector : IMatchListener {
     long pvpFights = 0, overtimeFights = 0, over35s = 0, mutualWipes = 0, homeWins = 0, decided = 0, hardLimit = 0;
     const ChampionDatabase* db = nullptr;
 
-    void OnCombatSimulated(int, const CombatOutcome& outcome) override {
-        if (outcome.matchup.awayIsMonsters || outcome.log.events.empty()) return;
+    void RecordBoard(PlayerId seat, int team, const CombatLog& log) {
+        if (match == nullptr || seat == kInvalidPlayerId || seat >= match->Players().PlayerCount()) return;
+        FinalBoard b;
+        for (const UnitInstance& u : match->Players().Get(seat)->Roster().Units()) {
+            if (u.location != LocationType::Board || u.champion == nullptr || u.champion->plant) continue;
+            b.units.push_back({u.champion->id, u.starLevel});
+            for (ItemId item : u.items) { if (item != 0) b.items.push_back(item); }
+        }
+        for (const CombatEvent& e : log.events) { if (e.type == CombatEventType::TraitActivated && e.team == team) b.tiers.push_back({e.traitId, e.subtype}); }
+        lastBoard[seat] = b;
+    }
+
+    void OnCombatSimulated(int round, const CombatOutcome& outcome) override {
+        if (outcome.log.events.empty()) return;
+        RecordBoard(outcome.matchup.home, 0, outcome.log);
+        if (outcome.matchup.awayIsMonsters) {
+            Tally& t = pveByRound[round];
+            ++t.appearances;
+            const bool won = outcome.winner == CombatWinner::Home;
+            t.wins += won ? 1 : 0;
+            if (!won) pveUnitsLeft[round] += outcome.winnerSurvivors;
+            return;
+        }
+        if (!outcome.matchup.awayIsGhost) RecordBoard(outcome.matchup.away, 1, outcome.log);
         ++pvpFights;
         const CombatLog& log = outcome.log;
         fightTicks.push_back(log.endTick);
@@ -113,6 +175,13 @@ struct Collector : IMatchListener {
                 t->damage += damage[key];
             }
         }
+        for (int team = 0; team < 2; ++team) {   // items: every copy carried into a decided fight, by its side's result
+            const PlayerId seat = team == 0 ? outcome.matchup.home : outcome.matchup.away;
+            const auto board = lastBoard.find(seat);
+            if (board == lastBoard.end() || (team == 1 && outcome.matchup.awayIsGhost)) continue;
+            const bool won = (team == 0) == (outcome.winner == CombatWinner::Home);
+            for (ItemId item : board->second.items) { ++itemFights[item].appearances; itemFights[item].wins += won ? 1 : 0; }
+        }
         for (const auto& [key, tier] : tiers) {
             const bool won = (key.first == 0) == (outcome.winner == CombatWinner::Home);
             Tally& t = traitTiers[{key.second, tier}];   // (each tier counts the teams whose HIGHEST active tier it was)
@@ -121,8 +190,6 @@ struct Collector : IMatchListener {
         }
     }
 };
-
-double Pct(long part, long whole) { return whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0; }
 
 double Percentile(std::vector<int> v, double p) {
     if (v.empty()) return 0.0;
@@ -172,6 +239,7 @@ int main(int argc, char** argv) {
                                           encounters.get(), motherNature.get(), traits.get());
         if (!match) { std::fprintf(stderr, "Cannot start a match: %s\n", error.c_str()); return 2; }
         match->AddListener(&collector);
+        collector.match = match.get();
         std::vector<AIBotController> bots;
         for (int seat = 0; seat < kMaxPlayers; ++seat) bots.emplace_back(static_cast<PlayerId>(seat), seed, BotProfile{}, traits.get());
         match->Start();
@@ -242,6 +310,46 @@ int main(int argc, char** argv) {
         std::printf("  %-14s %d (%d)%*s %9ld %7.1f%% %s\n", trait->name.c_str(), key.second, trait->Breakpoints(0)[static_cast<std::size_t>(key.second - 1)].count, 5, "", t.appearances, t.Rate(),
                     outlier ? (t.Rate() > 50 ? " <- strong outlier" : " <- weak outlier") : "");
     }
+    // ---- demo 1.7: placements (TFT's yardstick: 4.5 is average, lower is better) ----
+    const auto placeFlag = [minFights](const Placing& p) { return p.boards >= minFights / 3 && (p.Avg() < 4.0 || p.Avg() > 5.0) ? (p.Avg() < 4.5 ? "  <- strong" : "  <- weak") : ""; };
+    struct PRow { std::string name; int cost; const Placing* p; };
+    std::vector<PRow> prow;
+    for (const auto& [id, p] : collector.placeChampion) { const ChampionDefinition* d = champions->Find(id); if (d != nullptr) prow.push_back({d->name, d->cost, &p}); }
+    std::sort(prow.begin(), prow.end(), [](const PRow& a, const PRow& b) { return a.p->Avg() < b.p->Avg(); });
+    std::printf("\n-- champions on FINAL boards, best average placement first (4.5 = average; each board counts a champion once, at its best star) --\n");
+    std::printf("  %-14s cost %7s %7s %7s %6s %7s %7s\n", "champion", "boards", "avg", "top4 %", "1st %", "2-star", "3-star");
+    for (const PRow& r : prow) {
+        const auto s2 = collector.placeChampionStar.find({0, 0});
+        (void)s2;
+        const Placing* two = nullptr; const Placing* three = nullptr;
+        for (const auto& [key, p] : collector.placeChampionStar) { if (champions->Find(key.first) != nullptr && champions->Find(key.first)->name == r.name) { if (key.second == 2) two = &p; if (key.second == 3) three = &p; } }
+        std::printf("  %-14s %4d %7ld %7.2f %6.1f%% %5.1f%% %7ld %7ld%s\n", r.name.c_str(), r.cost, r.p->boards, r.p->Avg(), r.p->Top4(), Pct(r.p->firsts, r.p->boards),
+                    two ? two->boards : 0L, three ? three->boards : 0L, placeFlag(*r.p));
+    }
+    std::printf("\n-- traits on final boards: the player's highest active tier, average placement --\n");
+    for (const auto& [key, p] : collector.placeTrait) {
+        const TraitDefinition* trait = traits->FindById(key.first);
+        if (trait == nullptr || key.second < 1 || static_cast<std::size_t>(key.second) > trait->Breakpoints(0).size()) continue;
+        std::printf("  %-14s %d (%d)   %7ld boards   avg %.2f   top4 %5.1f%%%s\n", trait->name.c_str(), key.second, trait->Breakpoints(0)[static_cast<std::size_t>(key.second - 1)].count,
+                    p.boards, p.Avg(), p.Top4(), placeFlag(p));
+    }
+    std::printf("\n-- items: final-board average placement and fight win rate (every copy carried into a decided fight) --\n");
+    std::vector<std::pair<double, ItemId>> iorder;
+    for (const auto& [id, p] : collector.placeItem) iorder.push_back({p.Avg(), id});
+    std::sort(iorder.begin(), iorder.end());
+    for (const auto& [avg, id] : iorder) {
+        const ItemDefinition* item = items->Find(id);
+        const Placing& p = collector.placeItem[id];
+        const Tally& f = collector.itemFights[id];
+        std::printf("  %-22s %6ld boards   avg %.2f   top4 %5.1f%%   fights %7ld  won %5.1f%%%s\n", item != nullptr ? item->name.c_str() : "?", p.boards, avg, p.Top4(), f.appearances, f.Rate(), placeFlag(p));
+    }
+    std::printf("\n-- PvE: how often the bots beat each monster round --\n");
+    for (const auto& [round, t] : collector.pveByRound) {
+        const StageRound sr = GameConfig{}.match.StageOf(round);
+        std::printf("  round %2d (%d-%d)   %6ld fights   bots won %5.1f%%   monsters left when they won: %.1f\n", round, sr.stage, sr.roundInStage, t.appearances, t.Rate(),
+                    t.appearances - t.wins > 0 ? static_cast<double>(collector.pveUnitsLeft[round]) / static_cast<double>(t.appearances - t.wins) : 0.0);
+    }
+
     std::printf("\n(Outliers: >= %ld samples and a win rate outside 42-58%%. Not everything has to be 50%%: a slightly stronger champion or synergy is fine.)\n", minFights);
 
     if (!jsonPath.empty()) {

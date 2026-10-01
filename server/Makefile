@@ -22,7 +22,7 @@ SERVER   := build/w2f_server
 BALANCE  := build/w2f_balance
 RECORD   := build/w2f_record_fights
 
-.PHONY: all test test-engine test-net check-isolation demo server server-release balance golden sample-fights blockouts crafted clean
+.PHONY: all test test-engine test-net check-isolation demo server server-release balance ladder golden sample-fights blockouts crafted clean
 all: $(TEST) $(NET_TEST) $(DEMO) $(SERVER)
 
 build/engine/%.o: src/%.cpp $(HDR)
@@ -97,6 +97,15 @@ $(SERVER_RELEASE): $(ENGINE_SRC) $(NET_SRC) tools/w2f_server.cpp $(HDR)
 	@mkdir -p build/release
 	$(CXX) $(BALANCE_FLAGS) -pthread $(NET_INC) tools/w2f_server.cpp $(NET_SRC) $(ENGINE_SRC) -o $@
 server-release: $(SERVER_RELEASE)
+
+# Controlled equal-gold fights (demo 1.7): every trait tier and every champion against boards of the same costs (tools/trait_ladder.cpp, docs/balance.md).
+#   make ladder ARGS="--fights 400 --mode traits"
+LADDER := build/w2f_ladder
+$(LADDER): $(ENGINE_SRC) tools/trait_ladder.cpp $(HDR)
+	@mkdir -p build
+	$(CXX) $(BALANCE_FLAGS) $(ENGINE_INC) $(DEFINES) tools/trait_ladder.cpp $(ENGINE_SRC) -o $@
+ladder: $(LADDER)
+	./$(LADDER) $(ARGS)
 
 # Headless 8-player match (7 bots + 1 scripted seat): `make demo`, `make demo SEED=7`, or with another data file:
 # `make demo SEED=7 DATA=path/to/champions.json`

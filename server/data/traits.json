@@ -20,22 +20,22 @@
 
     // ================================ ORIGINS ================================
 
-    // HELIOS (3/5/7/11) "The Sun's Wrath": Helios units gain 12 / 35 / 35 / 150 Armor and Magic Resist. RALLY: each time the team has lost another quarter
+    // HELIOS (3/5/7/10; demo 1.7: was 11, which a 10-unit board can never reach) "The Sun's Wrath": Helios units gain 12 / 35 / 35 / 150 Armor and Magic Resist. RALLY: each time the team has lost another quarter
     // of its total max HP (below 75, 50 and 25 percent), every Helios unit's mana bar gets 10 percent shorter. (7): each Rally also smites every enemy for 15
-    // percent of its max HP as true damage. (11): each Rally also executes the enemies left below 25 percent of their max HP. (Aureon's own trigger: +30 mana.)
+    // percent of its max HP as true damage. (10): each Rally also executes the enemies left below 25 percent of their max HP. (Aureon's own trigger: +30 mana.)
     {
       "id": 1, "name": "Helios",
       "breakpoints": [
         { "count": 3, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 12, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 12, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
             "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } } ] },
-        { "count": 5, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 35, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 35, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+        { "count": 5, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 28, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 28, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
             "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } } ] },
         { "count": 7, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 35, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 35, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
             "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } }, { "scope": "Team", "ability": { "id": 262, "name": "Solar Smite", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
-            "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 15 } ] } } ] } } ] },
-        { "count": 11, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 150, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 150, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 5 } ] } } ] } } ] },
+        { "count": 10, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 150, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 150, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 261, "name": "Rally", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
             "effects": [ { "type": "Status", "target": "Self", "status": "ManaCost", "percent": -10, "permanent": true } ] } }, { "scope": "Team", "ability": { "id": 262, "name": "Solar Smite", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
-            "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 15 } ] } } ] } }, { "scope": "Team", "ability": { "id": 263, "name": "Judgment of the Sun", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
+            "effects": [ { "type": "Damage", "target": "AllEnemies", "damageType": "True", "amount": { "terms": [ { "source": "TargetMaxHp", "percent": 5 } ] } } ] } }, { "scope": "Team", "ability": { "id": 263, "name": "Judgment of the Sun", "trigger": "OnTeamHpLoss", "thresholdPercent": 25, "maxTriggers": 3,
             "effects": [ { "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow", "percent": 25, "durationTicks": 3, "delayTicks": 1 } ] } } ] }
       ]
     },
@@ -143,18 +143,18 @@
         { "name": "Enlightenment", "breakpoints": [
           { "count": 3, "xpAfterCombat": 1, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 150 } ] } },
             { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 150 } ] } } ] },
-          { "count": 5, "xpAfterCombat": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } } ] },
-          { "count": 7, "xpAfterCombat": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 18, "terms": [ { "source": "PlayerLevel", "percent": 350 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 18, "terms": [ { "source": "PlayerLevel", "percent": 350 } ] } } ] }
+          { "count": 5, "xpAfterCombat": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 8, "terms": [ { "source": "PlayerLevel", "percent": 180 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 8, "terms": [ { "source": "PlayerLevel", "percent": 180 } ] } } ] },
+          { "count": 7, "xpAfterCombat": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } } ] }
         ] },
         { "name": "Prosperity", "breakpoints": [
           { "count": 3, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 6, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
             { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 6, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
-          { "count": 5, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 20, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 20, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
-          { "count": 7, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 40, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 40, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] }
+          { "count": 5, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 14, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 14, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
+          { "count": 7, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 28, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 28, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] }
         ] }
       ]
     },
@@ -175,8 +175,8 @@
       ]
     },
 
-    // NATURE (3/5/7/9/11) "The First Forest": the player gains PLANTS on the board (no board slot; they stay where they are put). (3) a Stonebark Tree and an
-    // Omnilium Blossom; (5) a second Stonebark Tree, and Stonebark Trees gain 200 HP; (7) the Omnilium Protector; (9) plants are 2-star; (11) plants are
+    // NATURE (3/5/7/9/10; demo 1.7: was 11) "The First Forest": the player gains PLANTS on the board (no board slot; they stay where they are put). (3) a Stonebark Tree and an
+    // Omnilium Blossom; (5) a second Stonebark Tree, and Stonebark Trees gain 200 HP; (7) the Omnilium Protector; (9) plants are 2-star; (10) plants are
     // 3-star and the forest comes to life (the trees walk and fight). Plants gain 25 percent max HP and 10 percent Ability Power per Nature star level (the
     // stars of the Nature champions on the board, added up).
     {
@@ -200,7 +200,7 @@
             "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
           { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
             "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 1000 } ] } }, { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "champion": 9110 }, "status": "BonusMaxHp", "value": 200, "permanent": true } ] },
-        { "count": 11, "plantStar": 3, "plants": [ { "champion": 9110, "count": 2 }, { "champion": 9111, "count": 1 }, { "champion": 9112, "count": 1 } ],
+        { "count": 10, "plantStar": 3, "plants": [ { "champion": 9110, "count": 2 }, { "champion": 9111, "count": 1 }, { "champion": 9112, "count": 1 } ],
           "effects": [ { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "MaxHp", "permanent": true,
             "percent": { "terms": [ { "source": "TraitStarLevel", "trait": "Nature", "percent": 2500 } ] } },
           { "scope": "Team", "type": "Status", "target": { "mode": "AllAllies", "trait": "Plant" }, "status": "AbilityPower", "permanent": true,
@@ -216,25 +216,26 @@
       "id": 9, "name": "Assassin",
       "breakpoints": [
         { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 20, "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 15, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
                                    { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 30, "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 25, "permanent": true } ] }
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 25, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 50, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 40, "permanent": true } ] }
       ]
     },
 
     // OMNILIUM (id 4) was the origin of Les and Lum with no synergy of its own; roster pass v3 (September 2026) removed the tag. Omnilium stays lore
     // (the Omnilium Seed / Orb components, the Nature plants).
 
-    // COREGONS (3/6/8) "The Lost Life". Every breakpoint: Coregons units heal for 7 / 15 / 25% of the damage they deal, and the team gets
-    // 3 untargetable Lost Souls (champion 9102). Their max HP is 14 / 40 / 60% of your TANKIEST ally's max HP (read when the fight starts);
-    // each Soul echoes 3 / 5 / 8% of every hit its team deals (that number lives in the Soul's own definition, per star: the synergy summons it at
-    // star 1 / 2 / 3). From 6 the "Lost Soul Zone" is on (the client turns the floor blue when it sees this trait's TraitActivated tier 2 / 3):
-    //   * enemy casters need 15 more mana to cast (a unit with no mana bar is not affected),
-    //   * allies gain +2 mana per second,
-    //   * once a second enemies lose 2% (4% at 8) of their max HP as true damage and allies heal 2% (4%),
-    //   * enemies below 5% (10% at 8) of their max HP are executed (past any shield).
+    // COREGONS (3/6/8) "The Lost Life". Coregons units heal for 18 / 15 / 25% of the damage they deal, and the team gets Lost Souls (champion 9102,
+    // untargetable): 3 / 2 / 3 Souls at star 1 / 2 / 3 whose max HP is 30 / 20 / 60% of your TANKIEST ally's max HP (read when the fight starts);
+    // each Soul echoes 6 / 8 / 12% of every hit its team deals (that number lives in the Soul's own definition, per star). From 6 the "Lost Soul Zone"
+    // is on (the client turns the floor blue when it sees this trait's TraitActivated tier 2 / 3):
+    //   * enemy casters need 5 (15 at 8) more mana to cast (a unit with no mana bar is not affected),
+    //   * allies gain +0.5 (+2 at 8) mana per second,
+    //   * at 8 only: once a second enemies lose 2% of their max HP as true damage, allies heal 2%, and enemies below 6% of their max HP are executed.
+    // Demo 1.7 (FEEDBACK V7): the 6-unit board won 95% of equal-gold fights (tools/trait_ladder.cpp), so the HP drain moved to (8) and the mana tax
+    // was halved; (3) was a dead tier (51%) and got stronger Souls and healing.
     // The zone effects are cast once for the team by its lowest-id Coregons unit, who is credited as their source. They are listed BEFORE the
     // summons so the Souls themselves are not in "all allies".
     {
@@ -242,22 +243,19 @@
       "breakpoints": [
         { "count": 3,
           "effects": [
-            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 1, "count": 2,
-              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 14 } ] } }
+            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 1, "count": 3,
+              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 30 } ] } }
           ],
           "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 251, "name": "The Lost Life", "trigger": "OnDealDamage",
-            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 7 } ] } } ] } } ] },
+            "effects": [ { "type": "Heal", "target": "Self", "amount": { "terms": [ { "source": "TriggerDamage", "percent": 18 } ] } } ] } } ] },
 
         { "count": 6,
           "effects": [
-            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "BonusMaxMana",  "value": 15,  "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "BonusManaRegen", "value": 2000, "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "HpPerSecond",   "percent": -2, "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "HpPerSecond",   "percent": 2,  "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow",  "percent": 5,  "permanent": true },
-            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 2, "count": 3,
-              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 40 } ] } }
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "BonusMaxMana",  "value": 5,   "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "BonusManaRegen", "value": 500,  "permanent": true },
+            { "scope": "Team", "type": "Summon", "champion": 9102, "star": 2, "count": 2,
+              "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 20 } ] } }
           ],
           "triggers": [ { "scope": "TraitHolders", "ability": {
             "id": 252, "name": "The Lost Life", "trigger": "OnDealDamage",
@@ -267,9 +265,9 @@
           "effects": [
             { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "BonusMaxMana",  "value": 15,  "permanent": true },
             { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "BonusManaRegen", "value": 2000, "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "HpPerSecond",   "percent": -4, "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "HpPerSecond",   "percent": 4,  "permanent": true },
-            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow",  "percent": 10, "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "HpPerSecond",   "percent": -2, "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllAllies",  "status": "HpPerSecond",   "percent": 2,  "permanent": true },
+            { "scope": "Team", "type": "Status", "target": "AllEnemies", "status": "ExecuteBelow",  "percent": 6, "permanent": true },
             { "scope": "Team", "type": "Summon", "champion": 9102, "star": 3, "count": 3,
               "maxHp": { "terms": [ { "source": "HighestAllyMaxHp", "percent": 60 } ] } }
           ],
@@ -305,9 +303,9 @@
     {
       "id": 10, "name": "Bastion",
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 20, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 20, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 45, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 45, "permanent": true } ] },
-        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 80, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 80, "permanent": true } ] }
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 40, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 40, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 15, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 15, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 60, "permanent": true } ] },
+        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 25, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 25, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 110, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 110, "permanent": true } ] }
       ]
     },
 
@@ -315,9 +313,9 @@
     {
       "id": 11, "name": "Bruiser",
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 12, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 40, "permanent": true } ] },
-        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 65, "permanent": true } ] }
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 100, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 20, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 150, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 45, "permanent": true } ] },
+        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 200, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 70, "permanent": true } ] }
       ]
     },
 
@@ -325,10 +323,10 @@
     {
       "id": 12, "name": "Sorcerer",
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 15, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 30, "permanent": true } ] },
-        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 50, "permanent": true } ] },
-        { "count": 8, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 80, "permanent": true } ] }
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 20, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 40, "permanent": true } ] },
+        { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 60, "permanent": true } ] },
+        { "count": 8, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "AbilityPower", "percent": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "percent": 90, "permanent": true } ] }
       ]
     },
 
@@ -336,8 +334,8 @@
     {
       "id": 13, "name": "Marksman",
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 8, "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 6, "permanent": true } ] },
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 20, "permanent": true },
+                                   { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 12, "permanent": true } ] },
         { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 30, "permanent": true },
                                    { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 20, "permanent": true } ] }
       ]
@@ -347,10 +345,10 @@
     {
       "id": 14, "name": "Mystic",
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 20, "permanent": true },
-                                   { "scope": "AllAllies", "type": "Status", "status": "BonusManaRegen", "value": 1000, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 50, "permanent": true },
-                                   { "scope": "AllAllies", "type": "Status", "status": "BonusManaRegen", "value": 2000, "permanent": true } ] }
+        { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 25, "permanent": true },
+                                   { "scope": "AllAllies", "type": "Status", "status": "BonusManaRegen", "value": 2000, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 60, "permanent": true },
+                                   { "scope": "AllAllies", "type": "Status", "status": "BonusManaRegen", "value": 4000, "permanent": true } ] }
       ]
     },
 
@@ -358,12 +356,12 @@
     {
       "id": 15, "name": "Duelist",
       "breakpoints": [
-        { "count": 2, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 271, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
-            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 4, "permanent": true } ] } } ] },
-        { "count": 4, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 272, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
-            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 7, "permanent": true } ] } } ] },
-        { "count": 6, "triggers": [ { "scope": "TraitHolders", "ability": { "id": 273, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
-            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 10, "permanent": true } ] } } ] }
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "DamageTaken", "percent": -8, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 271, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 6, "permanent": true } ] } } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "DamageTaken", "percent": -15, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 272, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 9, "permanent": true } ] } } ] },
+        { "count": 6, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "DamageTaken", "percent": -20, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 273, "name": "Duelist's Rhythm", "trigger": "OnBasicAttack", "maxTriggers": 12,
+            "effects": [ { "type": "Status", "target": "Self", "status": "AttackSpeed", "percent": 12, "permanent": true } ] } } ] }
       ]
     },
 
@@ -371,10 +369,10 @@
     {
       "id": 16, "name": "Gunslinger",
       "breakpoints": [
-        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "percent": 22, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 281, "name": "Quick Draw", "trigger": "EveryNthAttack", "attackCount": 4,
-            "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 100 } ] } } ] },
-        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "percent": 45, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 282, "name": "Quick Draw", "trigger": "EveryNthAttack", "attackCount": 4,
-            "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 220 } ] } } ] }
+        { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "percent": 28, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 281, "name": "Quick Draw", "trigger": "EveryNthAttack", "attackCount": 4,
+            "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 160 } ] } } ] },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "percent": 38, "permanent": true } ], "triggers": [ { "scope": "TraitHolders", "ability": { "id": 282, "name": "Quick Draw", "trigger": "EveryNthAttack", "attackCount": 4,
+            "effects": [ { "type": "Damage", "target": "CurrentTarget", "damageType": "Physical", "amount": 200 } ] } } ] }
       ]
     },
 

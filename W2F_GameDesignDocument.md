@@ -5,12 +5,12 @@
 - **OMNILIUM (First Matter):** The very first matter created by The Seed, forming the First Universe.
 
 ## 2. SYNERGIES & TRAITS
-- **HELIOS (3/5/7/11):** *The Sun's Wrath.* Each time your team loses 25% max Health, Helios units Rally, reducing their Mana cost by 10%. Helios units gain Armor and Magic Resist.
+- **HELIOS (3/5/7/10):** *The Sun's Wrath.* Each time your team loses 25% max Health, Helios units Rally, reducing their Mana cost by 10%. Helios units gain Armor and Magic Resist.
 
 (3): 12 armor mr
 (5): 35 armor mr
 (7):35 armor mr (on rally smite enemies for %15 of their max health.)
-(11): 150 armor mr(executes enemies at %75 max health.)
+(10): 150 armor mr(executes enemies at %75 max health.)
 
 
 **SELINI (3/5/7):** *The Moon's Shadow.* Every match, ONE of the two paths below is chosen at random when the match starts (from the match seed, so it is the same on every replay) and it is the Selini trait for the whole match, for every player.
@@ -62,9 +62,9 @@ Each time Najmi's get star dust , they prototype new Najmi Items. You can take t
 Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon, Najmi, Nature, Omnilium) and one or two **classes** (Bastion, Bruiser, Sorcerer, Marksman, Mystic, Duelist, Assassin, Gunslinger, Protector), like TFT. A few champions carry a second origin. Rivet carries only Gunslinger. Trait counts always count **different** champions on the board; emblems add one.*
 
 ### ORIGINS
-- **HELIOS (3/5/7/11)** — *The Sun's Wrath.* Helios units gain Armor and Magic Resist: **12 / 35 / 35 / 150**. **Rally**: the first time your team's total current Health drops below 75%, 50% and 25% of its total max Health (up to 3 Rallies per fight), every living Helios unit's **max mana is reduced by 10%** (stacking, never below 30% of its original bar).
+- **HELIOS (3/5/7/10)** (demo 1.7: was 11 -- a board holds at most 10 units, so 11 could never switch on) — *The Sun's Wrath.* Helios units gain Armor and Magic Resist: **12 / 35 / 35 / 150**. **Rally**: the first time your team's total current Health drops below 75%, 50% and 25% of its total max Health (up to 3 Rallies per fight), every living Helios unit's **max mana is reduced by 10%** (stacking, never below 30% of its original bar).
   - (7): each Rally also **smites** every enemy for **15% of its max Health** as true damage.
-  - (11): each Rally also **executes** every enemy below **25%** of its max Health **(decided: "executes at 75%" read as "has lost 75%")**.
+  - (10): each Rally also **executes** every enemy below **25%** of its max Health **(decided: "executes at 75%" read as "has lost 75%")**.
 - **SELINI (3/5/7)** — *The Moon's Shadow.* **One path per match, chosen at random from the match seed when the match starts (decided)**, the same for every player:
   - *Path of Enlightenment*: Selini units gain **+10% / 15% / 20%** AD and AP, plus **+2% / 3% / 4% per player level**. After every player combat (win or lose) the player gains **1 / 2 / 4 XP**.
   - *Path of Prosperity*: Selini units gain **+10% / 25% / 40%** AD and AP, plus **+2% per gold ever earned through this path**. A **takedown** is a kill, or damage to the victim in the 3 s before it died, by a Selini unit. Every **4 takedowns** grant **1 gold** at the end of that combat; the counter carries over between rounds.
@@ -77,7 +77,7 @@ Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon,
   - **(6) Rift Herald**: after 2 player combats fought with Phaisa (6) or more active, the player receives a **Rift Herald** (a 4-cost Phaisa / Bruiser unit, on the bench, once per match). Stats: 1,800 HP (+15% per player level), 90 AD, 0.65 AS, 50 Armor and MR. Every 8 s it charges the longest line of enemies: 250 magic damage and a 1.25 s knock-up.
   - **(9) Baron Nashor**: at the start of every combat, Baron Nashor is summoned next to your Phaisa units: 3,000 HP, 150 AD, 0.7 AS, 60 Armor and MR, range 2; every 3rd attack hits every enemy within 1 hex of its target for 300 magic damage.
   - **The Queen**: with **7 different Phaisa units** fielded **and player level 10**, the shop may offer the **Phaisa Queen** (7-cost, 1 copy). Stats: 4,500 HP, 210 AD, 0.85 AS, 100 Armor and MR, CC immune. Her attacks splash 30% physical damage to adjacent enemies; every 3rd attack is **Void Torrent** (600 magic damage to the 3 densest enemy clusters, rips 40% Armor, knocks up 1 s). She **counts as 2 units toward your team size (decided: "takes 2 board slots")**.
-- **COREGONS (3/6/8)** — unchanged (see above).
+- **COREGONS (3/6/8)** — the designer's notes above, with the demo 1.7 numbers (the 6-unit board won 95% of equal-gold fights, the (3) tier only 51%): Coregons units heal for **18 / 15 / 25%** of the damage they deal; **3 / 2 / 3 Souls** at star 1 / 2 / 3 with **30 / 20 / 60%** of the tankiest ally's max HP, echoing **6 / 8 / 12%**. (6) The Lost Soul Zone: enemies need **+5** mana, allies gain **+0.5** mana per second (no HP drain, no execute). (8) The Underworld: **+15** mana, **+2** mana per second, the zone drains enemies and heals allies **2%** max HP per second and executes below **6%**.
 - **HEXAGON (2/4/6)** — *The Perfect Equation.* An **Invention** stands in the right-most back hex of your board (it is not a unit: untargetable, it does not block). **8 s** into every combat it fires every **module** you own. Reaching (2), (4) and (6) for the first time offers **3 random modules of that tier: pick 1** (bots pick the first). Modules persist while the trait stays at that tier.
   - Tier 1:
     - *Electrical Overload*: 100 true damage + 8% max HP to every enemy.
@@ -112,12 +112,12 @@ Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon,
   | 600+ | 1 of 3 completed items | 2 more completed items | 20 |
 
   The offer never pops up and never blocks the shop: a star dust bar (0-600, a mark every 100) shows the bank, and a CASH OUT button opens the offer. **Taking it** spends the whole bank; **keeping on saving** leaves the offer open until a bigger hundred replaces it. It is not settled automatically when a fight starts.
-- **NATURE (3/5/7/9/11)** — *The First Forest.* The player gains **plants** to place on their board during Planning. Plants do **not** count toward team size, cannot be sold, stay where they were placed from round to round, and leave the board while the trait is below the breakpoint that gave them.
+- **NATURE (3/5/7/9/10)** (demo 1.7: was 11, same reason) — *The First Forest.* The player gains **plants** to place on their board during Planning. Plants do **not** count toward team size, cannot be sold, stay where they were placed from round to round, and leave the board while the trait is below the breakpoint that gave them.
   - (3): a **Stonebark Tree** and an **Omnilium Blossom**.
   - (5): a second Stonebark Tree; Stonebark Trees +200 HP.
   - (7): the **Omnilium Protector**.
   - (9): plants become **2-star**.
-  - (11): plants become **3-star** and the **forest comes to life**. Stonebark Trees and the Protector walk and attack like champions, and the Blossom's bonuses are doubled.
+  - (10): plants become **3-star** and the **forest comes to life**. Stonebark Trees and the Protector walk and attack like champions, and the Blossom's bonuses are doubled.
   - Plants gain **+25% max HP and +10% AP per Nature star level**, which is the sum of the stars of your fielded Nature champions (a 2-star counts 2).
   - Plants (1/2/3 star):
     - *Stonebark Tree*: 700/1,100/1,800 HP, 40 Armor and MR; does not attack until awakened (then 50 AD, 0.5 AS, range 1). **On death: stuns the nearest 2/3/3 enemies for 1.5 s.**
@@ -399,7 +399,7 @@ Missile Damage: 17 = 6% of 290
 - *Engine notes (decided):* the shield is 300/400/5000 (+10% max HP) for 4 s (the sheet's 66666 is capped), the lasers fire once a second through a 4 s channel and the missiles 4 a second; the pilot rules are section 2B (HEXA).
 **AUREON - "The Sun Emperor"** [NEW] (Helios / Sorcerer) | HP 950/1710/3078 | Armor/MR 45 | AD 45 | AP 100 | AS 0.75 | Range 4 | Mana 60/160
 - *Passive (Radiant Crown):* When Helios Rallies, Aureon gains 30 Mana on top of the Rally's mana-cost reduction.
-- *Ability (Solar Judgment):* Raises the sun above the largest cluster of enemies. After 1.5s it falls: every enemy within 2 hexes takes 600/900/4000 (+150% AP) Magic Damage and burns for 3% of their max HP per second for 5s; allies inside the blast gain a 300/450/2000 shield for 4s. The 5-cost Helios carry and the reason to chase Helios (11).
+- *Ability (Solar Judgment):* Raises the sun above the largest cluster of enemies. After 1.5s it falls: every enemy within 2 hexes takes 600/900/4000 (+150% AP) Magic Damage and burns for 3% of their max HP per second for 5s; allies inside the blast gain a 300/450/2000 shield for 4s. The 5-cost Helios carry and the reason to chase Helios (10).
 **NIHILA - "The Void Empress"** [NEW] (Phaisa / Sorcerer) | HP 1000/1800/3240 | Armor/MR 45 | AD 50 | AP 90 | AS 0.70 | Range 3 | Mana 80/180
 - *Passive (Hunger of the Void):* Every enemy that dies while Nihila is on the board grants her 8 Ability Power for the rest of the combat.
 - *Ability (Devour Reality):* Channels for 2s while the board darkens, then the void swallows it: every enemy takes 400/650/5000 (+120% AP) Magic Damage, and enemies left below 20/25/100% of their max HP are executed. Phaisa's legendary: a team-wiping ultimate that rewards the kills Phaisa already hungers for.

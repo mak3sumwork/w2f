@@ -141,6 +141,7 @@ std::uint64_t GameConfig::ContentHash() const {
     h.AddInt(match.roundsPerStage);
     h.AddInt(match.firstStagePveRounds);
     h.AddInt(match.pveRoundInLaterStages);
+    h.AddInt(match.pveLossDamageFromStage);
     h.AddInt(match.shopClosedOpeningRounds);
     h.AddInt(static_cast<std::int64_t>(match.openingUnitCosts.size()));
     for (int cost : match.openingUnitCosts) h.AddInt(cost);
