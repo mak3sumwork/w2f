@@ -90,6 +90,9 @@
   },
   {
    "$ref": "#/$defs/logged_out"
+  },
+  {
+   "$ref": "#/$defs/ready_check"
   }
  ],
  "$defs": {
@@ -968,6 +971,14 @@
       "type": "string"
      },
      "description": "revision 8: every seat's name, by seat (players' usernames; the AI players have usernames too)"
+    },
+    "player_icons": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "description": "revision 9: every seat's profile icon (a champion id), by seat; 0 = none chosen (the AI players): the client picks one"
     }
    },
    "required": [
@@ -2287,9 +2298,11 @@
      "enum": [
       "match_over",
       "left_match",
-      "cancelled"
+      "cancelled",
+      "declined",
+      "requeued"
      ],
-     "description": "idle only, when it follows an event"
+     "description": "idle only (match_over, left_match, cancelled), when it follows an event. Revision 9: declined = you declined the ready check or let it run out (idle); requeued = someone else did and you are searching again in your old place (comes with state searching)"
     },
     "seats": {
      "type": "integer",
@@ -2316,7 +2329,7 @@
   },
   "match_found": {
    "type": "object",
-   "description": "Revision 7, queue server only: a match was made for you. The match's own messages follow at once (welcome, lobby, match_started, ...).",
+   "description": "Revision 7, queue server only: a match was made for you. The match's own messages follow at once (welcome, lobby, match_started, ...). Revision 9: with a ready check (queue ready_check true) the match waits for every player's accept_match.",
    "properties": {
     "type": {
      "const": "match_found"
@@ -2337,6 +2350,14 @@
      "type": "integer",
      "minimum": 0,
      "maximum": 7
+    },
+    "ready_check": {
+     "type": "boolean",
+     "description": "revision 9: true = answer accept_match / decline_match within accept_ms; the match's messages only follow once everyone accepted (ready_check messages show the count). false = the match's messages follow at once"
+    },
+    "accept_ms": {
+     "type": "integer",
+     "minimum": 0
     }
    },
    "required": [
@@ -2401,6 +2422,11 @@
     },
     "rank": {
      "$ref": "#/$defs/rank"
+    },
+    "icon": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "revision 9: the profile icon (a champion id; 0 = none chosen)"
     }
    },
    "required": [
@@ -2565,6 +2591,11 @@
       ],
       "additionalProperties": false
      }
+    },
+    "icon": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "revision 9: the profile icon (a champion id; 0 = none chosen)"
     }
    },
    "required": [
@@ -2604,6 +2635,11 @@
        },
        "rank": {
         "$ref": "#/$defs/rank"
+       },
+       "icon": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "revision 9: the profile icon (a champion id; 0 = none chosen)"
        }
       },
       "required": [
@@ -2652,6 +2688,40 @@
    "required": [
     "type",
     "reason"
+   ],
+   "additionalProperties": false
+  },
+  "ready_check": {
+   "type": "object",
+   "description": "Revision 9, queue server only: the ready check's progress, sent to everyone in it when it starts, after every accept, and once more (accepted = humans) when the match starts.",
+   "properties": {
+    "type": {
+     "const": "ready_check"
+    },
+    "accepted": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 8
+    },
+    "humans": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 8
+    },
+    "you_accepted": {
+     "type": "boolean"
+    },
+    "remaining_ms": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "type",
+    "accepted",
+    "humans",
+    "you_accepted",
+    "remaining_ms"
    ],
    "additionalProperties": false
   }

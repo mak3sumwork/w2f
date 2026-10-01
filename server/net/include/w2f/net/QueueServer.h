@@ -32,6 +32,7 @@ struct QueueServerConfig {
     long long statusEveryMs = 1'000;  // searching players get a queue_status this often
     int abandonTicks = kTicksPerSecond * 120;   // a running match nobody is connected to is closed after this long
     int maxMatches = 64;              // at most this many matches at once; more queue up
+    long long acceptMs = 10'000;      // (revision 9) the ready check: players who queued with ready_check have this long to accept_match
     // (revision 8, demo 1.5) Accounts: with a store, players must register / log in before they queue; matches go into their history, the Ranked
     // queue moves their rank, and friends see each other's status. nullptr = the old anonymous behaviour.
     AccountStore* accounts = nullptr;

@@ -83,6 +83,8 @@ struct GameServerConfig {
     // (revision 8) The name of every seat, shown to everyone (`match_started.player_names`): a QueueServer passes the players' usernames and the
     // bots' names. Empty = "Player N" for the humans and generated usernames for the bots.
     std::vector<std::string> seatNames;
+    // (revision 9) Every seat's profile icon (a champion id, `match_started.player_icons`); missing / 0 = none (the client picks one). Empty = not sent.
+    std::vector<int> seatIcons;
 };
 
 // (demo 1.5) What a finished match reports, for the accounts' match history and rank: every seat's placement, level, the round it went out in

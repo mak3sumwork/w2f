@@ -48,10 +48,13 @@ struct QueueInfo {
     std::string reason;
 };
 std::string QueueStatus(const QueueInfo& info);
-std::string MatchFound(QueueMode mode, int humans, int bots);
+std::string MatchFound(QueueMode mode, int humans, int bots, bool readyCheck = false, int acceptMs = 0);
+// (revision 9) The ready check's progress, to everyone in it: how many of the humans accepted, whether you did, the time left.
+std::string ReadyCheck(int accepted, int humans, bool youAccepted, int remainingMs);
 
 // `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never). `botSeats` = the AI players' seats.
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {}, const std::vector<std::string>& names = {});
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {}, const std::vector<std::string>& names = {},
+                         const std::vector<int>& icons = {});
 // `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
 // `shopClosed`: no shop this round (Mother Nature's, or the opening round: the free unit was dealt at the start).
 std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, int durationTicks, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed);
@@ -84,6 +87,7 @@ struct FriendInfo {
     std::string name;
     std::string status;   // "offline" | "online" | "searching" | "in_match"
     int points = 0;
+    int icon = 0;         // (revision 9)
 };
 // `auth`: logged in (register / login / resume_session): the username, a session token to remember, the rank.
 std::string Auth(const Account& account, std::string_view session);

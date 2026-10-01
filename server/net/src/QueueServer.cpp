@@ -63,6 +63,18 @@ public:
         int violations = 0;
         bool closing = false;
         std::string account, session;   // logged in (revision 8)
+        bool readyCheck = false;        // (revision 9) queued asking for a ready check
+        std::uint64_t proposal = 0;     // in this ready check (0 = none); `searching` is false meanwhile, the place in the queue is kept
+        bool accepted = false;
+    };
+
+    // (revision 9) A match waiting for its ready check: it starts when every player accepted; a decline or the timeout sends the others back into
+    // the queue in their old place and takes the decliners out of it.
+    struct Proposal {
+        std::uint64_t id = 0;
+        QueueMode mode = QueueMode::Bots;
+        std::vector<ConnectionId> players;
+        std::uint64_t deadlineMs = 0;
     };
 
     Impl(const QueueServerConfig& config, const GameData& data, IServerTransport& transport) : cfg_(config), data_(data), transport_(transport) {
@@ -104,6 +116,9 @@ public:
                 if (!c.bucket.Take(nowMs, 1, cfg_.match.rateBurst, cfg_.match.rateRefillPerSecond)) return Violation(id, c, "rate_limited", "too many messages, slow down");
                 return AccountCommand(id, parsed.command);
             }
+            if (parsed.ok && (parsed.command.type == CommandType::AcceptMatch || parsed.command.type == CommandType::DeclineMatch)) {
+                return transport_.Send(id, msg::Error("no_ready_check", "no match is waiting for you", parsed.command.hasId, parsed.command.id));
+            }
             if (parsed.ok && (parsed.command.type == CommandType::JoinQueue || parsed.command.type == CommandType::LeaveQueue)) {
                 return transport_.Send(id, msg::Error("in_match", "you are in a match: leave_match first", parsed.command.hasId, parsed.command.id));
             }
@@ -123,6 +138,8 @@ public:
             case CommandType::JoinQueue:
                 if (cfg_.accounts != nullptr && c.account.empty()) return transport_.Send(id, msg::Error("not_logged_in", "log in first", cmd.hasId, cmd.id));
                 if (cmd.queueMode == QueueMode::Ranked && cfg_.accounts == nullptr) return transport_.Send(id, msg::Error("no_accounts", "ranked needs accounts (start the server with --accounts FILE)", cmd.hasId, cmd.id));
+                if (c.proposal != 0) return transport_.Send(id, msg::Error("in_ready_check", "a match was found: accept_match or decline_match", cmd.hasId, cmd.id));
+                c.readyCheck = cmd.readyCheck;
                 if (!c.searching || c.mode != cmd.queueMode) {
                     c.searching = true;
                     c.mode = cmd.queueMode;
@@ -133,11 +150,21 @@ public:
                 PresenceChanged(c.account);
                 return Matchmake();   // (a bots match starts at once, unless the server is at its match limit)
             case CommandType::LeaveQueue:
+                if (c.proposal != 0) return Decline(id);
                 if (!c.searching) return transport_.Send(id, msg::Error("not_searching", "you are not in a queue", cmd.hasId, cmd.id));
                 c.searching = false;
                 SendStatus(id, "cancelled");
                 return PresenceChanged(c.account);
             case CommandType::LeaveMatch: return transport_.Send(id, msg::Error("not_in_match", "you are not in a match", cmd.hasId, cmd.id));
+            case CommandType::AcceptMatch: {
+                Proposal* p = FindProposal(c.proposal);
+                if (p == nullptr) return transport_.Send(id, msg::Error("no_ready_check", "no match is waiting for you", cmd.hasId, cmd.id));
+                c.accepted = true;
+                return Progress(*p);
+            }
+            case CommandType::DeclineMatch:
+                if (c.proposal == 0) return transport_.Send(id, msg::Error("no_ready_check", "no match is waiting for you", cmd.hasId, cmd.id));
+                return Decline(id);
             default: return transport_.Send(id, msg::Error("not_in_match", "no match yet: queue first", cmd.hasId, cmd.id));
         }
     }
@@ -146,6 +173,8 @@ public:
         auto it = clients_.find(id);
         if (it == clients_.end()) return;
         if (Room* room = Find(it->second.room)) room->game->OnDisconnect(id);
+        if (it->second.proposal != 0) { it->second.closing = true; Decline(id); }   // gone: as if they declined (nothing is sent to it any more)
+        it = clients_.find(id);
         const std::string account = it->second.account;
         clients_.erase(it);
         PresenceChanged(account);
@@ -161,6 +190,12 @@ public:
             if (room->unattendedTicks >= cfg_.abandonTicks) room->dead = true;   // nobody is coming back: stop simulating it
         }
         Reap();
+        for (std::size_t i = 0; i < proposals_.size();) {   // ready checks out of time: whoever has not accepted declined
+            if (nowMs < proposals_[i].deadlineMs) { ++i; continue; }
+            std::vector<ConnectionId> late;
+            for (ConnectionId p : proposals_[i].players) { if (clients_.count(p) && !clients_[p].accepted) late.push_back(p); }
+            FailProposal(proposals_[i].id, late);
+        }
         Matchmake();
         if (nowMs >= lastStatusMs_ + static_cast<std::uint64_t>(cfg_.statusEveryMs)) {
             lastStatusMs_ = nowMs;
@@ -221,6 +256,7 @@ private:
             transport_.Close(id, kClosePolicy, "too many protocol violations");
             c.closing = true;
             c.searching = false;
+            if (c.proposal != 0) Decline(id);
         }
     }
 
@@ -264,7 +300,7 @@ private:
     void Matchmake() {
         for (QueueMode mode : {QueueMode::Bots, QueueMode::Normal, QueueMode::Ranked}) {
             for (;;) {
-                if (LiveRooms() >= cfg_.maxMatches) return;
+                if (LiveRooms() + static_cast<int>(proposals_.size()) >= cfg_.maxMatches) return;
                 std::vector<std::pair<std::uint64_t, ConnectionId>> waiting;   // (order, connection): first come, first served
                 for (const auto& [id, c] : clients_) {
                     if (c.searching && !c.closing && c.mode == mode) waiting.emplace_back(c.order, id);
@@ -281,8 +317,81 @@ private:
                     if (!full && !waitedEnough) break;
                     for (std::size_t i = 0; i < waiting.size() && static_cast<int>(players.size()) < cfg_.match.seats; ++i) players.push_back(waiting[i].second);
                 }
-                StartRoom(mode, players);
+                Propose(mode, players);
             }
+        }
+    }
+
+    Proposal* FindProposal(std::uint64_t id) {
+        for (Proposal& p : proposals_) { if (id != 0 && p.id == id) return &p; }
+        return nullptr;
+    }
+
+    // The players are found. Nobody asked for a ready check (older clients): the match starts at once, as before revision 9.
+    void Propose(QueueMode mode, const std::vector<ConnectionId>& players) {
+        bool anyCheck = false;
+        for (ConnectionId id : players) anyCheck = anyCheck || clients_[id].readyCheck;
+        if (!anyCheck) return StartRoom(mode, players);
+        Proposal p;
+        p.id = ++proposalIds_;
+        p.mode = mode;
+        p.players = players;
+        p.deadlineMs = now_ + static_cast<std::uint64_t>(cfg_.acceptMs);
+        const int humans = static_cast<int>(players.size());
+        for (ConnectionId id : players) {
+            Client& c = clients_[id];
+            c.searching = false;
+            c.proposal = p.id;
+            c.accepted = !c.readyCheck;   // a client without a ready check accepts by queueing
+            if (c.readyCheck) transport_.Send(id, msg::MatchFound(mode, humans, cfg_.match.seats - humans, true, static_cast<int>(cfg_.acceptMs)));
+        }
+        proposals_.push_back(p);
+        Progress(proposals_.back());
+    }
+
+    // Someone accepted: everyone in the check hears the count; when all have, the match starts.
+    void Progress(const Proposal& p) {
+        int accepted = 0;
+        for (ConnectionId id : p.players) accepted += clients_[id].accepted ? 1 : 0;
+        const int humans = static_cast<int>(p.players.size());
+        if (accepted == humans) {
+            const QueueMode mode = p.mode;
+            const std::vector<ConnectionId> players = p.players;
+            const std::uint64_t done = p.id;   // (copied out: erasing moves the element `p` refers to)
+            proposals_.erase(std::remove_if(proposals_.begin(), proposals_.end(), [done](const Proposal& x) { return x.id == done; }), proposals_.end());
+            for (ConnectionId id : players) {
+                clients_[id].proposal = 0;
+                if (clients_[id].readyCheck) transport_.Send(id, msg::ReadyCheck(accepted, humans, true, 0));
+            }
+            return StartRoom(mode, players);
+        }
+        const int remaining = now_ < p.deadlineMs ? static_cast<int>(p.deadlineMs - now_) : 0;
+        for (ConnectionId id : p.players) {
+            if (clients_[id].readyCheck) transport_.Send(id, msg::ReadyCheck(accepted, humans, clients_[id].accepted, remaining));
+        }
+    }
+
+    void Decline(ConnectionId id) {
+        const std::uint64_t proposal = clients_[id].proposal;
+        if (proposal != 0) FailProposal(proposal, {id});
+    }
+
+    // A ready check failed: the decliners leave the queue (queue_status reason "declined"), everyone else is searching again in their old place
+    // (reason "requeued").
+    void FailProposal(std::uint64_t proposalId, const std::vector<ConnectionId>& decliners) {
+        Proposal* found = FindProposal(proposalId);
+        if (found == nullptr) return;
+        const std::vector<ConnectionId> players = found->players;
+        proposals_.erase(std::remove_if(proposals_.begin(), proposals_.end(), [&](const Proposal& x) { return x.id == proposalId; }), proposals_.end());
+        for (ConnectionId id : players) {
+            if (!clients_.count(id)) continue;
+            Client& c = clients_[id];
+            c.proposal = 0;
+            c.accepted = false;
+            const bool declined = std::find(decliners.begin(), decliners.end(), id) != decliners.end();
+            c.searching = !declined && !c.closing;
+            if (!c.closing) SendStatus(id, declined ? "declined" : "requeued");
+            PresenceChanged(c.account);
         }
     }
 
@@ -297,6 +406,7 @@ private:
         for (ConnectionId id : players) {   // the players connect in this order, so seat i is players[i]: their usernames name the seats
             const Account* a = cfg_.accounts != nullptr ? cfg_.accounts->Find(clients_[id].account) : nullptr;
             gc.seatNames.push_back(a != nullptr ? a->name : std::string());
+            gc.seatIcons.push_back(a != nullptr ? a->icon : 0);
             room->accounts.push_back(a != nullptr ? clients_[id].account : std::string());
         }
         room->game = std::make_unique<GameServer>(gc, data_, *room->transport);
@@ -308,7 +418,7 @@ private:
             Client& c = clients_[id];
             c.searching = false;
             c.room = r.id;
-            transport_.Send(id, msg::MatchFound(mode, humans, gc.bots));
+            if (!c.readyCheck) transport_.Send(id, msg::MatchFound(mode, humans, gc.bots));   // (a ready check already announced it)
         }
         for (ConnectionId id : players) r.game->OnConnect(id, "", now_);   // the last one fills the lobby: the match starts
         for (ConnectionId id : players) PresenceChanged(clients_[id].account);
@@ -333,10 +443,12 @@ private:
                 else r = store->Resume(cmd.session, key);
                 if (r != AccountStore::Result::Ok) return fail(r);
                 const std::string previous = c.account;
+                if (c.proposal != 0) Decline(id);
                 c.searching = false;
                 for (auto& [otherId, other] : clients_) {   // one connection per account: the older one is logged out
                     if (otherId != id && other.account == key) {
                         transport_.Send(otherId, msg::LoggedOut("elsewhere"));
+                        if (other.proposal != 0) Decline(otherId);
                         other.account.clear();
                         other.session.clear();
                         other.searching = false;
@@ -357,6 +469,7 @@ private:
         const std::string me = c.account;
         switch (cmd.type) {
             case CommandType::Logout: {
+                if (c.proposal != 0) Decline(id);
                 store->Logout(me, c.session);
                 c.account.clear();
                 c.session.clear();
@@ -370,6 +483,13 @@ private:
                 return transport_.Send(id, msg::Profile(*a, Status(AccountStore::Key(a->name)) != "offline"));
             }
             case CommandType::GetFriends: return SendFriends(id);
+            case CommandType::SetIcon: {   // (revision 9) any champion of the pool
+                const ChampionDefinition* def = data_.champions != nullptr ? data_.champions->Find(static_cast<ChampionId>(cmd.icon)) : nullptr;
+                if (def == nullptr || !def->IsPooled()) return transport_.Send(id, msg::Error("unknown_icon", "icon must be the id of a champion", cmd.hasId, cmd.id));
+                store->SetIcon(me, cmd.icon);
+                transport_.Send(id, msg::Profile(*store->Find(me), true));
+                return PresenceChanged(me);
+            }
             case CommandType::FriendRequest:
             case CommandType::FriendAccept:
             case CommandType::FriendDecline:
@@ -395,7 +515,7 @@ private:
         for (const auto& [id, c] : clients_) {
             if (c.account != key || c.closing) continue;
             if (c.room != 0) return "in_match";
-            best = c.searching ? "searching" : "online";
+            best = c.searching || c.proposal != 0 ? "searching" : "online";
         }
         return best;
     }
@@ -406,7 +526,7 @@ private:
         std::vector<msg::FriendInfo> list;
         for (const std::string& k : a->friends) {
             const Account* f = cfg_.accounts->Find(k);
-            if (f != nullptr) list.push_back({f->name, Status(k), f->points});
+            if (f != nullptr) list.push_back({f->name, Status(k), f->points, f->icon});
         }
         std::sort(list.begin(), list.end(), [](const msg::FriendInfo& x, const msg::FriendInfo& y) {   // online first, then by name
             const bool xo = x.status != "offline", yo = y.status != "offline";
@@ -472,6 +592,8 @@ private:
     std::uint64_t lastStatusMs_ = 0;
     std::uint64_t order_ = 0;
     std::uint64_t roomIds_ = 0;
+    std::vector<Proposal> proposals_;
+    std::uint64_t proposalIds_ = 0;
 };
 
 QueueServer::QueueServer(const QueueServerConfig& config, const GameData& data, IServerTransport& transport)

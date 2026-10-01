@@ -60,6 +60,7 @@ struct Account {
     int iterations = 0;
     std::uint64_t createdMs = 0;
     int points = 0, peakPoints = 0;
+    int icon = 0;                        // (revision 9) the profile icon: a champion id, 0 = none chosen (the client shows a default)
     AccountStats stats;
     std::vector<HistoryEntry> history;   // newest first
     std::set<std::string> friends, incoming, outgoing;   // account KEYS (lower case)
@@ -86,6 +87,7 @@ public:
     Result Login(std::string_view name, std::string_view password, std::string& keyOut, std::string& sessionOut);
     Result Resume(std::string_view session, std::string& keyOut) const;
     void Logout(std::string_view key, std::string_view session);
+    void SetIcon(std::string_view key, int icon);   // (revision 9) the caller checks that `icon` is a champion id
 
     const Account* Find(std::string_view nameOrKey) const;
 

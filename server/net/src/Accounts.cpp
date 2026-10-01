@@ -188,6 +188,13 @@ void AccountStore::Logout(std::string_view key, std::string_view session) {
     Changed();
 }
 
+void AccountStore::SetIcon(std::string_view key, int icon) {
+    Account* a = Mutable(key);
+    if (a == nullptr || a->icon == icon) return;
+    a->icon = icon;
+    Changed();
+}
+
 AccountStore::Result AccountStore::Request(std::string_view key, std::string_view otherName, bool& becameFriends) {
     becameFriends = false;
     Account* me = Mutable(key);
@@ -298,6 +305,7 @@ bool AccountStore::Save(std::string* error) const {
         w.Field("created_ms", a.createdMs);
         w.Field("points", a.points);
         w.Field("peak_points", a.peakPoints);
+        w.Field("icon", a.icon);
         const AccountStats& s = a.stats;
         w.Key("stats").BeginObject();
         w.Field("games", s.games).Field("wins", s.wins).Field("top4", s.top4).Field("placement_sum", s.placementSum);
@@ -373,6 +381,7 @@ bool AccountStore::Load(std::string* error) {
         a.createdMs = U64Of(e.Find("created_ms"));
         a.points = IntOf(e.Find("points"));
         a.peakPoints = IntOf(e.Find("peak_points"));
+        a.icon = IntOf(e.Find("icon"));   // (revision 9; absent in older files)
         if (const json::Value* s = e.Find("stats")) {
             a.stats.games = IntOf(s->Find("games")); a.stats.wins = IntOf(s->Find("wins")); a.stats.top4 = IntOf(s->Find("top4")); a.stats.placementSum = IntOf(s->Find("placement_sum"));
             a.stats.rankedGames = IntOf(s->Find("ranked_games")); a.stats.rankedWins = IntOf(s->Find("ranked_wins"));

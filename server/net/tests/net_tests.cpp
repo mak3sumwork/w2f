@@ -1743,6 +1743,92 @@ static void TestQueueServer() {
     }
 }
 
+// Revision 9 (demo 1.9): the ready check (TFT's ACCEPT / DECLINE) and profile icons.
+static void TestReadyCheck() {
+    // 1. Solo vs AI with a ready check: nothing starts until you accept; the match's messages follow the accept.
+    {
+        QueueRig q(4, 3000);
+        const ConnectionId a = q.Connect();
+        q.Say(a, R"({"action": "queue", "mode": "bots", "ready_check": true})");
+        const json::Value found = q.Last(a, "match_found");
+        CHECK(found.Find("ready_check") != nullptr && found.Find("ready_check")->AsBool() && Num(found, "accept_ms") == 10000 && Num(found, "bots") == 3);
+        CHECK(q.hub->matches() == 0 && q.CountType(a, "welcome") == 0 && Num(q.Last(a, "ready_check"), "accepted") == 0);
+        q.Say(a, R"({"action": "queue", "mode": "bots", "ready_check": true})");
+        CHECK(Str(q.Last(a, "error"), "code") == "in_ready_check");
+        q.Say(a, R"({"action": "accept_match"})");
+        CHECK(q.hub->matches() == 1 && q.CountType(a, "welcome") == 1 && q.CountType(a, "match_found") == 1 && Num(q.Last(a, "ready_check"), "accepted") == 1);
+        q.Say(a, R"({"action": "accept_match"})");   // (in the match: there is nothing to accept)
+        CHECK(Str(q.Last(a, "error"), "code") == "no_ready_check");
+    }
+    // 2. Normal: one player declines -> they leave the queue, the others are searching again in their old place; the next check starts with
+    //    whoever is left (AI players fill the rest) once everyone accepts. An old client (no ready_check) counts as accepted.
+    {
+        QueueRig q(4, 3000);
+        const ConnectionId a = q.Connect(), b = q.Connect(), c = q.Connect(), old = q.Connect();
+        for (ConnectionId id : {a, b, c}) q.Say(id, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+        q.Say(old, R"({"action": "queue", "mode": "normal"})");
+        CHECK(q.CountType(a, "match_found") == 1 && q.CountType(old, "match_found") == 0 && q.hub->searching(QueueMode::Normal) == 0);
+        q.Say(a, R"({"action": "accept_match"})");
+        const json::Value progress = q.Last(b, "ready_check");
+        CHECK(Num(progress, "accepted") == 2 && Num(progress, "humans") == 4 && progress.Find("you_accepted") != nullptr && !progress.Find("you_accepted")->AsBool());
+        q.Say(b, R"({"action": "decline_match"})");
+        CHECK(Str(q.Last(b, "queue_status"), "reason") == "declined" && Str(q.Last(b, "queue_status"), "state") == "idle");
+        CHECK(Str(q.Last(a, "queue_status"), "reason") == "requeued" && Str(q.Last(a, "queue_status"), "state") == "searching" && q.hub->searching(QueueMode::Normal) == 3);
+        CHECK(q.hub->matches() == 0 && q.CountType(old, "welcome") == 0);
+        q.Tick(100);   // past the fill time: a, c and the old client get a new check (one AI player)
+        CHECK(q.CountType(a, "match_found") == 2 && Num(q.Last(a, "match_found"), "humans") == 3 && Num(q.Last(a, "match_found"), "bots") == 1);
+        q.Say(a, R"({"action": "accept_match"})");
+        q.Say(c, R"({"action": "accept_match"})");
+        CHECK(q.hub->matches() == 1 && q.hub->MatchOf(a) == q.hub->MatchOf(old) && q.hub->MatchOf(c) == q.hub->MatchOf(a) && q.CountType(old, "match_found") == 1);
+        CHECK(q.hub->MatchOf(b) == nullptr);
+    }
+    // 3. The timeout declines whoever has not accepted; leaving the queue or disconnecting during the check does too. (A long fill time: a requeued
+    //    player who already waited past it would at once get a new check with AI players.)
+    {
+        QueueRig q(2, 600000);
+        const ConnectionId a = q.Connect(), b = q.Connect();
+        for (ConnectionId id : {a, b}) q.Say(id, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+        q.Say(a, R"({"action": "accept_match"})");
+        q.Tick(320);   // > 10 s
+        int requeued = 0;   // (later status updates follow it: look for it among a's messages)
+        for (const std::string& m : q.net.sent[a]) requeued += Str(ParseJson(m), "reason") == "requeued" ? 1 : 0;
+        CHECK(Str(q.Last(b, "queue_status"), "reason") == "declined" && requeued == 1 && q.hub->searching(QueueMode::Normal) == 1 && q.hub->matches() == 0);
+        q.Say(b, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+        CHECK(q.CountType(b, "match_found") == 2);
+        q.hub->OnDisconnect(b);
+        CHECK(Str(q.Last(a, "queue_status"), "reason") == "requeued" && q.hub->searching(QueueMode::Normal) == 1);
+        const ConnectionId c = q.Connect();
+        q.Say(c, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+        q.Say(c, R"({"action": "leave_queue"})");
+        CHECK(Str(q.Last(c, "queue_status"), "reason") == "declined" && Str(q.Last(a, "queue_status"), "reason") == "requeued");
+        q.Say(c, R"({"action": "decline_match"})");
+        CHECK(Str(q.Last(c, "error"), "code") == "no_ready_check");
+    }
+    // 4. Profile icons: set_icon takes a pooled champion; auth, profile, friends and match_started carry it.
+    {
+        std::uint64_t counter = 3;
+        AccountStore store("", [&counter] { counter = counter * 6364136223846793005ULL + 1442695040888963407ULL; return counter; }, 2);
+        QueueRig q(2, 3000, kTicksPerSecond * 120, &store);
+        const ConnectionId a = q.Connect(), b = q.Connect();
+        q.Say(a, R"({"action": "register", "username": "Alice", "password": "secret1"})");
+        q.Say(b, R"({"action": "register", "username": "Bob", "password": "secret1"})");
+        CHECK(Num(q.Last(a, "auth"), "icon") == 0);
+        q.Say(a, R"({"action": "friend_request", "username": "Bob"})");
+        q.Say(b, R"({"action": "friend_accept", "username": "Alice"})");
+        q.Say(a, R"({"action": "set_icon", "icon": 1})");
+        CHECK(Str(q.Last(a, "error"), "code") == "unknown_icon");
+        q.Say(a, R"({"action": "set_icon", "icon": 9002})");
+        CHECK(Num(q.Last(a, "profile"), "icon") == 9002 && store.Find("alice")->icon == 9002);
+        CHECK(Num(q.Last(b, "friends").Find("friends")->Items()[0], "icon") == 9002);
+        q.Say(a, R"({"action": "queue", "mode": "bots", "ready_check": true})");
+        q.Say(a, R"({"action": "accept_match"})");
+        const json::Value started = q.Last(a, "match_started");
+        const json::Value* icons = started.Find("player_icons");
+        long long first = -1, second = -1;
+        CHECK(icons != nullptr && icons->Items().size() == 2 && icons->Items()[0].ToInt(first) && icons->Items()[1].ToInt(second) && first == 9002 && second == 0);
+    }
+}
+
 static void TestGameServerFuzz() {
     // Connections come, go, shout garbage, send plausible commands, reconnect with tokens; time passes. Nothing may crash, the
     // engine's invariants must hold at the end, and the server must still be answering.
@@ -2626,6 +2712,14 @@ static void TestJsonSchemas() {
             checkMessage(msg::QueueStatus(info));
             checkMessage(msg::MatchFound(QueueMode::Bots, 1, 7));
             checkMessage(msg::MatchFound(QueueMode::Normal, 3, 5));
+            checkMessage(msg::MatchFound(QueueMode::Ranked, 2, 6, true, 10000));   // revision 9
+            checkMessage(msg::ReadyCheck(1, 2, true, 7400));
+            info.searching = false;
+            info.reason = "declined";
+            checkMessage(msg::QueueStatus(info));
+            info.searching = true;
+            info.reason = "requeued";
+            checkMessage(msg::QueueStatus(info));
         }
         Command command;
         command.type = CommandType::EquipItem;
@@ -2705,8 +2799,8 @@ static void TestJsonSchemas() {
         acc.history.push_back(h);
         checkMessage(msg::Auth(acc, "0123456789abcdef0123456789abcdef"));
         checkMessage(msg::Profile(acc, true));
-        checkMessage(msg::Profile(Account{"Bob", "", "", 1, 0, 0, 0, {}, {}, {}, {}, {}, {}}, false));
-        checkMessage(msg::Friends({{"Bob", "online", 0}, {"Cara", "in_match", 450}, {"Dan", "searching", 3300}, {"Eve", "offline", 2800}}, {"Finn"}, {"Gus"}));
+        checkMessage(msg::Profile(Account{"Bob", "", "", 1, 0, 0, 0, 9001, {}, {}, {}, {}, {}, {}}, false));
+        checkMessage(msg::Friends({{"Bob", "online", 0, 9001}, {"Cara", "in_match", 450, 0}, {"Dan", "searching", 3300, 9010}, {"Eve", "offline", 2800, 0}}, {"Finn"}, {"Gus"}));
         checkMessage(msg::Friends({}, {}, {}));
         checkMessage(msg::LoggedOut("logout"));
         checkMessage(msg::LoggedOut("elsewhere"));
@@ -2772,7 +2866,9 @@ static void TestJsonSchemas() {
                                R"({"action": "register", "username": "Alice", "password": "secret1"})", R"({"action": "login", "username": "Alice", "password": "secret1", "id": 4})",
                                R"({"action": "resume_session", "session": "0123456789abcdef0123456789abcdef"})", R"({"action": "logout"})", R"({"action": "get_profile"})",
                                R"({"action": "get_profile", "username": "Bob"})", R"({"action": "get_friends"})", R"({"action": "friend_request", "username": "Bob"})",
-                               R"({"action": "friend_accept", "username": "Bob"})", R"({"action": "friend_decline", "username": "Bob"})", R"({"action": "friend_remove", "username": "Bob"})"};
+                               R"({"action": "friend_accept", "username": "Bob"})", R"({"action": "friend_decline", "username": "Bob"})", R"({"action": "friend_remove", "username": "Bob"})",
+                               R"({"action": "queue", "mode": "normal", "ready_check": true})", R"({"action": "accept_match"})", R"({"action": "decline_match", "id": 3})",
+                               R"({"action": "set_icon", "icon": 9001})"};
         for (const char* text : valid) {
             const json::Value v = ParseJson(text);
             const std::string why = client.Check(clientSchema, v);
@@ -2784,7 +2880,9 @@ static void TestJsonSchemas() {
                                  R"({"action": "move_unit", "unit_id": 5, "location": "moon", "x": 1})", R"({"action": "equip_item", "unit_id": 5, "item_id": 0})", R"({"action": "unequip_item", "unit_id": 5, "slot": 3})",
                                  R"({"action": "get_fight", "fight_index": 8})", R"({"action": "ping", "id": -1})", R"({"action": 5})", R"({})", R"([])",
                                  R"({"action": "queue"})", R"({"action": "queue", "mode": "solo"})", R"({"action": "leave_queue", "mode": "bots"})",
-                                 R"({"action": "login", "username": "a"})", R"({"action": "register", "username": "", "password": "x"})", R"({"action": "friend_request"})"};
+                                 R"({"action": "login", "username": "a"})", R"({"action": "register", "username": "", "password": "x"})", R"({"action": "friend_request"})",
+                                 R"({"action": "queue", "mode": "bots", "ready_check": 1})", R"({"action": "accept_match", "mode": "bots"})", R"({"action": "set_icon"})",
+                                 R"({"action": "set_icon", "icon": 0})"};
         for (const char* text : invalid) {
             json::Value v;
             std::string e;
@@ -3312,6 +3410,7 @@ int main() {
         {"Soak: 8 real clients, a whole match, 3 reconnects", TestEightClientSoak},
         {"Catalog message", TestCatalog},
         {"Queue server: bots / normal queues, many matches, back to the home screen", TestQueueServer},
+        {"Ready check (accept / decline / timeout) and profile icons (revision 9)", TestReadyCheck},
         {"Accounts: password hashing, the ladder, the store and its file", TestAccounts},
         {"Queue server with accounts: log in, friends and presence, ranked, match history", TestQueueAccounts},
     };

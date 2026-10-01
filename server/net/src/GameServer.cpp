@@ -164,7 +164,8 @@ public:
 
         if (cmd.type == CommandType::Ping) return SendTo(id, msg::Pong(cmd.hasId, cmd.id));
         if (cmd.type == CommandType::GetCatalog) return SendTo(id, Catalog());
-        if (cmd.type == CommandType::JoinQueue || cmd.type == CommandType::LeaveQueue || cmd.type == CommandType::LeaveMatch) {   // (a QueueServer handles these before they get here)
+        if (cmd.type == CommandType::JoinQueue || cmd.type == CommandType::LeaveQueue || cmd.type == CommandType::LeaveMatch || cmd.type == CommandType::AcceptMatch ||
+            cmd.type == CommandType::DeclineMatch) {   // (a QueueServer handles these before they get here)
             return SendTo(id, msg::Error("no_queue", "this server hosts a single lobby: there is no queue (start it with --queue)", cmd.hasId, cmd.id));
         }
         if (IsAccountCommand(cmd.type)) {   // (revision 8: a QueueServer with --accounts handles these before they get here)
@@ -205,6 +206,9 @@ public:
             case CommandType::JoinQueue:
             case CommandType::LeaveQueue:
             case CommandType::LeaveMatch:
+            case CommandType::AcceptMatch:
+            case CommandType::DeclineMatch:
+            case CommandType::SetIcon:
             case CommandType::Register:
             case CommandType::Login:
             case CommandType::ResumeSession:
@@ -308,6 +312,12 @@ public:
     std::vector<std::vector<MatchResultUnit>> lastBoards_;     // the board each seat last fought with (match history)
     std::vector<int> outRound_;                                 // the round each seat went out in
 
+    std::vector<int> Icons() const {
+        if (cfg_.seatIcons.empty()) return {};
+        std::vector<int> icons = cfg_.seatIcons;
+        icons.resize(seats_.size(), 0);
+        return icons;
+    }
     void NameSeats() {
         names_ = cfg_.seatNames;
         names_.resize(seats_.size());
@@ -493,7 +503,7 @@ private:
     // A player (re)joining a running match gets everything they need to draw the game as it is right now.
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
-        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats(), names_));
+        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats(), names_, Icons()));
         SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), match_->PhaseTicks(), tick_, match_->IsMotherNatureRound(), match_->IsShopClosed()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
@@ -534,7 +544,7 @@ private:
             if (seats_[i].bot) bots_.emplace_back(static_cast<PlayerId>(i), seed, BotProfile{}, data_.traits);
         }
         for (std::size_t i = 0; i < seats_.size(); ++i) {
-            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats(), names_));
+            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats(), names_, Icons()));
         }
         match_->Start();
         SyncAfterEngineCall();

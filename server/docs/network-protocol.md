@@ -230,6 +230,20 @@ Errors: `no_accounts` (a server without `--accounts`), `not_logged_in`, `invalid
 Passwords: PBKDF2-HMAC-SHA-256 with a random 16-byte salt per account (20 000 rounds); they travel in the clear over `ws://`, so an online server must sit
 behind TLS (`wss://`, docs/deploy.md).
 
+## Ready check and profile icons (revision 9, demo 1.9)
+**Ready check.** `queue` takes an optional `ready_check: true`. When such a player's match is made, the server does not start it at once: everyone who asked
+gets `match_found` with `ready_check: true` and `accept_ms` (10 000 by default) and answers with `accept_match` or `decline_match` (no fields). Each answer
+sends everyone in the check a `ready_check` (`accepted`, `humans`, `you_accepted`, `remaining_ms`). When all have accepted, a last `ready_check` (`remaining_ms` 0)
+is followed by the usual `welcome`, `lobby`, `match_started`, ... (no second `match_found`). A `decline_match`, `leave_queue`, logout, a new login elsewhere,
+a disconnect or the timeout fails the check: whoever declined (or did not accept in time) gets `queue_status` idle with `reason` `declined`; everyone else is
+searching again in their old place (`queue_status` searching, `reason` `requeued`). Players who queued without `ready_check` accept by queueing (older clients
+behave exactly as before; `match_found` always carries `ready_check` / `accept_ms` now, false / 0 for them). A player in a check is `searching` for their friends;
+`queue` during a check is answered with `error` `in_ready_check`, `accept_match` / `decline_match` outside one with `no_ready_check`.
+
+**Profile icons.** `set_icon` (`icon`: the id of any champion in the pool; `error` `unknown_icon` otherwise) needs an account and answers with your new `profile`;
+your friends get a fresh `friends`. `auth`, `profile` and every `friends` entry carry `icon` (0 = never chosen: the client shows a default), and
+`match_started.player_icons` (queue server only) gives every seat's icon (0 for the AI players).
+
 ## Crash recovery and private servers
 `--autosave FILE` writes ONE file at the start of every Planning phase: the engine snapshot plus a small JSON "seats" record (each human seat's reconnect token, which seats are bots, the bots' state). `--resume FILE` restores
 a match from it; the players reconnect with their tokens and are resynced exactly as after a dropped connection. A finished match deletes the file. `--join-code CODE` makes every connection bring `?code=CODE`.

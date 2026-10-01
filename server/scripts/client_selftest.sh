@@ -17,7 +17,7 @@ cp "$HERE/tests/data/client_selftest_accounts.json" "$ACCOUNTS"
 NAME=CT$((RANDOM % 9000 + 1000))
 PORT=7777
 
-"$HERE/build/w2f_server" --queue --fast --port $PORT --accounts "$ACCOUNTS" > "$T/server.log" 2>&1 &
+"$HERE/build/w2f_server" --queue --fast --fill-seconds 5 --port $PORT --accounts "$ACCOUNTS" > "$T/server.log" 2>&1 &
 SERVER=$!
 sleep 1
 rm -rf "$P/Saved/Screenshots/MacEditor" "$P/Saved/W2F/clienttest.txt"

@@ -368,7 +368,7 @@
   },
   {
    "type": "object",
-   "description": "Revision 7, queue server only: look for a match. bots = you + AI players at once; normal = wait for other players (AI players fill the empty seats after the server's fill time). Revision 8: ranked = like normal, and the result moves your rank (needs accounts).",
+   "description": "Revision 7, queue server only: look for a match. bots = you + AI players at once; normal = wait for other players (AI players fill the empty seats after the server's fill time). Revision 8: ranked = like normal, and the result moves your rank (needs accounts). Revision 9: ready_check.",
    "properties": {
     "action": {
      "const": "queue"
@@ -385,6 +385,10 @@
       "normal",
       "ranked"
      ]
+    },
+    "ready_check": {
+     "type": "boolean",
+     "description": "revision 9: true = the found match waits for a ready check (match_found with ready_check true, then accept_match / decline_match within accept_ms); false / absent = it starts at once"
     }
    },
    "required": [
@@ -677,6 +681,69 @@
    "required": [
     "action",
     "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 9, queue server only: accept the ready check of a match_found (ready_check true).",
+   "properties": {
+    "action": {
+     "const": "accept_match"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 9, queue server only: decline it. You leave the queue; the other players go back into it in their old place.",
+   "properties": {
+    "action": {
+     "const": "decline_match"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 9, queue server with accounts: your profile icon, the id of a champion of the pool (unknown_icon otherwise). Answered with your profile.",
+   "properties": {
+    "action": {
+     "const": "set_icon"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "icon": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 99999
+    }
+   },
+   "required": [
+    "action",
+    "icon"
    ],
    "additionalProperties": false
   }

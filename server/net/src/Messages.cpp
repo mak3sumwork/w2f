@@ -348,24 +348,35 @@ std::string QueueStatus(const QueueInfo& info) {
         w.Field("in_queue", info.inQueue);
         w.Field("waited_ms", info.waitedMs);
         w.Field("fill_ms", info.fillMs);
-    } else if (!info.reason.empty()) {
-        w.Field("reason", info.reason);
     }
+    if (!info.reason.empty()) w.Field("reason", info.reason);   // (revision 9: "requeued" comes with a searching state)
     w.Field("seats", info.seats);
     w.Field("online", info.online);
     w.Field("matches", info.matches);
     return Finish(w);
 }
 
-std::string MatchFound(QueueMode mode, int humans, int bots) {
+std::string MatchFound(QueueMode mode, int humans, int bots, bool readyCheck, int acceptMs) {
     JsonWriter w = Start("match_found");
     w.Field("mode", ToString(mode));
     w.Field("humans", humans);
     w.Field("bots", bots);
+    w.Field("ready_check", readyCheck);   // revision 9: true = answer with accept_match / decline_match within accept_ms
+    w.Field("accept_ms", acceptMs);
     return Finish(w);
 }
 
-std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats, const std::vector<std::string>& names) {
+std::string ReadyCheck(int accepted, int humans, bool youAccepted, int remainingMs) {
+    JsonWriter w = Start("ready_check");
+    w.Field("accepted", accepted);
+    w.Field("humans", humans);
+    w.Field("you_accepted", youAccepted);
+    w.Field("remaining_ms", remainingMs);
+    return Finish(w);
+}
+
+std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats, const std::vector<std::string>& names,
+                         const std::vector<int>& icons) {
     JsonWriter w = Start("match_started");
     w.Field("player_id", static_cast<int>(you));
     w.Field("seats", seats);
@@ -375,6 +386,11 @@ std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int 
     if (!names.empty()) {   // revision 8: every seat's name (usernames; the AI players have usernames too)
         w.Key("player_names").BeginArray();
         for (const std::string& n : names) w.String(n);
+        w.EndArray();
+    }
+    if (!icons.empty()) {   // revision 9: every seat's profile icon (a champion id; 0 = none: the client picks one)
+        w.Key("player_icons").BeginArray();
+        for (int i : icons) w.Int(i);
         w.EndArray();
     }
     w.Field("tick_rate", kTicksPerSecond);
@@ -608,6 +624,7 @@ std::string Auth(const Account& account, std::string_view session) {
     JsonWriter w = Start("auth");
     w.Field("username", account.name);
     w.Field("session", session);
+    w.Field("icon", account.icon);   // revision 9
     WriteRank(w, account.points);
     return Finish(w);
 }
@@ -617,6 +634,7 @@ std::string Profile(const Account& account, bool online) {
     w.Field("username", account.name);
     w.Field("online", online);
     w.Field("created_ms", account.createdMs);
+    w.Field("icon", account.icon);   // revision 9
     WriteRank(w, account.points);
     w.Field("peak_points", account.peakPoints);
     const AccountStats& s = account.stats;
@@ -655,6 +673,7 @@ std::string Friends(const std::vector<FriendInfo>& friends, const std::vector<st
         w.BeginObject();
         w.Field("username", f.name);
         w.Field("status", f.status);
+        w.Field("icon", f.icon);   // revision 9
         WriteRank(w, f.points);
         w.EndObject();
     }

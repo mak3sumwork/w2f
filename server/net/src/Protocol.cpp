@@ -98,7 +98,8 @@ ParseResult ParseCommand(std::string_view text) {
                                    {"queue", CommandType::JoinQueue}, {"leave_queue", CommandType::LeaveQueue}, {"leave_match", CommandType::LeaveMatch},
                                    {"register", CommandType::Register}, {"login", CommandType::Login}, {"resume_session", CommandType::ResumeSession}, {"logout", CommandType::Logout},
                                    {"get_profile", CommandType::GetProfile}, {"get_friends", CommandType::GetFriends}, {"friend_request", CommandType::FriendRequest},
-                                   {"friend_accept", CommandType::FriendAccept}, {"friend_decline", CommandType::FriendDecline}, {"friend_remove", CommandType::FriendRemove}};
+                                   {"friend_accept", CommandType::FriendAccept}, {"friend_decline", CommandType::FriendDecline}, {"friend_remove", CommandType::FriendRemove},
+                                   {"accept_match", CommandType::AcceptMatch}, {"decline_match", CommandType::DeclineMatch}, {"set_icon", CommandType::SetIcon}};
     bool found = false;
     for (const Known& k : kKnown) {
         if (name == k.name) { c.type = k.type; found = true; }
@@ -118,7 +119,8 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::SetShopLock: allowed = {"id", "action", "locked"}; break;
         case CommandType::GetFight: allowed = {"id", "action", "fight_index"}; break;
         case CommandType::PickTraitChoice: allowed = {"id", "action", "index"}; break;
-        case CommandType::JoinQueue: allowed = {"id", "action", "mode"}; break;
+        case CommandType::JoinQueue: allowed = {"id", "action", "mode", "ready_check"}; break;
+        case CommandType::SetIcon: allowed = {"id", "action", "icon"}; break;
         case CommandType::Register:
         case CommandType::Login: allowed = {"id", "action", "username", "password"}; break;
         case CommandType::ResumeSession: allowed = {"id", "action", "session"}; break;
@@ -131,6 +133,8 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::GetFriends:
         case CommandType::LeaveQueue:
         case CommandType::LeaveMatch:
+        case CommandType::AcceptMatch:
+        case CommandType::DeclineMatch:
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:
@@ -222,8 +226,13 @@ ParseResult ParseCommand(std::string_view text) {
             else if (mode->AsString() == "normal") c.queueMode = QueueMode::Normal;
             else if (mode->AsString() == "ranked") c.queueMode = QueueMode::Ranked;
             else ok = in.Fail("out_of_range", "\"mode\" must be \"bots\", \"normal\" or \"ranked\"");
+            if (ok && in.Take("ready_check") != nullptr) ok = in.Bool("ready_check", c.readyCheck);
             break;
         }
+        case CommandType::SetIcon:
+            ok = in.Required("icon", 1, 99999, v);
+            c.icon = static_cast<int>(v);
+            break;
         case CommandType::Register:
         case CommandType::Login:
             ok = in.String("username", 1, 32, true, c.username) && in.String("password", 1, 128, true, c.password);
@@ -244,6 +253,8 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::GetFriends:
         case CommandType::LeaveQueue:
         case CommandType::LeaveMatch:
+        case CommandType::AcceptMatch:
+        case CommandType::DeclineMatch:
         case CommandType::RerollShop:
         case CommandType::BuyXp:
         case CommandType::GetState:

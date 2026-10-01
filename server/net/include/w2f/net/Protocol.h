@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 8;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 9;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -55,6 +55,10 @@ enum class CommandType : std::uint8_t {
     FriendAccept,   // username
     FriendDecline,  // username: refuse an incoming request, or cancel your own
     FriendRemove,   // username
+    // Revision 9 (demo 1.9): the ready check and profile icons (a queue server; set_icon needs accounts).
+    AcceptMatch,    // answer `match_found` (ready_check true): ready
+    DeclineMatch,   // answer it: not now (you leave the queue; the others go back into it)
+    SetIcon,        // icon: a champion id, your profile icon
 };
 
 enum class QueueMode : std::uint8_t { Bots, Normal, Ranked };   // Ranked: revision 8
@@ -90,6 +94,9 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::FriendAccept: return "friend_accept";
         case CommandType::FriendDecline: return "friend_decline";
         case CommandType::FriendRemove: return "friend_remove";
+        case CommandType::AcceptMatch: return "accept_match";
+        case CommandType::DeclineMatch: return "decline_match";
+        case CommandType::SetIcon: return "set_icon";
     }
     return "?";
 }
@@ -97,7 +104,7 @@ constexpr const char* ToString(CommandType t) {
 // Revision 8: the account / profile / friends commands (a QueueServer with accounts answers them; anything else says "no_accounts").
 constexpr bool IsAccountCommand(CommandType t) {
     return t == CommandType::Register || t == CommandType::Login || t == CommandType::ResumeSession || t == CommandType::Logout || t == CommandType::GetProfile ||
-           t == CommandType::GetFriends || t == CommandType::FriendRequest || t == CommandType::FriendAccept || t == CommandType::FriendDecline || t == CommandType::FriendRemove;
+           t == CommandType::GetFriends || t == CommandType::FriendRequest || t == CommandType::FriendAccept || t == CommandType::FriendDecline || t == CommandType::FriendRemove || t == CommandType::SetIcon;
 }
 
 struct Command {
@@ -117,6 +124,8 @@ struct Command {
     bool locked = false;   // set_shop_lock
     int choiceIndex = 0;   // pick_trait_choice: -1..7
     QueueMode queueMode = QueueMode::Bots;   // queue
+    bool readyCheck = false;                 // queue (revision 9): ask for a ready check (match_found -> accept_match / decline_match) before the match starts
+    int icon = 0;                            // set_icon
     std::string username, password, session; // register / login / resume_session / get_profile / friend_*
 };
 
