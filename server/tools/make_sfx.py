@@ -99,6 +99,12 @@ def main():
     save("Drop", mix(tone(700, 0.2, ((1, 1), (2, 0.3)), 0.002, 0.12, sweep=1.2), bell(1400, 0.4, 1.5, 3.5, 0.3), at=[0, 0.08]), 0.55)
     save("Unlock", mix(*[bell(f, 1.2, 2.5, 3.5, 0.8) for f in (392, 494, 587, 784)] + [noise(0.6, lowpass=2000, attack=0.2, decay=0.4, curve=3.0) * 0.3],
                        at=[0, 0.1, 0.2, 0.3, 0]), 0.7)
+    # ---- trait activation (demo 1.8): a rising bell arpeggio over a soft shimmer, longer and brighter with the badge (bronze, silver, gold, prismatic)
+    for tier, notes in ((1, (659, 988)), (2, (659, 880, 1175)), (3, (523, 784, 1046, 1318)), (4, (523, 784, 1046, 1318, 1568, 2093))):
+        shimmer = noise(0.25 + 0.1 * tier, highpass=4000, attack=0.08, decay=0.2 + 0.08 * tier, curve=3.0) * (0.12 + 0.04 * tier)
+        bells = [bell(f, 0.6 + 0.15 * tier, 1.6, 3.5, 0.45 + 0.1 * tier) for f in notes]
+        low = [tone(notes[0] / 2, 0.8, ((1, 1), (2, 0.4)), 0.02, 0.6, 3.0) * 0.4] if tier >= 3 else []
+        save("TraitUp%d" % tier, mix(shimmer, *bells, *low, at=[0] + [0.055 * i for i in range(len(notes))] + [0] * len(low)), 0.55 + 0.05 * tier)
     # ---- the round
     save("RoundStart", mix(tone(196, 1.6, ((1, 1), (2, 0.6), (3, 0.35), (4.2, 0.2), (5.4, 0.12)), 0.01, 1.2, 3.0), noise(0.4, lowpass=800, decay=0.3) * 0.4), 0.6)
     save("CombatStart", mix(*[mix(tone(70, 0.4, ((1, 1), (1.5, 0.4)), 0.002, 0.25, 5.0, sweep=-0.4), noise(0.2, lowpass=400, decay=0.1)) for _ in range(3)],
