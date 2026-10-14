@@ -54,7 +54,7 @@ std::string ReadyCheck(int accepted, int humans, bool youAccepted, int remaining
 
 // `motherNatureEvery` = every how many rounds Mother Nature comes (0 = no Mother Nature data loaded: never). `botSeats` = the AI players' seats.
 std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats = {}, const std::vector<std::string>& names = {},
-                         const std::vector<int>& icons = {});
+                         const std::vector<int>& icons = {}, const std::vector<std::string>& borders = {});
 // `motherNatureRound`: this round is one of Mother Nature's: a gift phase first, and no shop for the whole round.
 // `shopClosed`: no shop this round (Mother Nature's, or the opening round: the free unit was dealt at the start).
 std::string Phase(const GameConfig& config, MatchPhase phase, int round, int ticksElapsed, int durationTicks, std::uint64_t serverTick, bool motherNatureRound, bool shopClosed);
@@ -88,13 +88,59 @@ struct FriendInfo {
     std::string status;   // "offline" | "online" | "searching" | "in_match"
     int points = 0;
     int icon = 0;         // (revision 9)
+    int level = 0;        // (revision 10; 0 = not sent) the account level
+    std::string border, title;   // (revision 10) the equipped cosmetics' store ids
+    int partySize = 0;    // (revision 10) the size of the party they are in (0: none)
 };
 // `auth`: logged in (register / login / resume_session): the username, a session token to remember, the rank.
 std::string Auth(const Account& account, std::string_view session);
-// `profile`: rank, stats and the match history of a player (anyone may look at anyone's).
-std::string Profile(const Account& account, bool online);
+// `profile`: rank, stats and the match history of a player (anyone may look at anyone's). With `store` (revision 10): level, border and title too.
+std::string Profile(const Account& account, bool online, const AccountStore* store = nullptr);
 // `friends`: the friend list with their status and rank, the requests in and out.
 std::string Friends(const std::vector<FriendInfo>& friends, const std::vector<std::string>& incoming, const std::vector<std::string>& outgoing);
+
+// ---- revision 10 (demo 2.0): the League-style client ----
+// `wallet`: your coins, account level / XP, what you own and wear. Sent after login and after every change.
+std::string Wallet(const Account& account, const AccountStore& store);
+// `store`: every store item with its price, whether you own / wear it.
+std::string Store(const Account& account, const AccountStore& store);
+// `missions`: the current daily and weekly missions with your progress; when each period ends.
+std::string Missions(const std::vector<AccountStore::MissionUpdate>& missions, std::uint64_t nowMs);
+struct PartyMember {
+    std::string name;
+    int icon = 0, level = 0, points = 0;
+    std::string border, title, status;   // status: "online" | "searching" | "in_match"
+};
+struct PartyInfo {
+    std::uint64_t id = 0;          // 0 = you are in no party
+    std::string leader;
+    QueueMode mode = QueueMode::Normal;
+    std::vector<PartyMember> members;   // the leader first
+    std::vector<std::string> invited;   // invites still open
+};
+// `party`: the party you are in (to every member on every change); id 0 = none.
+std::string Party(const PartyInfo& party);
+// `party_invite`: a friend invites you (answer with party_accept / party_decline).
+std::string PartyInviteMsg(std::string_view from, int icon, int partySize, QueueMode mode);
+// `chat`: a line in a conversation, to both ends (the sender sees it echoed with the server's time). channel "whisper" | "party".
+std::string ChatMsg(std::string_view channel, std::string_view from, std::string_view to, std::string_view text, std::uint64_t timeMs, bool offline);
+struct ChatLine { std::string from, text; std::uint64_t timeMs = 0; };
+std::string ChatHistory(std::string_view with, const std::vector<ChatLine>& lines);
+// `match_detail`: every seat of a finished match.
+std::string MatchDetail(const MatchRecord& record);
+// `post_game`: sent once to every logged-in player when their match is over -- result, LP, coins, XP, level, missions and the whole lobby.
+struct PostGameInfo {
+    const MatchRecord* record = nullptr;
+    int placement = 0, lpChange = 0, points = 0;
+    int coins = 0, xp = 0, levelBefore = 1, level = 1, xpInto = 0, xpNext = 1, coinsTotal = 0;
+    std::vector<AccountStore::MissionUpdate> missions;
+};
+std::string PostGame(const PostGameInfo& info, std::uint64_t nowMs);
+// `ladder`: the Ranked leaderboard's top, and your own place (0: unranked).
+struct LadderEntry { std::string name; int icon = 0, level = 0, points = 0; std::string border, title; };
+std::string Ladder(const std::vector<LadderEntry>& top, int yourPosition, int total);
+// `done`: an account action without a message of its own went through (change_password).
+std::string Done(std::string_view action, bool hasId = false, long long id = 0);
 // `logged_out`: after logout (or when another device logged in to the same account: reason "elsewhere").
 std::string LoggedOut(std::string_view reason);
 std::string MatchOver(const MatchManager& match);

@@ -14,6 +14,10 @@
 // The player gets `match_found`, then exactly the messages a single-lobby server sends (welcome, lobby, match_started, ...): the match itself
 // is an unchanged GameServer. When it ends (or the player sends leave_match) the connection is idle again -- the socket stays open -- and
 // can queue for the next one. A reconnect with a match's token (?token=...) goes straight back into that match.
+// (revision 10, demo 2.0) With accounts there are also PARTIES (friends invite each other; the leader queues for everyone and the party always lands in
+// the same match), CHAT (whispers between friends, delivered later when they are offline, and party chat), the Ranked LEADERBOARD, the full record of
+// every finished match, and -- with a Progression -- coins, account levels, missions and the cosmetics store; every player gets a `post_game` when
+// their match ends.
 //
 // Like GameServer it knows nothing about sockets or the wall clock (the caller passes nowMs), so it is tested without a network.
 
@@ -37,6 +41,13 @@ struct QueueServerConfig {
     // queue moves their rank, and friends see each other's status. nullptr = the old anonymous behaviour.
     AccountStore* accounts = nullptr;
     std::function<std::uint64_t()> wallClockMs;   // unix ms for the match history (default: 0)
+    // (revision 10) Parties and chat.
+    long long inviteMs = 60'000;      // a party invite expires after this long
+    int rankedPartyMax = 2;           // Ranked takes parties of at most this many (TFT: duos); bots / normal take up to `match.seats`
+    int chatKept = 50;                // lines kept per conversation (get_chat), in memory
+    int offlineChatKept = 30;         // whispers kept for a friend who is offline, delivered when they log in
+    // (revision 10) Coins, levels, missions and the store (data/progression.json); nullptr = none of that (the commands answer "no_progression").
+    const Progression* progression = nullptr;
 };
 
 class QueueServer : public IServerHandler {

@@ -376,7 +376,7 @@ std::string ReadyCheck(int accepted, int humans, bool youAccepted, int remaining
 }
 
 std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int motherNatureEvery, const std::vector<PlayerId>& botSeats, const std::vector<std::string>& names,
-                         const std::vector<int>& icons) {
+                         const std::vector<int>& icons, const std::vector<std::string>& borders) {
     JsonWriter w = Start("match_started");
     w.Field("player_id", static_cast<int>(you));
     w.Field("seats", seats);
@@ -391,6 +391,11 @@ std::string MatchStarted(const GameConfig& config, int seats, PlayerId you, int 
     if (!icons.empty()) {   // revision 9: every seat's profile icon (a champion id; 0 = none: the client picks one)
         w.Key("player_icons").BeginArray();
         for (int i : icons) w.Int(i);
+        w.EndArray();
+    }
+    if (!borders.empty()) {   // revision 10: every seat's profile border (a store item id; "" = the default)
+        w.Key("player_borders").BeginArray();
+        for (const std::string& b : borders) w.String(b);
         w.EndArray();
     }
     w.Field("tick_rate", kTicksPerSecond);
@@ -609,6 +614,19 @@ std::string PlayerDamaged(PlayerId player, int damage, int healthAfter) {
 }
 
 namespace {
+void WriteHistoryBoard(JsonWriter& w, const std::vector<HistoryUnit>& board) {
+    w.Key("board").BeginArray();
+    for (const HistoryUnit& u : board) {
+        w.BeginObject();
+        w.Field("champion", u.champion).Field("star", u.star);
+        w.Key("items").BeginArray();
+        for (int i : u.items) w.Int(i);
+        w.EndArray();
+        w.EndObject();
+    }
+    w.EndArray();
+}
+
 void WriteRank(JsonWriter& w, int points) {
     const RankInfo r = RankOf(points);
     w.Key("rank").BeginObject();
@@ -629,12 +647,17 @@ std::string Auth(const Account& account, std::string_view session) {
     return Finish(w);
 }
 
-std::string Profile(const Account& account, bool online) {
+std::string Profile(const Account& account, bool online, const AccountStore* store) {
     JsonWriter w = Start("profile");
     w.Field("username", account.name);
     w.Field("online", online);
     w.Field("created_ms", account.createdMs);
     w.Field("icon", account.icon);   // revision 9
+    if (store != nullptr && store->progression() != nullptr) {   // revision 10
+        w.Field("level", store->LevelOf(account));
+        w.Field("border", store->Equipped(account, "border"));
+        w.Field("title", store->Equipped(account, "title"));
+    }
     WriteRank(w, account.points);
     w.Field("peak_points", account.peakPoints);
     const AccountStats& s = account.stats;
@@ -647,16 +670,9 @@ std::string Profile(const Account& account, bool online) {
         w.BeginObject();
         w.Field("time_ms", h.timeMs).Field("mode", h.mode).Field("placement", h.placement).Field("level", h.level).Field("round", h.round);
         w.Field("lp_change", h.lpChange).Field("points_after", h.pointsAfter);
-        w.Key("board").BeginArray();
-        for (const HistoryUnit& u : h.board) {
-            w.BeginObject();
-            w.Field("champion", u.champion).Field("star", u.star);
-            w.Key("items").BeginArray();
-            for (int i : u.items) w.Int(i);
-            w.EndArray();
-            w.EndObject();
-        }
-        w.EndArray();
+        if (h.matchId != 0) w.Field("match_id", h.matchId);   // revision 10
+        w.Field("coins", h.coins).Field("xp", h.xp);
+        WriteHistoryBoard(w, h.board);
         w.Key("players").BeginArray();
         for (const std::string& n : h.players) w.String(n);
         w.EndArray();
@@ -675,6 +691,12 @@ std::string Friends(const std::vector<FriendInfo>& friends, const std::vector<st
         w.Field("status", f.status);
         w.Field("icon", f.icon);   // revision 9
         WriteRank(w, f.points);
+        if (f.level > 0) {   // revision 10
+            w.Field("level", f.level);
+            w.Field("border", f.border);
+            w.Field("title", f.title);
+        }
+        if (f.partySize > 0) w.Field("party_size", f.partySize);
         w.EndObject();
     }
     w.EndArray();
@@ -684,6 +706,179 @@ std::string Friends(const std::vector<FriendInfo>& friends, const std::vector<st
     w.Key("outgoing").BeginArray();
     for (const std::string& n : outgoing) w.String(n);
     w.EndArray();
+    return Finish(w);
+}
+
+// ---- revision 10 ----
+
+namespace {
+void WriteLevel(JsonWriter& w, const Progression& p, int totalXp) {
+    int level = 1, into = 0, need = 1;
+    p.LevelOf(totalXp, level, into, need);
+    w.Field("level", level).Field("xp", into).Field("xp_next", need);
+}
+void WriteMission(JsonWriter& w, const AccountStore::MissionUpdate& u) {
+    w.BeginObject();
+    w.Field("id", u.mission->id).Field("period", u.mission->period).Field("text", u.mission->text);
+    w.Field("progress", u.progress).Field("count", u.mission->count).Field("coins", u.mission->coins).Field("xp", u.mission->xp);
+    w.Field("done", u.done);
+    if (u.justDone) w.Field("just_done", true);
+    w.EndObject();
+}
+void WriteSeats(JsonWriter& w, const MatchRecord& r) {
+    w.Key("seats").BeginArray();
+    for (const MatchRecordSeat& s : r.seats) {
+        w.BeginObject();
+        w.Field("username", s.name).Field("bot", s.bot).Field("icon", s.icon).Field("border", s.border).Field("title", s.title);
+        w.Field("placement", s.placement).Field("level", s.level).Field("round", s.round);
+        WriteHistoryBoard(w, s.board);
+        w.EndObject();
+    }
+    w.EndArray();
+}
+}  // namespace
+
+std::string Wallet(const Account& account, const AccountStore& store) {
+    JsonWriter w = Start("wallet");
+    w.Field("coins", account.coins);
+    if (const Progression* p = store.progression()) WriteLevel(w, *p, account.xp);
+    w.Field("total_xp", account.xp);
+    w.Field("border", store.Equipped(account, "border"));
+    w.Field("title", store.Equipped(account, "title"));
+    w.Field("arena", store.Equipped(account, "arena"));
+    w.Key("owned").BeginArray();
+    if (const Progression* p = store.progression()) {
+        for (const StoreItem& item : p->store) {
+            if (store.Owns(account, item)) w.String(item.id);
+        }
+    }
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string Store(const Account& account, const AccountStore& store) {
+    JsonWriter w = Start("store");
+    w.Field("coins", account.coins);
+    w.Key("items").BeginArray();
+    if (const Progression* p = store.progression()) {
+        for (const StoreItem& item : p->store) {
+            w.BeginObject();
+            w.Field("id", item.id).Field("kind", item.kind).Field("name", item.name).Field("desc", item.desc).Field("price", item.price);
+            w.Field("owned", store.Owns(account, item));
+            w.Field("equipped", store.Equipped(account, item.kind) == item.id);
+            if (item.isDefault) w.Field("default", true);
+            w.EndObject();
+        }
+    }
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string Missions(const std::vector<AccountStore::MissionUpdate>& missions, std::uint64_t nowMs) {
+    JsonWriter w = Start("missions");
+    w.Field("daily_ends_ms", NextDayMs(nowMs));
+    w.Field("weekly_ends_ms", NextWeekMs(nowMs));
+    w.Key("missions").BeginArray();
+    for (const AccountStore::MissionUpdate& u : missions) WriteMission(w, u);
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string Party(const PartyInfo& party) {
+    JsonWriter w = Start("party");
+    w.Field("id", party.id);
+    w.Field("leader", party.leader);
+    w.Field("mode", party.id != 0 ? ToString(party.mode) : "");
+    w.Key("members").BeginArray();
+    for (const PartyMember& m : party.members) {
+        w.BeginObject();
+        w.Field("username", m.name).Field("icon", m.icon).Field("level", m.level).Field("border", m.border).Field("title", m.title).Field("status", m.status);
+        WriteRank(w, m.points);
+        w.EndObject();
+    }
+    w.EndArray();
+    w.Key("invited").BeginArray();
+    for (const std::string& n : party.invited) w.String(n);
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string PartyInviteMsg(std::string_view from, int icon, int partySize, QueueMode mode) {
+    JsonWriter w = Start("party_invite");
+    w.Field("from", from);
+    w.Field("icon", icon);
+    w.Field("size", partySize);
+    w.Field("mode", ToString(mode));
+    return Finish(w);
+}
+
+std::string ChatMsg(std::string_view channel, std::string_view from, std::string_view to, std::string_view text, std::uint64_t timeMs, bool offline) {
+    JsonWriter w = Start("chat");
+    w.Field("channel", channel);
+    w.Field("from", from);
+    w.Field("to", to);
+    w.Field("text", text);
+    w.Field("time_ms", timeMs);
+    if (offline) w.Field("offline", true);
+    return Finish(w);
+}
+
+std::string ChatHistory(std::string_view with, const std::vector<ChatLine>& lines) {
+    JsonWriter w = Start("chat_history");
+    w.Field("with", with);
+    w.Key("lines").BeginArray();
+    for (const ChatLine& l : lines) {
+        w.BeginObject();
+        w.Field("from", l.from).Field("text", l.text).Field("time_ms", l.timeMs);
+        w.EndObject();
+    }
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string MatchDetail(const MatchRecord& r) {
+    JsonWriter w = Start("match_detail");
+    w.Field("match_id", r.id).Field("time_ms", r.timeMs).Field("mode", r.mode).Field("rounds", r.rounds);
+    WriteSeats(w, r);
+    return Finish(w);
+}
+
+std::string PostGame(const PostGameInfo& info, std::uint64_t nowMs) {
+    JsonWriter w = Start("post_game");
+    const MatchRecord& r = *info.record;
+    w.Field("match_id", r.id).Field("mode", r.mode).Field("rounds", r.rounds);
+    w.Field("placement", info.placement).Field("lp_change", info.lpChange);
+    WriteRank(w, info.points);
+    w.Field("coins", info.coins).Field("xp", info.xp).Field("coins_total", info.coinsTotal);
+    w.Field("level_before", info.levelBefore).Field("level", info.level).Field("level_xp", info.xpInto).Field("level_xp_next", info.xpNext);
+    w.Field("daily_ends_ms", NextDayMs(nowMs));
+    w.Key("missions").BeginArray();
+    for (const AccountStore::MissionUpdate& u : info.missions) WriteMission(w, u);
+    w.EndArray();
+    WriteSeats(w, r);
+    return Finish(w);
+}
+
+std::string Ladder(const std::vector<LadderEntry>& top, int yourPosition, int total) {
+    JsonWriter w = Start("ladder");
+    w.Field("you", yourPosition);
+    w.Field("total", total);
+    w.Key("players").BeginArray();
+    int position = 0;
+    for (const LadderEntry& e : top) {
+        w.BeginObject();
+        w.Field("position", ++position).Field("username", e.name).Field("icon", e.icon).Field("level", e.level).Field("border", e.border).Field("title", e.title);
+        WriteRank(w, e.points);
+        w.EndObject();
+    }
+    w.EndArray();
+    return Finish(w);
+}
+
+std::string Done(std::string_view action, bool hasId, long long id) {
+    JsonWriter w = Start("done");
+    w.Field("action", action);
+    if (hasId) w.Field("id", id);
     return Finish(w);
 }
 

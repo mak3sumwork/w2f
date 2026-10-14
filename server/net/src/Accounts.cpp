@@ -38,6 +38,31 @@ std::uint64_t U64Of(const json::Value* v) {
 }
 std::string StrOf(const json::Value* v) { return v != nullptr && v->IsString() ? v->AsString() : std::string(); }
 
+void WriteBoard(JsonWriter& w, const std::vector<HistoryUnit>& board) {
+    w.Key("board").BeginArray();
+    for (const HistoryUnit& u : board) {
+        w.BeginObject();
+        w.Field("champion", u.champion).Field("star", u.star);
+        w.Key("items").BeginArray();
+        for (int i : u.items) w.Int(i);
+        w.EndArray();
+        w.EndObject();
+    }
+    w.EndArray();
+}
+
+std::vector<HistoryUnit> ReadBoard(const json::Value* b) {
+    std::vector<HistoryUnit> out;
+    if (b == nullptr || !b->IsArray()) return out;
+    for (const json::Value& u : b->Items()) {
+        HistoryUnit hu;
+        hu.champion = IntOf(u.Find("champion")); hu.star = IntOf(u.Find("star"), 1);
+        if (const json::Value* it = u.Find("items"); it != nullptr && it->IsArray()) { for (const json::Value& i : it->Items()) hu.items.push_back(IntOf(&i)); }
+        out.push_back(std::move(hu));
+    }
+    return out;
+}
+
 }  // namespace
 
 RankInfo RankOf(int points) {
@@ -73,6 +98,11 @@ const char* AccountStore::Code(Result r) {
         case Result::NoRequest: return "no_request";
         case Result::NotFriends: return "not_friends";
         case Result::TooManyFriends: return "too_many_friends";
+        case Result::UnknownItem: return "unknown_item";
+        case Result::AlreadyOwned: return "already_owned";
+        case Result::NotEnoughCoins: return "not_enough_coins";
+        case Result::NotOwned: return "not_owned";
+        case Result::UnknownMatch: return "unknown_match";
     }
     return "?";
 }
@@ -92,6 +122,11 @@ const char* AccountStore::Describe(Result r) {
         case Result::NoRequest: return "There is no such request.";
         case Result::NotFriends: return "You are not friends.";
         case Result::TooManyFriends: return "That friend list is full.";
+        case Result::UnknownItem: return "There is no such item in the store.";
+        case Result::AlreadyOwned: return "You already own it.";
+        case Result::NotEnoughCoins: return "Not enough coins.";
+        case Result::NotOwned: return "Buy it first.";
+        case Result::UnknownMatch: return "That match is no longer kept.";
     }
     return "";
 }
@@ -152,6 +187,7 @@ AccountStore::Result AccountStore::Register(std::string_view name, std::string_v
     a.iterations = iterations_;
     a.hash = Hash(password, a.salt, a.iterations);
     a.createdMs = nowMs;
+    a.coins = progression_ != nullptr ? progression_->startingCoins : 0;
     sessionOut = NewHex(16);
     a.sessions.push_back(sessionOut);
     accounts_[key] = std::move(a);
@@ -186,6 +222,157 @@ void AccountStore::Logout(std::string_view key, std::string_view session) {
     if (a == nullptr) return;
     a->sessions.erase(std::remove(a->sessions.begin(), a->sessions.end(), std::string(session)), a->sessions.end());
     Changed();
+}
+
+AccountStore::Result AccountStore::ChangePassword(std::string_view key, std::string_view oldPassword, std::string_view newPassword, std::string_view keepSession) {
+    Account* a = Mutable(key);
+    if (a == nullptr) return Result::UnknownUser;
+    if (!ValidPassword(oldPassword) || !ConstantTimeEquals(Hash(oldPassword, a->salt, a->iterations), a->hash)) return Result::BadCredentials;
+    if (!ValidPassword(newPassword)) return Result::InvalidPassword;
+    a->salt = NewHex(16);
+    a->iterations = iterations_;
+    a->hash = Hash(newPassword, a->salt, a->iterations);
+    std::vector<std::string> kept;   // a changed password signs every other device out
+    for (const std::string& s : a->sessions) {
+        if (s == keepSession) kept.push_back(s);
+    }
+    a->sessions = kept;
+    Changed();
+    return Result::Ok;
+}
+
+AccountStore::Result AccountStore::Buy(std::string_view key, std::string_view itemId) {
+    Account* a = Mutable(key);
+    if (a == nullptr) return Result::UnknownUser;
+    const StoreItem* item = progression_ != nullptr ? progression_->FindItem(itemId) : nullptr;
+    if (item == nullptr) return Result::UnknownItem;
+    if (Owns(*a, *item)) return Result::AlreadyOwned;
+    if (a->coins < item->price) return Result::NotEnoughCoins;
+    a->coins -= item->price;
+    a->owned.insert(item->id);
+    Changed();
+    return Result::Ok;
+}
+
+AccountStore::Result AccountStore::Equip(std::string_view key, std::string_view itemId) {
+    Account* a = Mutable(key);
+    if (a == nullptr) return Result::UnknownUser;
+    const StoreItem* item = progression_ != nullptr ? progression_->FindItem(itemId) : nullptr;
+    if (item == nullptr) return Result::UnknownItem;
+    if (!Owns(*a, *item)) return Result::NotOwned;
+    std::string& slot = item->kind == "border" ? a->border : (item->kind == "title" ? a->title : a->arena);
+    slot = item->isDefault ? std::string() : item->id;
+    Changed();
+    return Result::Ok;
+}
+
+std::string AccountStore::Equipped(const Account& account, std::string_view kind) const {
+    const std::string& worn = kind == "border" ? account.border : (kind == "title" ? account.title : account.arena);
+    if (!worn.empty()) return worn;
+    const StoreItem* d = progression_ != nullptr ? progression_->DefaultOf(kind) : nullptr;
+    return d != nullptr ? d->id : std::string();
+}
+
+int AccountStore::LevelOf(const Account& account) const {
+    if (progression_ == nullptr) return 1;
+    int level = 1, into = 0, need = 0;
+    progression_->LevelOf(account.xp, level, into, need);
+    return level;
+}
+
+int AccountStore::Grant(std::string_view key, int coins, int xp) {
+    Account* a = Mutable(key);
+    if (a == nullptr || progression_ == nullptr) return 0;
+    const int before = LevelOf(*a);
+    a->coins += std::max(0, coins);
+    a->xp += std::max(0, xp);
+    const int gained = LevelOf(*a) - before;
+    a->coins += gained * progression_->levelUpCoins;
+    Changed();
+    return gained;
+}
+
+void AccountStore::RefreshMissions(std::string_view key, std::uint64_t nowMs) {
+    Account* a = Mutable(key);
+    if (a == nullptr || progression_ == nullptr) return;
+    const long long day = DayOf(nowMs), week = WeekOf(nowMs);
+    if (a->missionDay == day && a->missionWeek == week) return;
+    // a new day forgets the daily missions' progress, a new week the weekly ones'
+    std::map<std::string, int> progress;
+    std::set<std::string> done;
+    for (const MissionDef& m : progression_->missions) {
+        const bool keep = m.period == "daily" ? a->missionDay == day : a->missionWeek == week;
+        if (!keep) continue;
+        if (auto it = a->missionProgress.find(m.id); it != a->missionProgress.end()) progress[m.id] = it->second;
+        if (a->missionsDone.count(m.id) != 0) done.insert(m.id);
+    }
+    a->missionProgress = progress;
+    a->missionsDone = done;
+    a->missionDay = day;
+    a->missionWeek = week;
+    Changed();
+}
+
+std::vector<AccountStore::MissionUpdate> AccountStore::Missions(std::string_view key, std::uint64_t nowMs) {
+    std::vector<MissionUpdate> out;
+    RefreshMissions(key, nowMs);
+    const Account* a = Find(key);
+    if (a == nullptr || progression_ == nullptr) return out;
+    std::vector<const MissionDef*> current = progression_->Daily(DayOf(nowMs));
+    for (const MissionDef* w : progression_->Weekly(WeekOf(nowMs))) current.push_back(w);
+    for (const MissionDef* m : current) {
+        MissionUpdate u;
+        u.mission = m;
+        auto it = a->missionProgress.find(m->id);
+        u.progress = it == a->missionProgress.end() ? 0 : it->second;
+        u.done = a->missionsDone.count(m->id) != 0;
+        out.push_back(u);
+    }
+    return out;
+}
+
+std::vector<AccountStore::MissionUpdate> AccountStore::CountMissions(std::string_view key, std::uint64_t nowMs, const MissionMatch& match) {
+    std::vector<MissionUpdate> list = Missions(key, nowMs);
+    Account* a = Mutable(key);
+    if (a == nullptr) return list;
+    int coins = 0, xp = 0;
+    for (MissionUpdate& u : list) {
+        if (u.done || !MissionCounts(*u.mission, match)) continue;
+        u.progress = std::min(u.mission->count, u.progress + 1);
+        a->missionProgress[u.mission->id] = u.progress;
+        if (u.progress >= u.mission->count) {
+            u.done = u.justDone = true;
+            a->missionsDone.insert(u.mission->id);
+            coins += u.mission->coins;
+            xp += u.mission->xp;
+        }
+    }
+    Changed();
+    if (coins > 0 || xp > 0) Grant(key, coins, xp);
+    return list;
+}
+
+std::uint64_t AccountStore::AddMatch(MatchRecord record) {
+    record.id = nextMatchId_++;
+    const std::uint64_t id = record.id;
+    matches_[id] = std::move(record);
+    while (static_cast<int>(matches_.size()) > kMatchesKept) matches_.erase(matches_.begin());
+    Changed();
+    return id;
+}
+
+const MatchRecord* AccountStore::FindMatch(std::uint64_t id) const {
+    auto it = matches_.find(id);
+    return it == matches_.end() ? nullptr : &it->second;
+}
+
+std::vector<const Account*> AccountStore::Ladder() const {
+    std::vector<const Account*> out;
+    for (const auto& [key, a] : accounts_) {
+        if (a.stats.rankedGames > 0) out.push_back(&a);
+    }
+    std::sort(out.begin(), out.end(), [](const Account* x, const Account* y) { return x->points != y->points ? x->points > y->points : Key(x->name) < Key(y->name); });
+    return out;
 }
 
 void AccountStore::SetIcon(std::string_view key, int icon) {
@@ -316,22 +503,19 @@ bool AccountStore::Save(std::string* error) const {
             w.BeginObject();
             w.Field("time_ms", h.timeMs).Field("mode", h.mode).Field("placement", h.placement).Field("level", h.level).Field("round", h.round);
             w.Field("lp_change", h.lpChange).Field("points_after", h.pointsAfter);
-            w.Key("board").BeginArray();
-            for (const HistoryUnit& u : h.board) {
-                w.BeginObject();
-                w.Field("champion", u.champion).Field("star", u.star);
-                w.Key("items").BeginArray();
-                for (int i : u.items) w.Int(i);
-                w.EndArray();
-                w.EndObject();
-            }
-            w.EndArray();
+            w.Field("match_id", h.matchId).Field("coins", h.coins).Field("xp", h.xp);
+            WriteBoard(w, h.board);
             w.Key("players").BeginArray();
             for (const std::string& n : h.players) w.String(n);
             w.EndArray();
             w.EndObject();
         }
         w.EndArray();
+        w.Field("coins", a.coins).Field("xp", a.xp).Field("border", a.border).Field("title", a.title).Field("arena", a.arena);
+        w.Field("mission_day", a.missionDay).Field("mission_week", a.missionWeek);
+        w.Key("mission_progress").BeginObject();
+        for (const auto& [id, n] : a.missionProgress) w.Field(id, n);
+        w.EndObject();
         const auto names = [&w](const char* k, const std::set<std::string>& set) {
             w.Key(k).BeginArray();
             for (const std::string& n : set) w.String(n);
@@ -340,8 +524,27 @@ bool AccountStore::Save(std::string* error) const {
         names("friends", a.friends);
         names("incoming", a.incoming);
         names("outgoing", a.outgoing);
+        names("owned", a.owned);
+        names("missions_done", a.missionsDone);
         w.Key("sessions").BeginArray();
         for (const std::string& t : a.sessions) w.String(t);
+        w.EndArray();
+        w.EndObject();
+    }
+    w.EndArray();
+    w.Field("next_match_id", nextMatchId_);
+    w.Key("matches").BeginArray();
+    for (const auto& [id, m] : matches_) {
+        w.BeginObject();
+        w.Field("id", m.id).Field("time_ms", m.timeMs).Field("mode", m.mode).Field("rounds", m.rounds);
+        w.Key("seats").BeginArray();
+        for (const MatchRecordSeat& s : m.seats) {
+            w.BeginObject();
+            w.Field("name", s.name).Field("bot", s.bot).Field("icon", s.icon).Field("border", s.border).Field("title", s.title);
+            w.Field("placement", s.placement).Field("level", s.level).Field("round", s.round);
+            WriteBoard(w, s.board);
+            w.EndObject();
+        }
         w.EndArray();
         w.EndObject();
     }
@@ -392,14 +595,8 @@ bool AccountStore::Load(std::string* error) {
                 HistoryEntry x;
                 x.timeMs = U64Of(m.Find("time_ms")); x.mode = StrOf(m.Find("mode")); x.placement = IntOf(m.Find("placement")); x.level = IntOf(m.Find("level"));
                 x.round = IntOf(m.Find("round")); x.lpChange = IntOf(m.Find("lp_change")); x.pointsAfter = IntOf(m.Find("points_after"));
-                if (const json::Value* b = m.Find("board"); b != nullptr && b->IsArray()) {
-                    for (const json::Value& u : b->Items()) {
-                        HistoryUnit hu;
-                        hu.champion = IntOf(u.Find("champion")); hu.star = IntOf(u.Find("star"), 1);
-                        if (const json::Value* it = u.Find("items"); it != nullptr && it->IsArray()) { for (const json::Value& i : it->Items()) hu.items.push_back(IntOf(&i)); }
-                        x.board.push_back(std::move(hu));
-                    }
-                }
+                x.matchId = U64Of(m.Find("match_id")); x.coins = IntOf(m.Find("coins")); x.xp = IntOf(m.Find("xp"));   // (revision 10)
+                x.board = ReadBoard(m.Find("board"));
                 if (const json::Value* p = m.Find("players"); p != nullptr && p->IsArray()) { for (const json::Value& n : p->Items()) x.players.push_back(StrOf(&n)); }
                 a.history.push_back(std::move(x));
             }
@@ -410,8 +607,37 @@ bool AccountStore::Load(std::string* error) {
         names("friends", a.friends);
         names("incoming", a.incoming);
         names("outgoing", a.outgoing);
+        names("owned", a.owned);   // (revision 10; absent in older files)
+        names("missions_done", a.missionsDone);
+        a.coins = IntOf(e.Find("coins")); a.xp = IntOf(e.Find("xp"));
+        a.border = StrOf(e.Find("border")); a.title = StrOf(e.Find("title")); a.arena = StrOf(e.Find("arena"));
+        a.missionDay = IntOf(e.Find("mission_day"), -1); a.missionWeek = IntOf(e.Find("mission_week"), -1);
+        if (const json::Value* mp = e.Find("mission_progress"); mp != nullptr && mp->IsObject()) {
+            for (std::size_t i = 0; i < mp->MemberCount(); ++i) a.missionProgress[mp->MemberKey(i)] = IntOf(&mp->MemberValue(i));
+        }
         if (const json::Value* v = e.Find("sessions"); v != nullptr && v->IsArray()) { for (const json::Value& t : v->Items()) a.sessions.push_back(StrOf(&t)); }
         accounts_[Key(a.name)] = std::move(a);
+    }
+    matches_.clear();
+    nextMatchId_ = std::max<std::uint64_t>(1, U64Of(root.Find("next_match_id")));
+    if (const json::Value* ms = root.Find("matches"); ms != nullptr && ms->IsArray()) {
+        for (const json::Value& m : ms->Items()) {
+            MatchRecord r;
+            r.id = U64Of(m.Find("id")); r.timeMs = U64Of(m.Find("time_ms")); r.mode = StrOf(m.Find("mode")); r.rounds = IntOf(m.Find("rounds"));
+            if (const json::Value* seats = m.Find("seats"); seats != nullptr && seats->IsArray()) {
+                for (const json::Value& e : seats->Items()) {
+                    MatchRecordSeat seat;
+                    seat.name = StrOf(e.Find("name")); seat.bot = e.Find("bot") != nullptr && e.Find("bot")->IsBool() && e.Find("bot")->AsBool();
+                    seat.icon = IntOf(e.Find("icon")); seat.border = StrOf(e.Find("border")); seat.title = StrOf(e.Find("title"));
+                    seat.placement = IntOf(e.Find("placement")); seat.level = IntOf(e.Find("level")); seat.round = IntOf(e.Find("round"));
+                    seat.board = ReadBoard(e.Find("board"));
+                    r.seats.push_back(std::move(seat));
+                }
+            }
+            if (r.id == 0) continue;
+            nextMatchId_ = std::max(nextMatchId_, r.id + 1);
+            matches_[r.id] = std::move(r);
+        }
     }
     return true;
 }

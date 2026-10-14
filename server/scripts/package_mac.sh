@@ -12,7 +12,7 @@
 # W2F_DEVELOPER_DIR at a mirror of Xcode.app whose xcodebuild gives it a clean stdin (updates/update-1.5.md); a normal Terminal does not need it.
 set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-P="${1:-$HOME/Desktop/work2fightgame/work2fightgame}"
+P="${1:-$HOME/W2F/work2fightgame/work2fightgame}"
 UE_ROOT="${UE_ROOT:-/Users/Shared/Epic Games/UE_5.8}"
 OUT="${W2F_APP_OUT:-$HOME/Desktop/W2F_App}"
 [ -n "${W2F_DEVELOPER_DIR:-}" ] && export DEVELOPER_DIR="$W2F_DEVELOPER_DIR"

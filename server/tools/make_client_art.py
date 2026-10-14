@@ -14,6 +14,10 @@ The look follows the League / TFT client's hextech style: dark blue-black plates
 * Rendered in Blender (Eevee, the Cinzel font from the UE project): T_UI_ClientCrest (the W2F crest on transparent ground: the client's logo) and
   docs/app_icon/W2F_1024.png (the crest on a dark rounded square: the macOS app icon; scripts/package_mac.sh turns it into the app's icon set).
 
+* Demo 2.0 (the League-style client, FEEDBACK V10): the store's profile borders T_UI_Border_<store id> (320 px: the ring sits where ClientIconRing's does
+  on a 256 canvas, with 32 px around it for rays, spikes and gems), ClientLevel (the account level's badge), ClientCrown (the party leader) and
+  ClientChat (a speech bubble, white: the client tints it).
+
 tools/unreal/import_ui.py brings the T_UI_ textures into /Game/W2F/Icons (AW2FArena::UiBrush finds them by name).
 """
 import math
@@ -27,7 +31,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.normpath(os.path.join(HERE, "..", "docs", "icons"))
 APP = os.path.normpath(os.path.join(HERE, "..", "docs", "app_icon"))
-FONT = os.path.expanduser(os.environ.get("W2F_CREST_FONT", "~/Desktop/work2fightgame/work2fightgame/Content/W2F/Fonts/Cinzel-700.ttf"))
+FONT = os.path.expanduser(os.environ.get("W2F_CREST_FONT", "~/W2F/work2fightgame/work2fightgame/Content/W2F/Fonts/Cinzel-700.ttf"))
 SS = 4
 
 GOLD_HI = np.array([0.94, 0.90, 0.82])
@@ -489,8 +493,172 @@ def make_icons_from_crest(full):
     os.remove(full)
 
 
+# ------------------------------------------------------------------------------------------------ demo 2.0: borders, level badge, crown, chat
+
+def ramp(stops, t):
+    """A colour ramp through (position, rgb) stops."""
+    t = np.clip(t, 0, 1)
+    out = np.zeros(t.shape + (3,), np.float32)
+    for (p0, c0), (p1, c1) in zip(stops[:-1], stops[1:]):
+        m = (t >= p0) & (t <= p1)
+        k = ((t - p0) / max(p1 - p0, 1e-6))[..., None]
+        out = np.where(m[..., None], np.array(c0) * (1 - k) + np.array(c1) * k, out)
+    return out
+
+
+def hsv(h, s, v):
+    h = (h % 1.0) * 6.0
+    i = np.floor(h).astype(int) % 6
+    f = h - np.floor(h)
+    p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+    r = np.choose(i, [v, q, p, p, t, v]); g = np.choose(i, [t, v, v, q, p, p]); b = np.choose(i, [p, p, t, v, v, q])
+    return np.stack([r, g, b], -1)
+
+
+def make_borders():
+    S, C = 320, 160.0
+    x, y = coords(S, S)
+    r = np.hypot(x - C, y - C)
+    ang = np.arctan2(y - C, x - C)               # 0 = right, +pi/2 = down
+    lit = np.clip((y - (C - 126)) / 252, 0, 1)   # 0 top .. 1 bottom: light from above
+    band = np.abs(r - 118) - 8                   # the ring itself (as on ClientIconRing)
+
+    def ring(c, top, mid, low, width=8.0, inner=True):
+        rgb = ramp([(0.0, top), (0.45, mid), (1.0, low)], lit)
+        c = over(c, rgb, cover(np.abs(r - 118) - width))
+        c = over(c, np.array(low) * 0.45, cover(np.abs(r - (118 - width - 1.5)) - 1.0) if inner else np.zeros_like(r))
+        c = over(c, np.array(top), cover(np.abs(r - (118 + width - 0.8)) - 0.7) * np.clip(1 - lit * 1.3, 0, 1))
+        return c
+
+    def spikes(c, n, r0, r1, half_width, rgb, phase=0.0, jitter=None):
+        """n triangular points from r0 out to r1 (pixels), each half_width radians wide at its base."""
+        k = (ang - phase) * n / (2 * np.pi)
+        frac = np.abs(k - np.round(k))                       # 0 at a spike's axis .. 0.5 between
+        reach = r1 if jitter is None else r0 + (r1 - r0) * jitter[(np.round(k).astype(int)) % n]
+        width = half_width * n / (2 * np.pi) * np.clip((reach - r) / np.maximum(reach - r0, 1), 0, 1)
+        d = np.where((r > r0 - 2) & (r < reach), (frac - width) * (2 * np.pi * r / n), 99.0)
+        return over(c, rgb, cover(d, 0.9))
+
+    def gem(c, cx, cy, size, rgb):
+        d = (np.abs(x - cx) + np.abs(y - cy)) - size
+        c = over(c, np.array(GOLD_LO), cover(d - 2.2))
+        c = over(c, lerp3(np.array(rgb) * 1.4, np.array(rgb) * 0.55, (y - cy + size) / (2 * size)), cover(d))
+        return over(c, np.array([1.0, 1.0, 1.0]), cover(np.hypot(x - cx + size * 0.3, y - cy + size * 0.3) - size * 0.22) * 0.8)
+
+    def at(deg, radius):
+        a = math.radians(deg)
+        return C + radius * math.cos(a), C + radius * math.sin(a)
+
+    made = {}
+    # bronze: the default rim
+    c = canvas(S, S)
+    made["border_bronze"] = ring(c, (0.95, 0.72, 0.5), (0.72, 0.45, 0.26), (0.36, 0.2, 0.1))
+    # silver: cool polished silver
+    c = canvas(S, S)
+    made["border_silver"] = ring(c, (0.97, 0.98, 1.0), (0.72, 0.76, 0.82), (0.36, 0.4, 0.46))
+    # gold: thicker gold, four teal gems
+    c = canvas(S, S)
+    c = ring(c, tuple(GOLD_HI), tuple(GOLD), tuple(GOLD_LO), 10.0)
+    for deg in (-90, 0, 90, 180):
+        c = gem(c, *at(deg, 118), 9, TEAL)
+    made["border_gold"] = c
+    # platinum: pale teal-silver with a halo of twelve points
+    c = canvas(S, S)
+    c = spikes(c, 12, 124, 150, 0.09, np.array([0.75, 0.95, 0.92]), -math.pi / 2)
+    made["border_platinum"] = ring(c, (0.95, 1.0, 1.0), (0.62, 0.84, 0.82), (0.25, 0.4, 0.42), 9.0)
+    # hextech: gold ring, a teal inner line and six crystals
+    c = canvas(S, S)
+    c = ring(c, tuple(GOLD_HI), tuple(GOLD), tuple(GOLD_LO), 9.0)
+    c = over(c, TEAL * 1.2, cover(np.abs(r - 106) - 1.2))
+    for deg in range(-90, 270, 60):
+        c = gem(c, *at(deg, 128), 12, TEAL)
+    made["border_hextech"] = c
+    # helios: sixteen sun rays behind a warm gold ring
+    c = canvas(S, S)
+    c = spikes(c, 16, 120, 158, 0.12, np.array([1.0, 0.62, 0.18]), -math.pi / 2)
+    c = spikes(c, 16, 120, 140, 0.07, np.array([1.0, 0.86, 0.45]), -math.pi / 2 + math.pi / 16)
+    made["border_helios"] = ring(c, (1.0, 0.92, 0.62), (0.95, 0.62, 0.2), (0.55, 0.28, 0.06), 10.0)
+    # phaisa: violet, jagged void spikes of uneven length
+    c = canvas(S, S)
+    rng = np.random.default_rng(7)
+    c = spikes(c, 9, 118, 160, 0.16, np.array([0.55, 0.18, 0.9]), 0.3, jitter=rng.uniform(0.45, 1.0, 9))
+    c = spikes(c, 9, 118, 145, 0.1, np.array([0.85, 0.5, 1.0]), 0.65, jitter=rng.uniform(0.4, 1.0, 9))
+    made["border_phaisa"] = ring(c, (0.88, 0.7, 1.0), (0.5, 0.2, 0.85), (0.18, 0.04, 0.32), 9.0)
+    # selini: silver-blue, a crescent on top and small stars
+    c = canvas(S, S)
+    c = ring(c, (0.92, 0.95, 1.0), (0.55, 0.65, 0.95), (0.2, 0.25, 0.5), 8.0)
+    mx, my = C, C - 132
+    moon = np.maximum(np.hypot(x - mx, y - my) - 20, -(np.hypot(x - mx - 9, y - my + 6) - 17))
+    c = over(c, np.array([0.3, 0.35, 0.6]), cover(moon - 2.5))
+    c = over(c, lerp3(np.array([1.0, 1.0, 0.95]), np.array([0.7, 0.78, 1.0]), (y - my + 20) / 40), cover(moon))
+    for deg, rad, sz in ((-35, 140, 5), (-145, 138, 6), (25, 136, 4), (160, 137, 4), (95, 140, 5), (60, 142, 3), (125, 141, 3)):
+        sx, sy = at(deg, rad)
+        star = np.minimum(np.abs(x - sx) * 3 + np.abs(y - sy), np.abs(x - sx) + np.abs(y - sy) * 3) - sz * 2
+        c = over(c, np.array([0.95, 0.97, 1.0]), cover(star))
+    made["border_selini"] = c
+    # prismatic: every colour around the ring, white sparkles
+    c = canvas(S, S)
+    hue = hsv((ang / (2 * np.pi)) + 0.15, 0.55, 1.0)
+    c = spikes(c, 8, 122, 152, 0.11, np.array([1.0, 1.0, 1.0]), -math.pi / 2)
+    c = over(c, hue * (1.05 - 0.35 * lit[..., None]), cover(np.abs(r - 118) - 10))
+    c = over(c, np.array([1.0, 1.0, 1.0]), cover(np.abs(r - 127.3) - 0.8) * 0.9)
+    c = over(c, np.array([0.25, 0.15, 0.35]), cover(np.abs(r - 106.5) - 1.0))
+    for deg in (-90, -30, 30, 90, 150, 210):
+        sx, sy = at(deg, 118)
+        star = np.minimum(np.abs(x - sx) * 4 + np.abs(y - sy), np.abs(x - sx) + np.abs(y - sy) * 4) - 14
+        c = over(c, np.array([1.0, 1.0, 1.0]), cover(star))
+    made["border_prismatic"] = c
+    for name, img in made.items():
+        save_png(os.path.join(OUT, "T_UI_Border_%s.png" % name), finish(img))
+
+
+def make_badges():
+    # the account level: a gold-rimmed hexagon (128)
+    x, y = coords(128, 128)
+    k = np.array([-0.8660254, 0.5, 0.57735027], np.float32)
+    def hexagon(R):
+        qx, qy = np.abs(y - 64), np.abs(x - 64)   # pointy left / right
+        dot = np.minimum(k[0] * qx + k[1] * qy, 0.0)
+        qx2, qy2 = qx - 2 * dot * k[0], qy - 2 * dot * k[1]
+        qx2 = qx2 - np.clip(qx2, -k[2] * R, k[2] * R)
+        qy2 = qy2 - R
+        return np.hypot(qx2, qy2) * np.sign(qy2)
+    c = canvas(128, 128)
+    c = over(c, gold_ramp((y - 6) / 116), cover(hexagon(58)))
+    c = over(c, lerp3(NAVY * 1.4, NIGHT, (y - 14) / 100), cover(hexagon(50)))
+    c = over(c, TEAL * 0.9, cover(np.abs(hexagon(46)) - 1.0) * 0.8)
+    save_png(os.path.join(OUT, "T_UI_ClientLevel.png"), finish(c))
+    # the party leader's crown (128 x 96)
+    x, y = coords(128, 96)
+    c = canvas(128, 96)
+    body = np.maximum(np.abs(x - 64) - 46, np.abs(y - 66) - 14)
+    pts = np.full(x.shape, 99.0, np.float32)
+    for px, top in ((22, 22), (43, 34), (64, 12), (85, 34), (106, 22)):
+        tri = np.maximum(np.abs(x - px) - (y - top) * 0.42, top - y)
+        pts = np.minimum(pts, np.where(y < 70, tri, 99.0))
+    crown = np.minimum(body, np.maximum(pts, y - 70))
+    c = over(c, GOLD_DK, cover(crown - 2.5))
+    c = over(c, gold_ramp((y - 10) / 74), cover(crown))
+    for px, top in ((22, 22), (64, 12), (106, 22)):
+        c = over(c, TEAL * 1.2, cover(np.hypot(x - px, y - top) - 5.5))
+    c = over(c, TEAL, cover((np.abs(x - 64) + np.abs(y - 66)) - 7))
+    save_png(os.path.join(OUT, "T_UI_ClientCrown.png"), finish(c))
+    # chat: a speech bubble (white, 64)
+    x, y = coords(64, 64)
+    bubble = np.maximum(np.hypot((x - 32) / 1.15, y - 28) - 22, -100)
+    tail = np.maximum(np.maximum(x - 26, 14 - x + (y - 44) * 0.0), np.maximum(44 - y, (y - 58) + (x - 14) * 0.9))
+    shape = np.minimum(bubble, tail)
+    c = canvas(64, 64)
+    c = over(c, np.array([1.0, 1.0, 1.0]), cover(shape))
+    for dx in (-10, 0, 10):
+        c[..., 3] *= 1.0 - cover(np.hypot(x - 32 - dx, y - 28) - 3.2)
+    save_png(os.path.join(OUT, "T_UI_ClientChat.png"), finish(c))
+
+
 def main():
     make_flat()
+    make_borders()
+    make_badges()
     if "--2d" in sys.argv:
         return
     full = make_crest()

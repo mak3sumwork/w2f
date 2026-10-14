@@ -209,6 +209,22 @@ public:
             case CommandType::AcceptMatch:
             case CommandType::DeclineMatch:
             case CommandType::SetIcon:
+            case CommandType::PartyInvite:
+            case CommandType::PartyAccept:
+            case CommandType::PartyDecline:
+            case CommandType::PartyLeave:
+            case CommandType::PartyKick:
+            case CommandType::PartyPromote:
+            case CommandType::PartyMode:
+            case CommandType::Chat:
+            case CommandType::GetChat:
+            case CommandType::GetMatch:
+            case CommandType::GetLadder:
+            case CommandType::GetStore:
+            case CommandType::BuyItem:
+            case CommandType::EquipCosmetic:
+            case CommandType::GetMissions:
+            case CommandType::ChangePassword:
             case CommandType::Register:
             case CommandType::Login:
             case CommandType::ResumeSession:
@@ -317,6 +333,12 @@ public:
         std::vector<int> icons = cfg_.seatIcons;
         icons.resize(seats_.size(), 0);
         return icons;
+    }
+    std::vector<std::string> Borders() const {   // (revision 10)
+        if (cfg_.seatBorders.empty()) return {};
+        std::vector<std::string> borders = cfg_.seatBorders;
+        borders.resize(seats_.size());
+        return borders;
     }
     void NameSeats() {
         names_ = cfg_.seatNames;
@@ -503,7 +525,7 @@ private:
     // A player (re)joining a running match gets everything they need to draw the game as it is right now.
     void FullSync(int seat) {
         Seat& s = seats_[static_cast<std::size_t>(seat)];
-        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats(), names_, Icons()));
+        SendTo(s.conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(seat), MotherNatureEvery(), BotSeats(), names_, Icons(), Borders()));
         SendTo(s.conn, msg::Phase(config_, match_->Phase(), match_->Round(), match_->TicksInPhase(), match_->PhaseTicks(), tick_, match_->IsMotherNatureRound(), match_->IsShopClosed()));
         s.lastPrivate.clear();
         SyncPrivate(seat);
@@ -544,7 +566,7 @@ private:
             if (seats_[i].bot) bots_.emplace_back(static_cast<PlayerId>(i), seed, BotProfile{}, data_.traits);
         }
         for (std::size_t i = 0; i < seats_.size(); ++i) {
-            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats(), names_, Icons()));
+            if (!seats_[i].bot) SendTo(seats_[i].conn, msg::MatchStarted(config_, cfg_.seats, static_cast<PlayerId>(i), MotherNatureEvery(), BotSeats(), names_, Icons(), Borders()));
         }
         match_->Start();
         SyncAfterEngineCall();

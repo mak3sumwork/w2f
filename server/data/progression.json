@@ -1,0 +1,54 @@
+{
+  "_comment": "Demo 2.0 (protocol revision 10): account progression for the game client -- coins and account XP per match, account levels, daily / weekly missions and the cosmetics store. Coins are earned by playing, never bought. Format: net/include/w2f/net/Progression.h, docs/network-protocol.md 'Progression'.",
+  "rewards": {
+    "coins_by_placement": [60, 50, 45, 40, 30, 25, 20, 20],
+    "xp_by_placement": [220, 200, 185, 170, 140, 125, 110, 100],
+    "mode_percent": { "bots": 50, "normal": 100, "ranked": 125 },
+    "level_up_coins": 150,
+    "starting_coins": 500
+  },
+  "levels": { "base": 500, "step": 50, "max": 1500 },
+  "store": [
+    { "id": "border_bronze", "kind": "border", "name": "Bronze Rim", "price": 0, "default": true, "desc": "The rim every tactician starts with." },
+    { "id": "border_silver", "kind": "border", "name": "Silver Rim", "price": 300, "desc": "Polished silver around your icon." },
+    { "id": "border_gold", "kind": "border", "name": "Gold Rim", "price": 600, "desc": "A gold rim with a warm glow." },
+    { "id": "border_platinum", "kind": "border", "name": "Platinum Halo", "price": 900, "desc": "Cool platinum, a halo of light behind it." },
+    { "id": "border_hextech", "kind": "border", "name": "Hextech Ring", "price": 1200, "desc": "Teal hextech crystals set in gold." },
+    { "id": "border_helios", "kind": "border", "name": "Helios Sunburst", "price": 1500, "desc": "Sun rays of the Helios kingdom." },
+    { "id": "border_phaisa", "kind": "border", "name": "Phaisa Void", "price": 1500, "desc": "Violet void spikes that never sit still." },
+    { "id": "border_selini", "kind": "border", "name": "Selini Moonlight", "price": 1500, "desc": "A silver crescent and the stars of Selini." },
+    { "id": "border_prismatic", "kind": "border", "name": "Prismatic Crown", "price": 2500, "desc": "The rarest rim: every colour at once." },
+    { "id": "title_none", "kind": "title", "name": "No title", "price": 0, "default": true, "desc": "Just your name." },
+    { "id": "title_rookie", "kind": "title", "name": "Rookie Tactician", "price": 100, "desc": "Everybody starts somewhere." },
+    { "id": "title_bot_slayer", "kind": "title", "name": "Bot Slayer", "price": 200, "desc": "For those who took on the AI and won." },
+    { "id": "title_hoarder", "kind": "title", "name": "Gold Hoarder", "price": 250, "desc": "Fifty gold, always." },
+    { "id": "title_reroll", "kind": "title", "name": "Reroll Addict", "price": 250, "desc": "One more refresh. Just one." },
+    { "id": "title_top4", "kind": "title", "name": "Top 4 Enjoyer", "price": 300, "desc": "A top 4 is a win." },
+    { "id": "title_smith", "kind": "title", "name": "Item Smith", "price": 300, "desc": "Every component has a purpose." },
+    { "id": "title_star", "kind": "title", "name": "Star Chaser", "price": 400, "desc": "Three stars or nothing." },
+    { "id": "title_engineer", "kind": "title", "name": "Hexagon Engineer", "price": 400, "desc": "Inventions, modules, Hexa." },
+    { "id": "title_champion", "kind": "title", "name": "Champion of W2F", "price": 1000, "desc": "The title of a true tactician." },
+    { "id": "arena_classic", "kind": "arena", "name": "Hilltop Plaza", "price": 0, "default": true, "desc": "The stone plaza on the hill, braziers and pines." },
+    { "id": "arena_space", "kind": "arena", "name": "Star Platform", "price": 2000, "desc": "A floating platform in a nebula, crystal pylons in your colours." }
+  ],
+  "missions": {
+    "daily_count": 3,
+    "weekly_count": 3,
+    "pool": [
+      { "id": "d_play2", "period": "daily", "kind": "play", "count": 2, "text": "Play 2 games", "coins": 75, "xp": 150 },
+      { "id": "d_top4", "period": "daily", "kind": "top4", "count": 1, "text": "Finish in the top 4", "coins": 75, "xp": 150 },
+      { "id": "d_level7", "period": "daily", "kind": "level", "value": 7, "count": 1, "text": "Reach level 7 in a game", "coins": 60, "xp": 120 },
+      { "id": "d_items4", "period": "daily", "kind": "items", "value": 4, "count": 1, "text": "Finish a game with 4 or more items on your board", "coins": 60, "xp": 120 },
+      { "id": "d_cost4", "period": "daily", "kind": "cost", "value": 4, "count": 1, "text": "Finish a game with a 4-cost champion on your board", "coins": 60, "xp": 120 },
+      { "id": "d_board7", "period": "daily", "kind": "champions", "value": 7, "count": 1, "text": "Finish a game with 7 or more units on your board", "coins": 60, "xp": 120 },
+      { "id": "d_normal", "period": "daily", "kind": "play", "mode": "normal", "count": 1, "text": "Play a Normal game", "coins": 80, "xp": 160 },
+      { "id": "d_win_ai", "period": "daily", "kind": "win", "mode": "bots", "count": 1, "text": "Win a Solo vs AI game", "coins": 70, "xp": 140 },
+      { "id": "w_play10", "period": "weekly", "kind": "play", "count": 10, "text": "Play 10 games", "coins": 300, "xp": 600 },
+      { "id": "w_top4x5", "period": "weekly", "kind": "top4", "count": 5, "text": "Finish in the top 4 five times", "coins": 300, "xp": 600 },
+      { "id": "w_win2", "period": "weekly", "kind": "win", "count": 2, "text": "Win 2 games", "coins": 250, "xp": 500 },
+      { "id": "w_three_star", "period": "weekly", "kind": "three_star", "count": 1, "text": "Finish a game with a 3-star champion", "coins": 250, "xp": 500 },
+      { "id": "w_ranked3", "period": "weekly", "kind": "play", "mode": "ranked", "count": 3, "text": "Play 3 Ranked games", "coins": 300, "xp": 600 },
+      { "id": "w_cost5", "period": "weekly", "kind": "cost", "value": 5, "count": 3, "text": "Finish 3 games with a 5-cost champion on your board", "coins": 300, "xp": 600 }
+    ]
+  }
+}

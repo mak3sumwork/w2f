@@ -42,6 +42,7 @@
 #include "w2f/net/Accounts.h"
 #include "w2f/net/Encoding.h"
 #include "w2f/net/QueueServer.h"
+#include "w2f/net/Progression.h"
 #include "w2f/net/JsonWriter.h"
 #include "w2f/net/Protocol.h"
 #include "w2f/net/TcpServer.h"
@@ -1475,7 +1476,7 @@ struct QueueRig {
     std::unique_ptr<QueueServer> hub;
     std::uint64_t now = 1000;
     ConnectionId nextConn = 100;
-    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120, AccountStore* accounts = nullptr)
+    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120, AccountStore* accounts = nullptr, const Progression* progression = nullptr)
         : data(seats, [](GameData& d, GameServerConfig& c) {
               d.config.player.startingHealth = 20;
               d.config.damage.baseDamageByStage = {8, 12};
@@ -1486,7 +1487,8 @@ struct QueueRig {
         qc.fillMs = fillMs;
         qc.abandonTicks = abandonTicks;
         qc.accounts = accounts;
-        qc.wallClockMs = [] { return std::uint64_t{1790000000000}; };
+        qc.progression = progression;
+        qc.wallClockMs = [this] { return std::uint64_t{1790000000000} + now; };   // (moves with the rig's clock: invites and missions expire)
         hub = std::make_unique<QueueServer>(qc, data.data, net);
     }
     ConnectionId Connect(const std::string& token = "") { const ConnectionId id = ++nextConn; hub->OnConnect(id, token, now); return id; }
@@ -1826,6 +1828,320 @@ static void TestReadyCheck() {
         const json::Value* icons = started.Find("player_icons");
         long long first = -1, second = -1;
         CHECK(icons != nullptr && icons->Items().size() == 2 && icons->Items()[0].ToInt(first) && icons->Items()[1].ToInt(second) && first == 9002 && second == 0);
+    }
+}
+
+
+// ==== revision 10 (demo 2.0): parties, chat, progression ==============================================================================================
+
+static std::uint64_t g_entropy = 5;
+static std::uint64_t TestEntropy() { g_entropy = g_entropy * 6364136223846793005ULL + 1442695040888963407ULL; return g_entropy; }
+
+static void MakeFriends(QueueRig& q, ConnectionId a, const char* aName, ConnectionId b, const char* bName) {
+    q.Say(a, std::string(R"({"action": "friend_request", "username": ")") + bName + R"("})");
+    q.Say(b, std::string(R"({"action": "friend_accept", "username": ")") + aName + R"("})");
+}
+
+static std::vector<std::string> MemberNames(const json::Value& party) {
+    std::vector<std::string> out;
+    if (const json::Value* m = party.Find("members")) { for (const json::Value& v : m->Items()) out.push_back(Str(v, "username")); }
+    return out;
+}
+
+static void TestParties() {
+    AccountStore store("", TestEntropy, 2);
+    QueueRig q(4, 3000, kTicksPerSecond * 120, &store);
+    const ConnectionId a = q.Connect(), b = q.Connect(), c = q.Connect(), d = q.Connect();
+    q.Say(a, R"({"action": "register", "username": "Alice", "password": "secret1"})");
+    q.Say(b, R"({"action": "register", "username": "Bob", "password": "secret1"})");
+    q.Say(c, R"({"action": "register", "username": "Cara", "password": "secret1"})");
+    q.Say(d, R"({"action": "register", "username": "Dan", "password": "secret1"})");
+    CHECK(Num(q.Last(a, "party"), "id") == 0 && MemberNames(q.Last(a, "party")).empty());   // the login says: no party
+    q.Say(a, R"({"action": "party_invite", "username": "Bob"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "not_friends");
+    MakeFriends(q, a, "Alice", b, "Bob");
+    MakeFriends(q, a, "Alice", c, "Cara");
+    // invite -> the invitee hears it, the inviter leads a party with an open invite
+    q.Say(a, R"({"action": "party_invite", "username": "bob"})");
+    CHECK(Str(q.Last(b, "party_invite"), "from") == "Alice" && Num(q.Last(b, "party_invite"), "size") == 1);
+    const json::Value p1 = q.Last(a, "party");
+    CHECK(Num(p1, "id") > 0 && Str(p1, "leader") == "Alice" && MemberNames(p1) == std::vector<std::string>{"Alice"} && p1.Find("invited")->Items().size() == 1);
+    q.Say(b, R"({"action": "party_accept", "username": "Alice"})");
+    CHECK(MemberNames(q.Last(a, "party")) == (std::vector<std::string>{"Alice", "Bob"}) && MemberNames(q.Last(b, "party")).size() == 2 && q.Last(b, "party").Find("invited")->Items().empty());
+    CHECK(Num(q.Last(c, "friends").Find("friends")->Items()[0], "party_size") == 2);   // Cara sees Alice is in a party of two
+    q.Say(b, R"({"action": "party_accept", "username": "Alice"})");
+    CHECK(Str(q.Last(b, "error"), "code") == "no_invite");
+    // only the leader queues, chooses the mode, kicks, promotes
+    q.Say(b, R"({"action": "queue", "mode": "normal"})");
+    CHECK(Str(q.Last(b, "error"), "code") == "not_leader" && q.hub->searching(QueueMode::Normal) == 0);
+    q.Say(b, R"({"action": "party_mode", "mode": "ranked"})");
+    CHECK(Str(q.Last(b, "error"), "code") == "not_leader");
+    q.Say(a, R"({"action": "party_mode", "mode": "bots"})");
+    CHECK(Str(q.Last(b, "party"), "mode") == "bots");
+    q.Say(a, R"({"action": "party_promote", "username": "Bob"})");
+    CHECK(Str(q.Last(a, "party"), "leader") == "Bob" && MemberNames(q.Last(a, "party")).front() == "Bob");
+    q.Say(b, R"({"action": "party_promote", "username": "Alice"})");
+    // Cara declines, then accepts a new invite; three are too many for Ranked
+    q.Say(a, R"({"action": "party_invite", "username": "Cara"})");
+    q.Say(c, R"({"action": "party_decline", "username": "Alice"})");
+    CHECK(q.Last(a, "party").Find("invited")->Items().empty());
+    q.Say(a, R"({"action": "party_invite", "username": "Cara"})");
+    q.Say(c, R"({"action": "party_accept", "username": "Alice"})");
+    CHECK(MemberNames(q.Last(b, "party")).size() == 3);
+    q.Say(a, R"({"action": "queue", "mode": "ranked"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "party_too_big");
+    // the leader queues: everyone searches; one member leaving the queue stops it for all
+    q.Say(a, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+    CHECK(q.hub->searching(QueueMode::Normal) == 3 && Str(q.Last(c, "queue_status"), "state") == "searching" && Str(q.Last(a, "party"), "mode") == "normal");
+    q.Say(c, R"({"action": "leave_queue"})");
+    CHECK(q.hub->searching(QueueMode::Normal) == 0 && Str(q.Last(a, "queue_status"), "reason") == "cancelled" && Str(q.Last(b, "queue_status"), "state") == "idle");
+    // the party and a stranger fill the 4 seats: a ready check; a member declines -> the party is out (party_declined), the stranger requeued
+    q.Say(a, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+    q.Say(d, R"({"action": "queue", "mode": "normal", "ready_check": true})");
+    CHECK(q.CountType(a, "match_found") == 1 && q.CountType(d, "match_found") == 1 && Num(q.Last(a, "match_found"), "humans") == 4);
+    q.Say(b, R"({"action": "decline_match"})");
+    CHECK(Str(q.Last(b, "queue_status"), "reason") == "declined" && Str(q.Last(a, "queue_status"), "reason") == "party_declined" && Str(q.Last(c, "queue_status"), "reason") == "party_declined");
+    CHECK(Str(q.Last(d, "queue_status"), "reason") == "requeued" && q.hub->searching(QueueMode::Normal) == 1);
+    q.Say(d, R"({"action": "leave_queue"})");
+    // the party (always together) and Dan fill the four seats
+    q.Say(d, R"({"action": "queue", "mode": "normal"})");
+    q.Say(a, R"({"action": "queue", "mode": "normal"})");
+    CHECK(q.hub->matches() == 1 && q.hub->MatchOf(a) == q.hub->MatchOf(b) && q.hub->MatchOf(b) == q.hub->MatchOf(c) && q.hub->MatchOf(d) == q.hub->MatchOf(a));
+    // in a match: party commands and leaving the party still work; the leader cannot queue while a member plays
+    q.Say(c, R"({"action": "party_leave"})");
+    CHECK(MemberNames(q.Last(a, "party")).size() == 2 && Num(q.Last(c, "party"), "id") == 0);
+    q.Say(a, R"({"action": "leave_match"})");
+    q.Say(a, R"({"action": "queue", "mode": "bots"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "party_busy");
+    // kick; a party of one with no open invite is gone
+    q.Say(a, R"({"action": "party_kick", "username": "Bob"})");
+    CHECK(Str(q.Last(b, "error"), "code") == "kicked" && Num(q.Last(b, "party"), "id") == 0 && Num(q.Last(a, "party"), "id") == 0);
+    // an invite runs out after a minute; disconnecting leaves the party
+    q.Say(a, R"({"action": "party_invite", "username": "Cara"})");
+    CHECK(Num(q.Last(a, "party"), "id") > 0);
+    q.Tick(1900);   // > 60 s
+    CHECK(Num(q.Last(a, "party"), "id") == 0);
+    q.Say(c, R"({"action": "party_accept", "username": "Alice"})");
+    CHECK(Str(q.Last(c, "error"), "code") == "no_invite");
+    q.Say(a, R"({"action": "party_invite", "username": "Cara"})");
+    q.Say(c, R"({"action": "party_accept", "username": "Alice"})");
+    CHECK(Str(q.Last(c, "error"), "code") == "in_match");   // (Cara still plays) -- the invite is used up
+    q.Say(c, R"({"action": "leave_match"})");
+    q.Say(a, R"({"action": "party_invite", "username": "Cara"})");
+    q.Say(c, R"({"action": "party_accept", "username": "Alice"})");
+    CHECK(MemberNames(q.Last(a, "party")).size() == 2);
+    q.hub->OnDisconnect(c);
+    CHECK(Num(q.Last(a, "party"), "id") == 0);
+    q.Say(a, R"({"action": "party_invite", "username": "Cara"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "not_online");
+}
+
+static void TestChat() {
+    AccountStore store("", TestEntropy, 2);
+    QueueRig q(2, 3000, kTicksPerSecond * 120, &store);
+    const ConnectionId a = q.Connect(), b = q.Connect(), e = q.Connect();
+    q.Say(a, R"({"action": "register", "username": "Alice", "password": "secret1"})");
+    q.Say(b, R"({"action": "register", "username": "Bob", "password": "secret1"})");
+    q.Say(e, R"({"action": "register", "username": "Eve", "password": "secret1"})");
+    const std::string bobSession = Str(q.Last(b, "auth"), "session");
+    q.Say(a, R"({"action": "chat", "to": "Bob", "text": "hi"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "not_friends");
+    MakeFriends(q, a, "Alice", b, "Bob");
+    q.Say(a, R"({"action": "chat", "to": "bob", "text": "  gl\thf  "})");
+    const json::Value line = q.Last(b, "chat");
+    CHECK(Str(line, "channel") == "whisper" && Str(line, "from") == "Alice" && Str(line, "to") == "Bob" && Str(line, "text") == "gl hf" && line.Find("offline") == nullptr);
+    CHECK(Str(q.Last(a, "chat"), "text") == "gl hf");   // the sender's echo
+    q.Say(a, R"({"action": "chat", "to": "Bob", "text": "   "})");
+    CHECK(Str(q.Last(a, "error"), "code") == "empty_text");
+    q.Say(a, R"({"action": "chat", "to": "Eve", "text": "hi"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "not_friends" && q.CountType(e, "chat") == 0);
+    // Bob goes offline: the whisper waits and arrives when he logs back in
+    q.hub->OnDisconnect(b);
+    q.Say(a, R"({"action": "chat", "to": "Bob", "text": "are you there?"})");
+    const ConnectionId b2 = q.Connect();
+    q.Say(b2, std::string(R"({"action": "resume_session", "session": ")") + bobSession + R"("})");
+    const json::Value late = q.Last(b2, "chat");
+    CHECK(Str(late, "text") == "are you there?" && late.Find("offline") != nullptr && late.Find("offline")->AsBool());
+    q.Say(b2, R"({"action": "get_chat", "username": "Alice"})");
+    const json::Value history = q.Last(b2, "chat_history");
+    CHECK(Str(history, "with") == "Alice" && history.Find("lines")->Items().size() == 2 && Str(history.Find("lines")->Items()[1], "text") == "are you there?");
+    // party chat: only in a party, to every member
+    q.Say(a, R"({"action": "chat", "to": "party", "text": "go"})");
+    CHECK(Str(q.Last(a, "error"), "code") == "not_in_party");
+    q.Say(a, R"({"action": "party_invite", "username": "Bob"})");
+    q.Say(b2, R"({"action": "party_accept", "username": "Alice"})");
+    q.Say(b2, R"({"action": "chat", "to": "party", "text": "ready!"})");
+    CHECK(Str(q.Last(a, "chat"), "channel") == "party" && Str(q.Last(a, "chat"), "from") == "Bob" && Str(q.Last(b2, "chat"), "text") == "ready!");
+    // chat works from inside a match too
+    q.Say(a, R"({"action": "queue", "mode": "bots"})");
+    CHECK(q.hub->MatchOf(a) != nullptr && q.hub->MatchOf(a) == q.hub->MatchOf(b2));
+    q.Say(b2, R"({"action": "chat", "to": "Alice", "text": "nice board"})");
+    CHECK(Str(q.Last(a, "chat"), "text") == "nice board");
+}
+
+static void TestProgression() {
+    // 1. The data: the production file loads, the curve and rewards, the missions of a day are the same for everyone and differ between days.
+    std::string error;
+    const auto prog = Progression::FromFile(std::string(W2F_DATA_DIR) + "/progression.json", &error);
+    CHECK(prog != nullptr);
+    if (!prog) { std::printf("  %s\n", error.c_str()); return; }
+    CHECK(prog->DefaultOf("border") != nullptr && prog->DefaultOf("title") != nullptr && prog->DefaultOf("arena") != nullptr && prog->FindItem("arena_space") != nullptr);
+    CHECK(prog->CoinsFor("normal", 1) == 60 && prog->CoinsFor("bots", 1) == 30 && prog->CoinsFor("ranked", 8) == 25 && prog->CoinsFor("normal", 0) == 0);
+    int level = 0, into = 0, need = 0;
+    prog->LevelOf(0, level, into, need);
+    CHECK(level == 1 && into == 0 && need == 500);
+    prog->LevelOf(1049, level, into, need);
+    CHECK(level == 2 && into == 549 && need == 550);
+    prog->LevelOf(1050, level, into, need);
+    CHECK(level == 3 && into == 0);
+    const auto day1 = prog->Daily(20000), again = prog->Daily(20000), day2 = prog->Daily(20001);
+    CHECK(day1.size() == 3 && again == day1 && day2.size() == 3 && prog->Weekly(2857).size() == 3);
+    bool differs = false;
+    for (long long day = 20001; day < 20010; ++day) differs = differs || prog->Daily(day) != day1;
+    CHECK(differs);
+    std::set<std::string> distinct;
+    for (const MissionDef* m : day1) distinct.insert(m->id);
+    CHECK(distinct.size() == 3);
+    CHECK(WeekOf(0) == 0 && DayOf(4 * kMsPerDay) == 4 && WeekOf(4 * kMsPerDay) == 1 && NextWeekMs(4 * kMsPerDay) == 11 * static_cast<std::uint64_t>(kMsPerDay));   // Mon 5 Jan 1970
+    MissionDef top4;
+    top4.kind = "top4";
+    MissionMatch mm;
+    mm.mode = "bots";
+    mm.placement = 4;
+    CHECK(MissionCounts(top4, mm));
+    mm.placement = 5;
+    CHECK(!MissionCounts(top4, mm));
+    top4.kind = "cost";
+    top4.value = 5;
+    mm.maxCost = 5;
+    top4.mode = "ranked";
+    CHECK(!MissionCounts(top4, mm));
+    top4.mode = "";
+    CHECK(MissionCounts(top4, mm));
+    for (const char* bad : {R"({"store": [{"id": "x", "kind": "hat", "name": "X", "price": 1}]})", R"({"store": [{"id": "x", "kind": "border", "name": "X", "price": -1}]})",
+                            R"({"store": [{"id": "b", "kind": "border", "name": "B", "price": 0, "default": true}]})", R"({"missions": {"pool": [{"id": "m", "period": "hourly", "kind": "play", "text": "t"}]}})",
+                            R"({"missions": {"pool": [{"id": "m", "period": "daily", "kind": "dance", "text": "t"}]}})", R"({"rewards": {"coins_by_placement": [1, 2]}})", "[1]"}) {
+        std::string why;
+        CHECK(Progression::FromText(bad, &why) == nullptr && !why.empty());
+    }
+
+    // 2. Over the wire: a new account's coins, the store, buying and wearing, a whole match paying coins / XP / missions, post_game and match_detail.
+    const std::string path = "build/test_progression_accounts.json";
+    std::remove(path.c_str());
+    {
+        AccountStore store(path, TestEntropy, 2);
+        QueueRig q(4, 3000, kTicksPerSecond * 120, &store, prog.get());
+        const ConnectionId a = q.Connect(), b = q.Connect();
+        q.Say(a, R"({"action": "register", "username": "Alice", "password": "secret1"})");
+        q.Say(b, R"({"action": "register", "username": "Bob", "password": "secret1"})");
+        const json::Value wallet = q.Last(a, "wallet");
+        CHECK(Num(wallet, "coins") == 500 && Num(wallet, "level") == 1 && Num(wallet, "xp_next") == 500 && Str(wallet, "border") == "border_bronze" && Str(wallet, "arena") == "arena_classic");
+        CHECK(q.Last(a, "missions").Find("missions")->Items().size() == 6 && Num(q.Last(a, "profile"), "level") == 1 && Str(q.Last(a, "profile"), "title") == "title_none");
+        q.Say(a, R"({"action": "get_store"})");
+        const json::Value shop = q.Last(a, "store");
+        CHECK(shop.Find("items")->Items().size() == prog->store.size());
+        int ownedAtStart = 0;
+        for (const json::Value& item : shop.Find("items")->Items()) ownedAtStart += item.Find("owned")->AsBool() ? 1 : 0;
+        CHECK(ownedAtStart == 3);   // the three defaults
+        q.Say(a, R"({"action": "buy_item", "item": "border_gold"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "not_enough_coins");
+        q.Say(a, R"({"action": "buy_item", "item": "crown"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "unknown_item");
+        q.Say(a, R"({"action": "equip_cosmetic", "item": "border_silver"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "not_owned");
+        q.Say(a, R"({"action": "buy_item", "item": "border_silver"})");
+        CHECK(Num(q.Last(a, "wallet"), "coins") == 200 && q.Last(a, "wallet").Find("owned")->Items().size() == 4);
+        q.Say(a, R"({"action": "buy_item", "item": "border_silver"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "already_owned");
+        MakeFriends(q, a, "Alice", b, "Bob");
+        q.Say(a, R"({"action": "equip_cosmetic", "item": "border_silver"})");
+        CHECK(Str(q.Last(a, "wallet"), "border") == "border_silver" && Str(q.Last(a, "profile"), "border") == "border_silver");
+        CHECK(Str(q.Last(b, "friends").Find("friends")->Items()[0], "border") == "border_silver");   // friends see it at once
+        q.Say(a, R"({"action": "buy_item", "item": "title_rookie"})");
+        q.Say(a, R"({"action": "equip_cosmetic", "item": "title_rookie"})");
+        q.Say(a, R"({"action": "equip_cosmetic", "item": "title_none"})");   // the default takes it off
+        CHECK(Str(q.Last(a, "wallet"), "title") == "title_none" && store.Find("alice")->title.empty());
+        // a whole Solo vs AI match
+        q.Say(a, R"({"action": "queue", "mode": "bots"})");
+        const json::Value started = q.Last(a, "match_started");
+        CHECK(started.Find("player_borders") != nullptr && started.Find("player_borders")->Items()[0].AsString() == "border_silver");
+        for (int tick = 0; tick < 40000 && q.CountType(a, "post_game") == 0; ++tick) q.Tick();
+        const json::Value post = q.Last(a, "post_game");
+        CHECK(q.CountType(a, "post_game") == 1 && Str(post, "mode") == "bots" && Num(post, "placement") >= 1 && post.Find("seats")->Items().size() == 4);
+        const long long placement = Num(post, "placement");
+        CHECK(Num(post, "xp") >= prog->XpFor("bots", static_cast<int>(placement)) && Num(post, "coins") >= prog->CoinsFor("bots", static_cast<int>(placement)));
+        CHECK(Num(post, "coins_total") == 100 + Num(post, "coins") && Num(q.Last(a, "wallet"), "coins") == Num(post, "coins_total"));
+        CHECK(Str(post.Find("seats")->Items()[0], "username") != "" && Num(post.Find("seats")->Items()[0], "placement") == 1);
+        int played = 0;
+        for (const json::Value& m : post.Find("missions")->Items()) played += Num(m, "progress") > 0 ? 1 : 0;
+        CHECK(played >= 1 || post.Find("missions")->Items().empty());   // at least "play" / "play N" counts whenever it is drawn
+        const long long matchId = Num(post, "match_id");
+        CHECK(matchId > 0 && Num(q.Last(a, "profile").Find("history")->Items()[0], "match_id") == matchId);
+        q.Say(a, std::string(R"({"action": "get_match", "match_id": )") + std::to_string(matchId) + "}");
+        const json::Value detail = q.Last(a, "match_detail");
+        CHECK(Num(detail, "match_id") == matchId && detail.Find("seats")->Items().size() == 4 && Str(detail, "mode") == "bots");
+        q.Say(b, std::string(R"({"action": "get_match", "match_id": )") + std::to_string(matchId) + "}");   // anyone may look at any match
+        CHECK(Num(q.Last(b, "match_detail"), "match_id") == matchId);
+        q.Say(a, R"({"action": "get_match", "match_id": 999})");
+        CHECK(Str(q.Last(a, "error"), "code") == "unknown_match");
+        // the leaderboard: only Ranked players
+        q.Say(a, R"({"action": "get_ladder"})");
+        CHECK(Num(q.Last(a, "ladder"), "total") == 0 && Num(q.Last(a, "ladder"), "you") == 0);
+        HistoryEntry h;
+        h.mode = "ranked";
+        h.placement = 1;
+        store.RecordMatch("bob", h);
+        q.Say(a, R"({"action": "get_ladder"})");
+        const json::Value ladder = q.Last(a, "ladder");
+        CHECK(Num(ladder, "total") == 1 && Str(ladder.Find("players")->Items()[0], "username") == "Bob" && Num(ladder.Find("players")->Items()[0], "position") == 1);
+        // a new password
+        q.Say(a, R"({"action": "change_password", "password": "wrong!!", "new_password": "secret2"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "bad_credentials");
+        q.Say(a, R"({"action": "change_password", "password": "secret1", "new_password": "abc"})");
+        CHECK(Str(q.Last(a, "error"), "code") == "invalid_password");
+        q.Say(a, R"({"action": "change_password", "password": "secret1", "new_password": "secret2", "id": 5})");
+        CHECK(Str(q.Last(a, "done"), "action") == "change_password" && Num(q.Last(a, "done"), "id") == 5);
+        std::string key, session;
+        CHECK(store.Login("Alice", "secret1", key, session) == AccountStore::Result::BadCredentials && store.Login("Alice", "secret2", key, session) == AccountStore::Result::Ok);
+    }
+    {
+        AccountStore reloaded(path, TestEntropy, 2);   // everything is in the file
+        CHECK(reloaded.Load(&error));
+        reloaded.AttachProgression(prog.get());
+        const Account& alice = *reloaded.Find("alice");
+        CHECK(alice.owned.count("border_silver") == 1 && alice.owned.count("title_rookie") == 1 && alice.border == "border_silver" && alice.coins > 100 && alice.xp > 0 && alice.missionDay > 0);
+        CHECK(alice.history.size() == 1 && alice.history[0].matchId > 0 && reloaded.FindMatch(alice.history[0].matchId) != nullptr);
+        CHECK(reloaded.FindMatch(alice.history[0].matchId)->seats.size() == 4);
+    }
+    std::remove(path.c_str());
+    // 3. A day later the daily progress is gone, the weekly stays (same week).
+    {
+        AccountStore store("", TestEntropy, 2);
+        store.AttachProgression(prog.get());
+        std::string key, session;
+        CHECK(store.Register("Zed", "secret1", 1, key, session) == AccountStore::Result::Ok && store.Find("zed")->coins == 500);
+        const std::uint64_t monday = static_cast<std::uint64_t>(kMsPerDay) * (20005 * 7 - 3);   // a Monday, so the next day is in the same week
+        MissionMatch play;
+        play.mode = "normal";
+        play.placement = 1;
+        play.level = 9;
+        play.units = 9;
+        play.items = 6;
+        play.maxCost = 5;
+        play.threeStar = true;
+        const auto first = store.CountMissions("zed", monday, play);   // a win that counts for every kind
+        int dailyProgress = 0, weeklyProgress = 0;
+        for (const auto& u : first) (u.mission->period == "daily" ? dailyProgress : weeklyProgress) += u.progress;
+        CHECK(dailyProgress >= 2 && weeklyProgress >= 2);
+        const auto sameDay = store.Missions("zed", monday + 1000);
+        const auto nextDay = store.Missions("zed", monday + static_cast<std::uint64_t>(kMsPerDay));
+        int nextDaily = 0;
+        for (const auto& u : nextDay) nextDaily += u.mission->period == "daily" ? u.progress : 0;
+        CHECK(sameDay.size() == 6 && nextDaily == 0);
+        const int levelBefore = store.LevelOf(*store.Find("zed"));
+        const int coinsBefore = store.Find("zed")->coins;
+        const int gained = store.Grant("zed", 10, 3000);
+        CHECK(gained >= 1 && store.LevelOf(*store.Find("zed")) == levelBefore + gained && store.Find("zed")->coins == coinsBefore + 10 + gained * prog->levelUpCoins);
     }
 }
 
@@ -2799,12 +3115,89 @@ static void TestJsonSchemas() {
         acc.history.push_back(h);
         checkMessage(msg::Auth(acc, "0123456789abcdef0123456789abcdef"));
         checkMessage(msg::Profile(acc, true));
-        checkMessage(msg::Profile(Account{"Bob", "", "", 1, 0, 0, 0, 9001, {}, {}, {}, {}, {}, {}}, false));
-        checkMessage(msg::Friends({{"Bob", "online", 0, 9001}, {"Cara", "in_match", 450, 0}, {"Dan", "searching", 3300, 9010}, {"Eve", "offline", 2800, 0}}, {"Finn"}, {"Gus"}));
+        Account bob;
+        bob.name = "Bob";
+        bob.iterations = 1;
+        bob.icon = 9001;
+        checkMessage(msg::Profile(bob, false));
+        const auto friendInfo = [](const char* name, const char* status, int points, int icon) { msg::FriendInfo f; f.name = name; f.status = status; f.points = points; f.icon = icon; return f; };
+        checkMessage(msg::Friends({friendInfo("Bob", "online", 0, 9001), friendInfo("Cara", "in_match", 450, 0), friendInfo("Dan", "searching", 3300, 9010), friendInfo("Eve", "offline", 2800, 0)}, {"Finn"}, {"Gus"}));
         checkMessage(msg::Friends({}, {}, {}));
         checkMessage(msg::LoggedOut("logout"));
         checkMessage(msg::LoggedOut("elsewhere"));
         checkMessage(msg::MatchStarted(GameConfig{}, 3, 0, 3, {2}, {"Alice", "Player 2", "LunarSage42"}));
+    }
+
+    // 1c. Revision 10: progression, parties, chat, match records, the leaderboard -- built from a real store with the production progression.
+    {
+        std::string perr;
+        const auto prog = Progression::FromFile(std::string(W2F_DATA_DIR) + "/progression.json", &perr);
+        CHECK(prog != nullptr);
+        AccountStore store("", TestEntropy, 2);
+        store.AttachProgression(prog.get());
+        std::string key, session;
+        store.Register("Alice", "secret1", 1790000000000ULL, key, session);
+        store.Buy("alice", "border_silver");
+        store.Equip("alice", "border_silver");
+        const Account& alice = *store.Find("alice");
+        checkMessage(msg::Wallet(alice, store));
+        checkMessage(msg::Store(alice, store));
+        checkMessage(msg::Profile(alice, true, &store));
+        MissionMatch mm;
+        mm.mode = "normal";
+        mm.placement = 1;
+        const auto missions = store.CountMissions("alice", 1790000000000ULL, mm);
+        checkMessage(msg::Missions(missions, 1790000000000ULL));
+        MatchRecord record;
+        record.timeMs = 1790000000000ULL;
+        record.mode = "ranked";
+        record.rounds = 30;
+        MatchRecordSeat seat;
+        seat.name = "Alice"; seat.icon = 9001; seat.border = "border_silver"; seat.title = "title_none"; seat.placement = 1; seat.level = 8; seat.round = 30;
+        seat.board.push_back({9001, 3, {10, 11}});
+        record.seats.push_back(seat);
+        seat.name = "LunarSage42"; seat.bot = true; seat.border.clear(); seat.title.clear(); seat.placement = 2; seat.board.clear();
+        record.seats.push_back(seat);
+        const std::uint64_t id = store.AddMatch(record);
+        checkMessage(msg::MatchDetail(*store.FindMatch(id)));
+        msg::PostGameInfo post;
+        post.record = store.FindMatch(id);
+        post.placement = 1; post.lpChange = 40; post.points = 40; post.coins = 75; post.xp = 275; post.levelBefore = 1; post.level = 2; post.xpInto = 10; post.xpNext = 550; post.coinsTotal = 275;
+        post.missions = missions;
+        checkMessage(msg::PostGame(post, 1790000000000ULL));
+        HistoryEntry h;
+        h.mode = "ranked"; h.placement = 1; h.matchId = id; h.coins = 75; h.xp = 275;
+        store.RecordMatch("alice", h);
+        checkMessage(msg::Profile(*store.Find("alice"), false, &store));
+        msg::PartyInfo party;
+        checkMessage(msg::Party(party));   // none
+        party.id = 3; party.leader = "Alice"; party.mode = QueueMode::Ranked;
+        msg::PartyMember member;
+        member.name = "Alice"; member.icon = 9001; member.level = 2; member.border = "border_silver"; member.title = "title_none"; member.status = "searching"; member.points = 3300;
+        party.members.push_back(member);
+        member.name = "Bob"; member.status = "in_match"; member.points = 0;
+        party.members.push_back(member);
+        party.invited = {"Cara"};
+        checkMessage(msg::Party(party));
+        checkMessage(msg::PartyInviteMsg("Alice", 9001, 2, QueueMode::Bots));
+        checkMessage(msg::ChatMsg("whisper", "Alice", "Bob", "gl hf", 1790000000000ULL, false));
+        checkMessage(msg::ChatMsg("party", "Bob", "party", "ready", 1790000000001ULL, true));
+        checkMessage(msg::ChatHistory("Bob", {{"Alice", "hi", 1}, {"Bob", "yo", 2}}));
+        checkMessage(msg::ChatHistory("Bob", {}));
+        msg::LadderEntry entry;
+        entry.name = "Alice"; entry.icon = 9001; entry.level = 2; entry.border = "border_silver"; entry.title = "title_none"; entry.points = 3350;
+        checkMessage(msg::Ladder({entry, entry}, 1, 2));
+        checkMessage(msg::Ladder({}, 0, 0));
+        checkMessage(msg::Done("change_password", true, 4));
+        checkMessage(msg::Done("change_password"));
+        msg::FriendInfo f;
+        f.name = "Bob"; f.status = "online"; f.level = 3; f.border = "border_gold"; f.title = "title_star"; f.partySize = 2;
+        checkMessage(msg::Friends({f}, {}, {}));
+        checkMessage(msg::MatchStarted(GameConfig{}, 3, 0, 3, {2}, {"Alice", "Bob", "LunarSage42"}, {9001, 0, 0}, {"border_silver", ""}));
+        msg::QueueInfo info;
+        info.seats = 8;
+        info.reason = "party_declined";
+        checkMessage(msg::QueueStatus(info));
     }
 
     // 2. Whole matches: everything every client is sent (state, public_state, phases, fights, results, gifts, drops, events...).
@@ -2868,7 +3261,12 @@ static void TestJsonSchemas() {
                                R"({"action": "get_profile", "username": "Bob"})", R"({"action": "get_friends"})", R"({"action": "friend_request", "username": "Bob"})",
                                R"({"action": "friend_accept", "username": "Bob"})", R"({"action": "friend_decline", "username": "Bob"})", R"({"action": "friend_remove", "username": "Bob"})",
                                R"({"action": "queue", "mode": "normal", "ready_check": true})", R"({"action": "accept_match"})", R"({"action": "decline_match", "id": 3})",
-                               R"({"action": "set_icon", "icon": 9001})"};
+                               R"({"action": "set_icon", "icon": 9001})", R"({"action": "party_invite", "username": "Bob"})", R"({"action": "party_accept", "username": "Bob", "id": 1})",
+                               R"({"action": "party_decline", "username": "Bob"})", R"({"action": "party_leave"})", R"({"action": "party_kick", "username": "Bob"})",
+                               R"({"action": "party_promote", "username": "Bob"})", R"({"action": "party_mode", "mode": "ranked"})", R"({"action": "chat", "to": "party", "text": "go"})",
+                               R"({"action": "chat", "to": "Bob", "text": "hello there"})", R"({"action": "get_chat", "username": "Bob"})", R"({"action": "get_match", "match_id": 12})",
+                               R"({"action": "get_ladder"})", R"({"action": "get_store"})", R"({"action": "buy_item", "item": "border_gold"})", R"({"action": "equip_cosmetic", "item": "title_none"})",
+                               R"({"action": "get_missions"})", R"({"action": "change_password", "password": "secret1", "new_password": "secret2"})"};
         for (const char* text : valid) {
             const json::Value v = ParseJson(text);
             const std::string why = client.Check(clientSchema, v);
@@ -2882,7 +3280,9 @@ static void TestJsonSchemas() {
                                  R"({"action": "queue"})", R"({"action": "queue", "mode": "solo"})", R"({"action": "leave_queue", "mode": "bots"})",
                                  R"({"action": "login", "username": "a"})", R"({"action": "register", "username": "", "password": "x"})", R"({"action": "friend_request"})",
                                  R"({"action": "queue", "mode": "bots", "ready_check": 1})", R"({"action": "accept_match", "mode": "bots"})", R"({"action": "set_icon"})",
-                                 R"({"action": "set_icon", "icon": 0})"};
+                                 R"({"action": "set_icon", "icon": 0})", R"({"action": "party_invite"})", R"({"action": "party_mode", "mode": "solo"})", R"({"action": "party_leave", "username": "Bob"})",
+                                 R"({"action": "chat", "to": "Bob"})", R"({"action": "chat", "to": "Bob", "text": ""})", R"({"action": "get_match", "match_id": 0})", R"({"action": "get_match"})",
+                                 R"({"action": "buy_item", "item": ""})", R"({"action": "change_password", "password": "secret1"})", R"({"action": "party_mode", "mode": "ranked", "ready_check": true})"};
         for (const char* text : invalid) {
             json::Value v;
             std::string e;
@@ -3413,6 +3813,9 @@ int main() {
         {"Ready check (accept / decline / timeout) and profile icons (revision 9)", TestReadyCheck},
         {"Accounts: password hashing, the ladder, the store and its file", TestAccounts},
         {"Queue server with accounts: log in, friends and presence, ranked, match history", TestQueueAccounts},
+        {"Parties: invite, accept, lead, queue together, ready check, kick, expiry (revision 10)", TestParties},
+        {"Chat: whispers, offline delivery, history, party chat (revision 10)", TestChat},
+        {"Progression: coins, levels, missions, store, post_game, match_detail, ladder, password (revision 10)", TestProgression},
     };
     int failedTests = 0;
     for (const Test& t : tests) {

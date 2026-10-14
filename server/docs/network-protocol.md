@@ -244,6 +244,53 @@ behave exactly as before; `match_found` always carries `ready_check` / `accept_m
 your friends get a fresh `friends`. `auth`, `profile` and every `friends` entry carry `icon` (0 = never chosen: the client shows a default), and
 `match_started.player_icons` (queue server only) gives every seat's icon (0 for the AI players).
 
+## Parties, chat, match records, the leaderboard and progression (revision 10, demo 2.0)
+The League-style client (FEEDBACK V10). Everything here needs `--queue --accounts FILE`; the progression part also needs `data/progression.json` (loaded by
+`w2f_server` when it is in the data folder; without it the store / missions commands answer `error` `no_progression`). All of it works from the home screen and
+from inside a match.
+
+**Parties** (`QueueServer`, keyed by account; a party lives as long as its members are logged in):
+
+| Command | Fields | Meaning |
+|---|---|---|
+| `party_invite` | `username` | invite a friend who is online (`not_friends`, `not_online`, `already_in_party`, `party_full`). Without a party you lead a new one. The invite is open for 60 s |
+| `party_accept` / `party_decline` | `username` (who invited you) | join their party (you leave your old one; a party that was searching stops) or refuse (`no_invite`, `in_match`, `in_ready_check`, `party_full`) |
+| `party_leave` | | leave (the next member leads; a party of one with no open invite is gone) |
+| `party_kick` / `party_promote` | `username` | leader only (`not_leader`, `not_in_party`): remove a member (they get `error` `kicked`) / make them the leader |
+| `party_mode` | `mode` | leader only: the queue the party's lobby shows (members' clients follow it) |
+
+`party` (to every member on every change, and after login): `id` (0 = no party), `leader`, `mode`, `members` (leader first: `username`, `icon`, `level`, `border`,
+`title`, `status`, `rank`), `invited` (open invites). `party_invite` to the invitee: `from`, `icon`, `size`, `mode`. **Queueing**: only the leader sends `queue`
+(`not_leader`); every member must be idle (`party_busy`); Ranked takes parties of at most 2 (`party_too_big`). All members get `queue_status` searching; one
+`leave_queue` stops the whole party. The matchmaker never splits a party (a party that does not fit waits for the next match). A ready check that a member declines
+takes the whole party out of the queue: the decliner gets `reason` `declined`, the others `party_declined`; the rest of the lobby is `requeued`.
+
+**Chat**: `chat` (`to`: a friend's username, or `"party"`; `text`: 1-300 bytes, control characters become spaces) answers with the line itself, sent to both ends:
+`chat` (`channel` whisper / party, `from`, `to`, `text`, `time_ms`). Whispers go to friends only (`not_friends`); to an offline friend they are kept (30 per
+friend, in memory) and delivered when they log in (`offline: true`). `get_chat` (`username`) answers `chat_history` (`with`, `lines`: `from`, `text`, `time_ms`; the
+last 50 per pair, in memory: a server restart forgets them). `empty_text` for a blank line, `not_in_party` for party chat without a party.
+
+**Match records**: every finished match is kept (all seats, 1st first; the newest 400 in the accounts file). `profile.history[]` carries `match_id`, `coins`, `xp`;
+`get_match` (`match_id`) answers `match_detail` (`match_id`, `time_ms`, `mode`, `rounds`, `seats`: `username`, `bot`, `icon`, `border`, `title`, `placement`,
+`level`, `round`, `board`) or `unknown_match`. **When a match ends** every logged-in player gets `profile`, `wallet`, `missions` and `post_game`: `match_id`, `mode`,
+`rounds`, `placement`, `lp_change`, `rank` (after), `coins` (what this match paid in all: placement, level-ups, missions), `xp`, `coins_total`, `level_before`,
+`level`, `level_xp`, `level_xp_next`, `daily_ends_ms`, `missions` (each with its new progress; `just_done` when this match finished it) and `seats` (as in
+`match_detail`). **Leaderboard**: `get_ladder` answers `ladder` (`you`: your place, 0 = not ranked; `total`; `players`: the top 50 by LP, each `position`,
+`username`, `icon`, `level`, `border`, `title`, `rank`).
+
+**Progression** (`net/include/w2f/net/Progression.h`, data `data/progression.json`): coins and account XP per finished match by placement, scaled by mode
+(Solo vs AI 50%, Normal 100%, Ranked 125%); account levels (level L needs min(1500, 500 + 50 (L - 1)) XP; each level up pays 150 coins); 3 daily + 3 weekly
+missions drawn from a pool per UTC day / Monday-week (the same for everyone; kinds `play`, `top4`, `win`, `level`, `three_star`, `items`, `cost`, `champions`,
+optionally limited to a mode), paid at once when done; a new account starts with 500 coins. `wallet` (after login, every purchase / equip and every match):
+`coins`, `level`, `xp`, `xp_next`, `total_xp`, `border`, `title`, `arena` (the equipped store ids; a kind's default when none), `owned`. `missions`: `daily_ends_ms`,
+`weekly_ends_ms`, `missions` (`id`, `period`, `text`, `progress`, `count`, `coins`, `xp`, `done`). The store: `get_store` -> `store` (`coins`, `items`: `id`,
+`kind` border / title / arena, `name`, `desc`, `price`, `owned`, `equipped`, `default`); `buy_item` (`item`) -> `wallet` + `store` (`unknown_item`,
+`already_owned`, `not_enough_coins`); `equip_cosmetic` (`item`) -> `wallet`, `profile`, `store` (`not_owned`; equipping a kind's default takes the other one off).
+Coins are earned only; nothing is for sale for money. `profile` gains `level`, `border`, `title`; every `friends` entry `level`, `border`, `title` and
+`party_size`; `match_started.player_borders` gives every human seat's border.
+
+**Account**: `change_password` (`password`, `new_password`) answers `done` (`action`); it signs every other session out (`bad_credentials`, `invalid_password`).
+
 ## Crash recovery and private servers
 `--autosave FILE` writes ONE file at the start of every Planning phase: the engine snapshot plus a small JSON "seats" record (each human seat's reconnect token, which seats are bots, the bots' state). `--resume FILE` restores
 a match from it; the players reconnect with their tokens and are resynced exactly as after a dropped connection. A finished match deletes the file. `--join-code CODE` makes every connection bring `?code=CODE`.
@@ -252,9 +299,9 @@ Details, Docker and TLS: `docs/deploy.md`.
 ## Not built yet (deliberately)
 * **TLS.** Terminate it in a proxy (`docs/deploy.md` has a Caddy setup).
 * **Windows.** The socket layer has a Winsock branch that has never been compiled or run; Linux and macOS are tested.
-* **Parties, invites, chat.** Friends see each other's status but cannot yet invite each other into a lobby. `--queue` has no `--autosave` / `--resume` yet.
+* `--queue` has no `--autosave` / `--resume` yet; chat history lives in memory only (a restart forgets it).
 
 ## Testing
 `make test-net` (`net/tests/net_tests.cpp`): the encoders against RFC vectors; the handshake and frame parser against the RFC's own examples and ~30 malformed cases each, plus fuzzing;
 command validation with ~90 cases and 20,000 mutated messages; the lobby, reconnect, routing, privacy and rate limiting over a fake transport; a whole 3-player match audited message by message;
-the networked-match-equals-bare-engine replay; every message kind checked against the JSON Schemas (and every command the parser accepts against the command schema); crash recovery (a resumed server plays on identically); the join code; the queue server (bots / normal queues, fill with bots, several matches, back home after a match, reconnect into a match, leave_match, abandoned matches); an eight-client soak test over real sockets with reconnects; and real loopback sockets for handshakes, close codes, fragmentation, abrupt disconnects, timeouts, the connection cap, slow readers and the production loop on a thread.
+the networked-match-equals-bare-engine replay; every message kind checked against the JSON Schemas (and every command the parser accepts against the command schema); crash recovery (a resumed server plays on identically); the join code; the queue server (bots / normal queues, fill with bots, several matches, back home after a match, reconnect into a match, leave_match, abandoned matches); parties (invite / accept / lead / queue together / declines / kick / expiry), chat (whispers, offline delivery, history, party chat) and progression (coins, levels, missions, the store, post_game, match_detail, the ladder, password changes, the file); an eight-client soak test over real sockets with reconnects; and real loopback sockets for handshakes, close codes, fragmentation, abrupt disconnects, timeouts, the connection cap, slow readers and the production loop on a thread.

@@ -746,6 +746,396 @@
     "icon"
    ],
    "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: invite a friend who is online into your party (you lead a new one if you have none). They get `party_invite`; everybody in the party gets `party`.",
+   "properties": {
+    "action": {
+     "const": "party_invite"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: join the party of the friend who invited you (within the invite's minute). You leave your old party; a party that was searching stops.",
+   "properties": {
+    "action": {
+     "const": "party_accept"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: refuse a friend's party invite.",
+   "properties": {
+    "action": {
+     "const": "party_decline"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: leave your party (the next member leads).",
+   "properties": {
+    "action": {
+     "const": "party_leave"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: leader only: remove a member.",
+   "properties": {
+    "action": {
+     "const": "party_kick"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: leader only: make a member the leader.",
+   "properties": {
+    "action": {
+     "const": "party_promote"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: leader only: the queue your party's lobby shows.",
+   "properties": {
+    "action": {
+     "const": "party_mode"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal",
+      "ranked"
+     ]
+    }
+   },
+   "required": [
+    "action",
+    "mode"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: say something to a friend (to = their name; kept for them while they are offline) or to your party (to = \"party\"). Answered with the `chat` line itself.",
+   "properties": {
+    "action": {
+     "const": "chat"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "to": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    },
+    "text": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 300
+    }
+   },
+   "required": [
+    "action",
+    "to",
+    "text"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: the recent whispers with a friend (`chat_history`).",
+   "properties": {
+    "action": {
+     "const": "get_chat"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "username": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 32
+    }
+   },
+   "required": [
+    "action",
+    "username"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: every seat of a finished match (`match_detail`; error unknown_match when it is no longer kept).",
+   "properties": {
+    "action": {
+     "const": "get_match"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "match_id": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "action",
+    "match_id"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: the Ranked leaderboard (`ladder`).",
+   "properties": {
+    "action": {
+     "const": "get_ladder"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: the cosmetics store (`store`; error no_progression on a server without data/progression.json).",
+   "properties": {
+    "action": {
+     "const": "get_store"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: buy a store item with coins (answered with `wallet` and `store`; errors unknown_item, already_owned, not_enough_coins).",
+   "properties": {
+    "action": {
+     "const": "buy_item"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "item": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 40
+    }
+   },
+   "required": [
+    "action",
+    "item"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: wear an owned item (a kind's default takes the other one off). Answered with `wallet`, `profile` and `store`; error not_owned.",
+   "properties": {
+    "action": {
+     "const": "equip_cosmetic"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "item": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 40
+    }
+   },
+   "required": [
+    "action",
+    "item"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: the current daily and weekly missions (`missions`).",
+   "properties": {
+    "action": {
+     "const": "get_missions"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "description": "Revision 10, queue server with accounts: a new password; every other session is signed out. Answered with `done` (errors bad_credentials, invalid_password).",
+   "properties": {
+    "action": {
+     "const": "change_password"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991,
+     "description": "optional: echoed in the `result` / `error` answering this command"
+    },
+    "password": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "new_password": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    }
+   },
+   "required": [
+    "action",
+    "password",
+    "new_password"
+   ],
+   "additionalProperties": false
   }
  ]
 }

@@ -186,5 +186,34 @@ def main():
                        *[bell(f, 1.8, 2.0, 3.5, 1.2) for f in (294, 440, 587)], at=[0, 0, 0.1, 0.25, 0.4]), 0.65)
     save("MusicClient", client_music(), 0.42, fade_out=False)
 
+    # ---- demo 2.0 (FEEDBACK V10, the League-style client): chat, parties, the store, missions, levels, the post-game screen, menus, toasts.
+    #      (Appended after the music: the shared random stream keeps every earlier sound exactly as it was.)
+    save("ChatIn", mix(bell(1568, 0.35, 1.0, 2.0, 0.22), bell(2349, 0.4, 0.8, 2.0, 0.25), at=[0, 0.06]), 0.32)
+    save("ChatOut", mix(noise(0.12, highpass=3500, attack=0.03, decay=0.05) * 0.5, tone(1200, 0.12, ((1, 1),), 0.01, 0.06, 4.0, sweep=0.8) * 0.4), 0.25)
+    save("PartyInvite", mix(*[bell(f, 1.0, 2.0, 3.5, 0.75) for f in (988, 1319, 1760)] + [noise(0.6, highpass=5000, attack=0.05, decay=0.35, curve=3.0) * 0.2,
+                              pad([note("E4"), note("B4"), note("E5")], 1.2, 0.05, 0.9, bright=0.2) * 0.35], at=[0, 0.11, 0.22, 0, 0]), 0.7)
+    save("PartyJoin", mix(bell(784, 0.8, 1.4, 2.0, 0.6), bell(1175, 0.9, 1.4, 2.0, 0.7), pad([note("G3"), note("D4"), note("B4")], 1.0, 0.05, 0.8, bright=0.15) * 0.4,
+                          at=[0, 0.09, 0]), 0.55)
+    save("PartyLeave", mix(bell(1175, 0.6, 1.2, 2.0, 0.4), bell(784, 0.7, 1.2, 2.0, 0.5), at=[0, 0.1]), 0.4)
+    save("Purchase", mix(*[bell(f, 0.7, 2.2, 3.5, 0.5) for f in (1760, 2093, 2637, 3136, 2637, 3520)] + [noise(0.8, highpass=6000, attack=0.02, decay=0.5, curve=3.0) * 0.25,
+                         tone(523, 0.9, ((1, 1), (2, 0.5), (3, 0.25)), 0.01, 0.7, 2.5) * 0.4], at=[0, 0.05, 0.1, 0.15, 0.22, 0.3, 0, 0]), 0.65)
+    save("CoinGain", mix(*[bell(f, 0.35, 2.0, 3.5, 0.22) for f in (2093, 2349, 2637, 2794, 3136)], at=[0, 0.06, 0.12, 0.18, 0.24]), 0.45)
+    save("MissionComplete", mix(*[tone(f, 0.5, ((1, 1), (2, 0.45), (3, 0.2)), 0.01, 0.4, 3.0) for f in (523, 659, 784)] + [bell(1046, 1.4, 1.8, 3.5, 1.0), bell(1568, 1.4, 1.4, 3.5, 1.0),
+                                noise(0.9, highpass=4500, attack=0.1, decay=0.6, curve=3.0) * 0.18], at=[0, 0.1, 0.2, 0.3, 0.34, 0.3]), 0.62)
+    save("LevelUp", mix(noise(1.2, lowpass=3000, highpass=300, attack=0.6, decay=0.4, curve=3.0) * 0.35, tone(147, 2.2, ((1, 1), (2, 0.5), (3, 0.3)), 0.4, 1.6, 2.5) * 0.5,
+                        *[bell(f, 1.8, 2.0, 3.5, 1.3) for f in (587, 740, 880, 1175, 1480, 1760)], pad([note("D4"), note("F#4"), note("A4"), note("D5")], 2.2, 0.5, 1.4, bright=0.25) * 0.5,
+                        at=[0, 0.5, 0.6, 0.68, 0.76, 0.84, 0.92, 1.0, 0.6]), 0.7)
+    save("Toast", mix(bell(1319, 0.4, 1.0, 2.0, 0.28), bell(1976, 0.45, 0.8, 2.0, 0.3), at=[0, 0.05]), 0.3)
+    save("PostGame", mix(noise(1.6, lowpass=5000, highpass=400, attack=1.0, decay=0.4, curve=3.0) * 0.4, pad([note("A3"), note("E4"), note("A4"), note("C#5")], 2.4, 0.9, 1.3, bright=0.2) * 0.6,
+                         tone(110, 2.0, ((1, 1), (2, 0.4)), 0.8, 1.2, 2.5) * 0.4, bell(1760, 1.5, 1.6, 3.5, 1.0), at=[0, 0, 0, 1.0]), 0.62)
+    save("LpGain", mix(*[bell(f, 0.6, 1.6, 2.0, 0.4) for f in (880, 1109, 1319, 1760)], at=[0, 0.07, 0.14, 0.21]), 0.5)
+    save("LpLoss", mix(*[tone(f, 0.6, ((1, 1), (2, 0.35)), 0.01, 0.45, 3.0) for f in (440, 392, 330)], at=[0, 0.14, 0.28]), 0.45)
+    save("MenuOpen", mix(noise(0.25, lowpass=5000, highpass=900, attack=0.08, decay=0.1, curve=4.0) * 0.5, tone(700, 0.2, ((1, 1), (2, 0.3)), 0.02, 0.12, 4.0, sweep=0.6) * 0.35,
+                         bell(1760, 0.3, 0.8, 2.0, 0.18) * 0.5, at=[0, 0, 0.1]), 0.32)
+    save("MenuClose", mix(noise(0.2, lowpass=4000, highpass=700, attack=0.03, decay=0.08, curve=4.0) * 0.5, tone(900, 0.18, ((1, 1), (2, 0.3)), 0.01, 0.1, 4.0, sweep=-0.6) * 0.35), 0.28)
+    save("Error", mix(tone(196, 0.16, ((1, 1), (3, 0.33), (5, 0.2)), 0.004, 0.1, 5.0), tone(165, 0.22, ((1, 1), (3, 0.33), (5, 0.2)), 0.004, 0.14, 5.0), at=[0, 0.13]), 0.4)
+    save("FriendOnline", mix(bell(1047, 0.5, 1.0, 2.0, 0.35), bell(1568, 0.6, 1.0, 2.0, 0.4), at=[0, 0.09]), 0.28)
+    save("Slider", tone(2600, 0.03, ((1, 1),), 0.001, 0.012, 6.0), 0.18)
+
 
 main()

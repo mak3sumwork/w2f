@@ -9,7 +9,7 @@
 # The accounts come from tests/data/client_selftest_accounts.json (Tester with one finished match, Rival; both password secret1), copied fresh each run.
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-P="${1:-$HOME/Desktop/work2fightgame/work2fightgame}"
+P="${1:-$HOME/W2F/work2fightgame/work2fightgame}"
 UE="${UE:-/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor}"
 T="$(mktemp -d)"
 ACCOUNTS="$T/accounts.json"
@@ -26,11 +26,11 @@ rm -rf "$P/Saved/Screenshots/MacEditor" "$P/Saved/W2F/clienttest.txt"
 "$UE" "$P/work2fightgame.uproject" /Game/W2F/Maps/L_Viewer -game -windowed -ResX=1600 -ResY=900 -w2fquality=1 -w2flive -w2fclienttest=$NAME -abslog="$T/a.log" > /dev/null 2>&1 &
 A=$!
 waitfor() { for _ in $(seq 900); do grep -q "$1" "$T/a.log" 2>/dev/null && return 0; kill -0 $A 2>/dev/null || return 1; sleep 1; done; return 1; }
-rival() { "$UE" "$P/work2fightgame.uproject" /Game/W2F/Maps/L_Viewer -game -nullrhi -nosound -w2flive -w2flogin=Rival:secret1 -w2ffriend=$NAME -abslog="$T/b$1.log" > /dev/null 2>&1 & echo $!; }
+rival() { "$UE" "$P/work2fightgame.uproject" /Game/W2F/Maps/L_Viewer -game -nullrhi -nosound -w2flive -w2flogin=Rival:secret1 -w2ffriend=$NAME -w2fdemo=acceptinvite -abslog="$T/b$1.log" > /dev/null 2>&1 & echo $!; }
 
 B=""
 waitfor "PASS: CANCEL takes the request back" && B=$(rival 1)
-waitfor "MY PROFILE goes back"; [ -n "$B" ] && { kill $B; sleep 3; kill -9 $B; } 2>/dev/null
+waitfor "PASS: MY PROFILE goes back"; [ -n "$B" ] && { kill $B; sleep 3; kill -9 $B; } 2>/dev/null
 B=""
 waitfor "PASS: the x removes the friend" && B=$(rival 2)
 waitfor "declines it"; [ -n "$B" ] && { kill $B; sleep 3; kill -9 $B; } 2>/dev/null

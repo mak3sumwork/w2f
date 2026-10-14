@@ -21,7 +21,7 @@
 namespace w2f::net {
 
 constexpr int kProtocolVersion = 1;    // the MAJOR version: frozen. Only a breaking change would make it 2.
-constexpr int kProtocolRevision = 9;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
+constexpr int kProtocolRevision = 10;   // counts the ADDITIVE changes within a major version (new fields / messages / appended enum values): see docs/UE5-Integration.md, section 13
 constexpr std::size_t kMaxCommandBytes = 4096;   // a genuine command is under 200 bytes
 
 enum class CommandType : std::uint8_t {
@@ -59,6 +59,23 @@ enum class CommandType : std::uint8_t {
     AcceptMatch,    // answer `match_found` (ready_check true): ready
     DeclineMatch,   // answer it: not now (you leave the queue; the others go back into it)
     SetIcon,        // icon: a champion id, your profile icon
+    // Revision 10 (demo 2.0, the League-style client): parties, chat, match details, the leaderboard, progression (store, missions), password change.
+    PartyInvite,    // username: invite a friend into your party (makes one with you as the leader)
+    PartyAccept,    // username: join the party of the friend who invited you
+    PartyDecline,   // username: refuse their invite
+    PartyLeave,
+    PartyKick,      // username (leader only)
+    PartyPromote,   // username (leader only): make them the leader
+    PartyMode,      // mode (leader only): the queue the party's lobby shows ("bots" | "normal" | "ranked")
+    Chat,           // to ("party" or a friend's username), text
+    GetChat,        // username: the recent conversation with a friend
+    GetMatch,       // match_id: every seat of a finished match (match history, the post-game screen)
+    GetLadder,      // the Ranked leaderboard
+    GetStore,       // the cosmetics store and what you own
+    BuyItem,        // item: buy a store item with coins
+    EquipCosmetic,  // item: wear an owned store item (a kind's default takes the other off)
+    GetMissions,    // the daily and weekly missions
+    ChangePassword, // password, new_password
 };
 
 enum class QueueMode : std::uint8_t { Bots, Normal, Ranked };   // Ranked: revision 8
@@ -97,14 +114,32 @@ constexpr const char* ToString(CommandType t) {
         case CommandType::AcceptMatch: return "accept_match";
         case CommandType::DeclineMatch: return "decline_match";
         case CommandType::SetIcon: return "set_icon";
+        case CommandType::PartyInvite: return "party_invite";
+        case CommandType::PartyAccept: return "party_accept";
+        case CommandType::PartyDecline: return "party_decline";
+        case CommandType::PartyLeave: return "party_leave";
+        case CommandType::PartyKick: return "party_kick";
+        case CommandType::PartyPromote: return "party_promote";
+        case CommandType::PartyMode: return "party_mode";
+        case CommandType::Chat: return "chat";
+        case CommandType::GetChat: return "get_chat";
+        case CommandType::GetMatch: return "get_match";
+        case CommandType::GetLadder: return "get_ladder";
+        case CommandType::GetStore: return "get_store";
+        case CommandType::BuyItem: return "buy_item";
+        case CommandType::EquipCosmetic: return "equip_cosmetic";
+        case CommandType::GetMissions: return "get_missions";
+        case CommandType::ChangePassword: return "change_password";
     }
     return "?";
 }
 
 // Revision 8: the account / profile / friends commands (a QueueServer with accounts answers them; anything else says "no_accounts").
+// Revision 10 adds the party, chat, match detail, leaderboard, store, missions and password commands (they need an account too).
 constexpr bool IsAccountCommand(CommandType t) {
     return t == CommandType::Register || t == CommandType::Login || t == CommandType::ResumeSession || t == CommandType::Logout || t == CommandType::GetProfile ||
-           t == CommandType::GetFriends || t == CommandType::FriendRequest || t == CommandType::FriendAccept || t == CommandType::FriendDecline || t == CommandType::FriendRemove || t == CommandType::SetIcon;
+           t == CommandType::GetFriends || t == CommandType::FriendRequest || t == CommandType::FriendAccept || t == CommandType::FriendDecline || t == CommandType::FriendRemove || t == CommandType::SetIcon ||
+           (t >= CommandType::PartyInvite && t <= CommandType::ChangePassword);
 }
 
 struct Command {
@@ -126,8 +161,14 @@ struct Command {
     QueueMode queueMode = QueueMode::Bots;   // queue
     bool readyCheck = false;                 // queue (revision 9): ask for a ready check (match_found -> accept_match / decline_match) before the match starts
     int icon = 0;                            // set_icon
-    std::string username, password, session; // register / login / resume_session / get_profile / friend_*
+    std::string username, password, session; // register / login / resume_session / get_profile / friend_* / party_* / get_chat / change_password
+    std::string to, text;                    // chat (revision 10)
+    std::string storeItem;                   // buy_item / equip_cosmetic (named so: `item` is equip_item's)
+    std::string newPassword;                 // change_password
+    std::uint64_t matchId = 0;               // get_match
 };
+
+constexpr std::size_t kMaxChatBytes = 300;   // (revision 10) a chat line
 
 struct ProtocolError {
     std::string code;     // stable, machine-readable: invalid_json, not_an_object, missing_action, unknown_action, missing_field,

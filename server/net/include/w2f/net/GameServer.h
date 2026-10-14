@@ -85,6 +85,8 @@ struct GameServerConfig {
     std::vector<std::string> seatNames;
     // (revision 9) Every seat's profile icon (a champion id, `match_started.player_icons`); missing / 0 = none (the client picks one). Empty = not sent.
     std::vector<int> seatIcons;
+    // (revision 10) Every seat's profile border (a store item id, `match_started.player_borders`); empty = not sent.
+    std::vector<std::string> seatBorders;
 };
 
 // (demo 1.5) What a finished match reports, for the accounts' match history and rank: every seat's placement, level, the round it went out in

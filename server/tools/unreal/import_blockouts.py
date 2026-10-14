@@ -68,6 +68,12 @@ ICONS_SRC = os.environ.get("W2F_ICONS") or os.path.normpath(os.path.join(HERE, "
 ICONS_DEST = "/Game/W2F/Icons"
 
 
+def only(name):
+    """W2F_ONLY=Name1,Name2,...: import just the files whose name starts with one of these (a few new pieces without re-saving every asset)."""
+    want = [w.strip() for w in os.environ.get("W2F_ONLY", "").split(",") if w.strip()]
+    return not want or any(name.startswith(w) for w in want)
+
+
 def import_icons(prefix=""):
     """Imports docs/icons/*.png (item icons, champion portraits, UI glyphs) as UI textures: no mipmaps, no compression artefacts, never streamed.
     `prefix` limits it to the files whose name starts with it (import_ui.py: "T_UI_")."""
@@ -76,7 +82,7 @@ def import_icons(prefix=""):
         return 0
     tasks = []
     for f in sorted(os.listdir(ICONS_SRC)):
-        if not f.endswith(".png") or not f.startswith(prefix):
+        if not f.endswith(".png") or not f.startswith(prefix) or not only(f):
             continue
         task = unreal.AssetImportTask()
         task.set_editor_property("filename", os.path.join(ICONS_SRC, f))
@@ -90,6 +96,8 @@ def import_icons(prefix=""):
     count = 0
     for asset_path in unreal.EditorAssetLibrary.list_assets(ICONS_DEST, recursive=True, include_folder=False):
         if prefix and not asset_path.rsplit("/", 1)[-1].startswith(prefix):
+            continue
+        if not only(asset_path.rsplit("/", 1)[-1]):
             continue
         texture = unreal.EditorAssetLibrary.load_asset(asset_path)
         if not isinstance(texture, unreal.Texture2D):
@@ -225,7 +233,7 @@ def import_sfx():
         return 0
     tasks = []
     for f in sorted(os.listdir(SFX_SRC)):
-        if not (f.startswith("SFX_") and f.endswith(".wav")):
+        if not (f.startswith("SFX_") and f.endswith(".wav")) or not only(f):
             continue
         t = unreal.AssetImportTask()
         t.set_editor_property("filename", os.path.join(SFX_SRC, f))

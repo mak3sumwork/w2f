@@ -93,6 +93,39 @@
   },
   {
    "$ref": "#/$defs/ready_check"
+  },
+  {
+   "$ref": "#/$defs/wallet"
+  },
+  {
+   "$ref": "#/$defs/store"
+  },
+  {
+   "$ref": "#/$defs/missions"
+  },
+  {
+   "$ref": "#/$defs/party"
+  },
+  {
+   "$ref": "#/$defs/party_invite"
+  },
+  {
+   "$ref": "#/$defs/chat"
+  },
+  {
+   "$ref": "#/$defs/chat_history"
+  },
+  {
+   "$ref": "#/$defs/match_detail"
+  },
+  {
+   "$ref": "#/$defs/post_game"
+  },
+  {
+   "$ref": "#/$defs/ladder"
+  },
+  {
+   "$ref": "#/$defs/done"
   }
  ],
  "$defs": {
@@ -979,6 +1012,13 @@
       "minimum": 0
      },
      "description": "revision 9: every seat's profile icon (a champion id), by seat; 0 = none chosen (the AI players): the client picks one"
+    },
+    "player_borders": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "revision 10: every human seat's profile border (a store item id), by seat; AI players and missing entries: the default"
     }
    },
    "required": [
@@ -2300,9 +2340,10 @@
       "left_match",
       "cancelled",
       "declined",
-      "requeued"
+      "requeued",
+      "party_declined"
      ],
-     "description": "idle only (match_over, left_match, cancelled), when it follows an event. Revision 9: declined = you declined the ready check or let it run out (idle); requeued = someone else did and you are searching again in your old place (comes with state searching)"
+     "description": "idle only (match_over, left_match, cancelled), when it follows an event. Revision 9: declined = you declined the ready check or let it run out (idle); requeued = someone else did and you are searching again in your old place (comes with state searching). Revision 10: party_declined = someone in your party declined the ready check (you are idle with them)"
     },
     "seats": {
      "type": "integer",
@@ -2576,6 +2617,21 @@
         "items": {
          "type": "string"
         }
+       },
+       "match_id": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "revision 10: the full record (get_match)"
+       },
+       "coins": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "revision 10: coins the match paid (0 without progression)"
+       },
+       "xp": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "revision 10: account XP the match paid"
        }
       },
       "required": [
@@ -2596,6 +2652,19 @@
      "type": "integer",
      "minimum": 0,
      "description": "revision 9: the profile icon (a champion id; 0 = none chosen)"
+    },
+    "level": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "revision 10 (a server with progression): the account level"
+    },
+    "border": {
+     "type": "string",
+     "description": "revision 10: the equipped profile border (a store item id)"
+    },
+    "title": {
+     "type": "string",
+     "description": "revision 10: the equipped title (a store item id)"
     }
    },
    "required": [
@@ -2640,6 +2709,25 @@
         "type": "integer",
         "minimum": 0,
         "description": "revision 9: the profile icon (a champion id; 0 = none chosen)"
+       },
+       "level": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "revision 10: the account level (a server with progression)"
+       },
+       "border": {
+        "type": "string",
+        "description": "revision 10"
+       },
+       "title": {
+        "type": "string",
+        "description": "revision 10"
+       },
+       "party_size": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 8,
+        "description": "revision 10: they are in a party of this size"
        }
       },
       "required": [
@@ -2722,6 +2810,716 @@
     "humans",
     "you_accepted",
     "remaining_ms"
+   ],
+   "additionalProperties": false
+  },
+  "mission": {
+   "type": "object",
+   "description": "Revision 10: one daily or weekly mission and your progress.",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "period": {
+     "enum": [
+      "daily",
+      "weekly"
+     ]
+    },
+    "text": {
+     "type": "string"
+    },
+    "progress": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "coins": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "done": {
+     "type": "boolean"
+    },
+    "just_done": {
+     "type": "boolean",
+     "description": "post_game only: this match finished it (its reward is in the totals)"
+    }
+   },
+   "required": [
+    "id",
+    "period",
+    "text",
+    "progress",
+    "count",
+    "coins",
+    "xp",
+    "done"
+   ],
+   "additionalProperties": false
+  },
+  "recordSeat": {
+   "type": "object",
+   "description": "Revision 10: one seat of a finished match.",
+   "properties": {
+    "username": {
+     "type": "string"
+    },
+    "bot": {
+     "type": "boolean"
+    },
+    "icon": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "border": {
+     "type": "string"
+    },
+    "title": {
+     "type": "string"
+    },
+    "placement": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 8
+    },
+    "level": {
+     "type": "integer"
+    },
+    "round": {
+     "type": "integer"
+    },
+    "board": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "champion": {
+        "type": "integer"
+       },
+       "star": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3
+       },
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        }
+       }
+      },
+      "required": [
+       "champion",
+       "star",
+       "items"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "username",
+    "bot",
+    "icon",
+    "border",
+    "title",
+    "placement",
+    "level",
+    "round",
+    "board"
+   ],
+   "additionalProperties": false
+  },
+  "wallet": {
+   "type": "object",
+   "description": "Revision 10 (a queue server with accounts and progression): your coins, account level and XP, what you own and wear. After login, every purchase / equip and every match.",
+   "properties": {
+    "type": {
+     "const": "wallet"
+    },
+    "coins": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "level": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "xp": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "XP into the current level"
+    },
+    "xp_next": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "XP the current level needs"
+    },
+    "total_xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "border": {
+     "type": "string"
+    },
+    "title": {
+     "type": "string"
+    },
+    "arena": {
+     "type": "string"
+    },
+    "owned": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "type",
+    "coins",
+    "total_xp",
+    "border",
+    "title",
+    "arena",
+    "owned"
+   ],
+   "additionalProperties": false
+  },
+  "store": {
+   "type": "object",
+   "description": "Revision 10: the cosmetics store (answer to get_store, buy_item, equip_cosmetic).",
+   "properties": {
+    "type": {
+     "const": "store"
+    },
+    "coins": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "kind": {
+        "enum": [
+         "border",
+         "title",
+         "arena"
+        ]
+       },
+       "name": {
+        "type": "string"
+       },
+       "desc": {
+        "type": "string"
+       },
+       "price": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "owned": {
+        "type": "boolean"
+       },
+       "equipped": {
+        "type": "boolean"
+       },
+       "default": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "id",
+       "kind",
+       "name",
+       "desc",
+       "price",
+       "owned",
+       "equipped"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "type",
+    "coins",
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "missions": {
+   "type": "object",
+   "description": "Revision 10: the current daily and weekly missions (after login, get_missions and every match).",
+   "properties": {
+    "type": {
+     "const": "missions"
+    },
+    "daily_ends_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "weekly_ends_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "missions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/mission"
+     }
+    }
+   },
+   "required": [
+    "type",
+    "daily_ends_ms",
+    "weekly_ends_ms",
+    "missions"
+   ],
+   "additionalProperties": false
+  },
+  "party": {
+   "type": "object",
+   "description": "Revision 10: the party you are in, to every member on every change (id 0: none).",
+   "properties": {
+    "type": {
+     "const": "party"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "leader": {
+     "type": "string"
+    },
+    "mode": {
+     "enum": [
+      "",
+      "bots",
+      "normal",
+      "ranked"
+     ]
+    },
+    "members": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "username": {
+        "type": "string"
+       },
+       "icon": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "level": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "border": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "offline",
+         "online",
+         "searching",
+         "in_match"
+        ]
+       },
+       "rank": {
+        "$ref": "#/$defs/rank"
+       }
+      },
+      "required": [
+       "username",
+       "icon",
+       "level",
+       "border",
+       "title",
+       "status",
+       "rank"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "invited": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "type",
+    "id",
+    "leader",
+    "mode",
+    "members",
+    "invited"
+   ],
+   "additionalProperties": false
+  },
+  "party_invite": {
+   "type": "object",
+   "description": "Revision 10: a friend invites you to their party (party_accept / party_decline with their name).",
+   "properties": {
+    "type": {
+     "const": "party_invite"
+    },
+    "from": {
+     "type": "string"
+    },
+    "icon": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "size": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 8
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal",
+      "ranked"
+     ]
+    }
+   },
+   "required": [
+    "type",
+    "from",
+    "icon",
+    "size",
+    "mode"
+   ],
+   "additionalProperties": false
+  },
+  "chat": {
+   "type": "object",
+   "description": "Revision 10: a chat line, to both ends (whisper) or the whole party.",
+   "properties": {
+    "type": {
+     "const": "chat"
+    },
+    "channel": {
+     "enum": [
+      "whisper",
+      "party"
+     ]
+    },
+    "from": {
+     "type": "string"
+    },
+    "to": {
+     "type": "string"
+    },
+    "text": {
+     "type": "string"
+    },
+    "time_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "offline": {
+     "type": "boolean",
+     "description": "sent while you were offline, delivered at login"
+    }
+   },
+   "required": [
+    "type",
+    "channel",
+    "from",
+    "to",
+    "text",
+    "time_ms"
+   ],
+   "additionalProperties": false
+  },
+  "chat_history": {
+   "type": "object",
+   "description": "Revision 10: the recent whispers with a friend (get_chat).",
+   "properties": {
+    "type": {
+     "const": "chat_history"
+    },
+    "with": {
+     "type": "string"
+    },
+    "lines": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "from": {
+        "type": "string"
+       },
+       "text": {
+        "type": "string"
+       },
+       "time_ms": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "from",
+       "text",
+       "time_ms"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "type",
+    "with",
+    "lines"
+   ],
+   "additionalProperties": false
+  },
+  "match_detail": {
+   "type": "object",
+   "description": "Revision 10: every seat of a finished match, 1st place first (get_match).",
+   "properties": {
+    "type": {
+     "const": "match_detail"
+    },
+    "match_id": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "time_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal",
+      "ranked"
+     ]
+    },
+    "rounds": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "seats": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/recordSeat"
+     }
+    }
+   },
+   "required": [
+    "type",
+    "match_id",
+    "time_ms",
+    "mode",
+    "rounds",
+    "seats"
+   ],
+   "additionalProperties": false
+  },
+  "post_game": {
+   "type": "object",
+   "description": "Revision 10: your match is over -- result, LP, coins, XP, level, missions and the whole lobby. Once per match, to every logged-in player.",
+   "properties": {
+    "type": {
+     "const": "post_game"
+    },
+    "match_id": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "mode": {
+     "enum": [
+      "bots",
+      "normal",
+      "ranked"
+     ]
+    },
+    "rounds": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "placement": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 8
+    },
+    "lp_change": {
+     "type": "integer"
+    },
+    "rank": {
+     "$ref": "#/$defs/rank"
+    },
+    "coins": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "coins_total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "level_before": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "level": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "level_xp": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "level_xp_next": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "daily_ends_ms": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "missions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/mission"
+     }
+    },
+    "seats": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/recordSeat"
+     }
+    }
+   },
+   "required": [
+    "type",
+    "match_id",
+    "mode",
+    "rounds",
+    "placement",
+    "lp_change",
+    "rank",
+    "coins",
+    "xp",
+    "coins_total",
+    "level_before",
+    "level",
+    "level_xp",
+    "level_xp_next",
+    "daily_ends_ms",
+    "missions",
+    "seats"
+   ],
+   "additionalProperties": false
+  },
+  "ladder": {
+   "type": "object",
+   "description": "Revision 10: the Ranked leaderboard (get_ladder): the top players and your place (0 = you have not played Ranked).",
+   "properties": {
+    "type": {
+     "const": "ladder"
+    },
+    "you": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "players": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "position": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "username": {
+        "type": "string"
+       },
+       "icon": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "level": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "border": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       },
+       "rank": {
+        "$ref": "#/$defs/rank"
+       }
+      },
+      "required": [
+       "position",
+       "username",
+       "icon",
+       "level",
+       "border",
+       "title",
+       "rank"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "type",
+    "you",
+    "total",
+    "players"
+   ],
+   "additionalProperties": false
+  },
+  "done": {
+   "type": "object",
+   "description": "Revision 10: an account action without a message of its own went through (change_password).",
+   "properties": {
+    "type": {
+     "const": "done"
+    },
+    "action": {
+     "type": "string"
+    },
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "type",
+    "action"
    ],
    "additionalProperties": false
   }

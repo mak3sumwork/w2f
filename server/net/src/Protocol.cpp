@@ -99,7 +99,12 @@ ParseResult ParseCommand(std::string_view text) {
                                    {"register", CommandType::Register}, {"login", CommandType::Login}, {"resume_session", CommandType::ResumeSession}, {"logout", CommandType::Logout},
                                    {"get_profile", CommandType::GetProfile}, {"get_friends", CommandType::GetFriends}, {"friend_request", CommandType::FriendRequest},
                                    {"friend_accept", CommandType::FriendAccept}, {"friend_decline", CommandType::FriendDecline}, {"friend_remove", CommandType::FriendRemove},
-                                   {"accept_match", CommandType::AcceptMatch}, {"decline_match", CommandType::DeclineMatch}, {"set_icon", CommandType::SetIcon}};
+                                   {"accept_match", CommandType::AcceptMatch}, {"decline_match", CommandType::DeclineMatch}, {"set_icon", CommandType::SetIcon},
+                                   {"party_invite", CommandType::PartyInvite}, {"party_accept", CommandType::PartyAccept}, {"party_decline", CommandType::PartyDecline},
+                                   {"party_leave", CommandType::PartyLeave}, {"party_kick", CommandType::PartyKick}, {"party_promote", CommandType::PartyPromote},
+                                   {"party_mode", CommandType::PartyMode}, {"chat", CommandType::Chat}, {"get_chat", CommandType::GetChat}, {"get_match", CommandType::GetMatch},
+                                   {"get_ladder", CommandType::GetLadder}, {"get_store", CommandType::GetStore}, {"buy_item", CommandType::BuyItem},
+                                   {"equip_cosmetic", CommandType::EquipCosmetic}, {"get_missions", CommandType::GetMissions}, {"change_password", CommandType::ChangePassword}};
     bool found = false;
     for (const Known& k : kKnown) {
         if (name == k.name) { c.type = k.type; found = true; }
@@ -128,7 +133,23 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::FriendRequest:
         case CommandType::FriendAccept:
         case CommandType::FriendDecline:
-        case CommandType::FriendRemove: allowed = {"id", "action", "username"}; break;
+        case CommandType::FriendRemove:
+        case CommandType::PartyInvite:
+        case CommandType::PartyAccept:
+        case CommandType::PartyDecline:
+        case CommandType::PartyKick:
+        case CommandType::PartyPromote:
+        case CommandType::GetChat: allowed = {"id", "action", "username"}; break;
+        case CommandType::PartyMode: allowed = {"id", "action", "mode"}; break;
+        case CommandType::Chat: allowed = {"id", "action", "to", "text"}; break;
+        case CommandType::GetMatch: allowed = {"id", "action", "match_id"}; break;
+        case CommandType::BuyItem:
+        case CommandType::EquipCosmetic: allowed = {"id", "action", "item"}; break;
+        case CommandType::ChangePassword: allowed = {"id", "action", "password", "new_password"}; break;
+        case CommandType::PartyLeave:
+        case CommandType::GetLadder:
+        case CommandType::GetStore:
+        case CommandType::GetMissions:
         case CommandType::Logout:
         case CommandType::GetFriends:
         case CommandType::LeaveQueue:
@@ -218,6 +239,7 @@ ParseResult ParseCommand(std::string_view text) {
             ok = in.Required("index", -1, 7, v);
             c.choiceIndex = static_cast<int>(v);
             break;
+        case CommandType::PartyMode:
         case CommandType::JoinQueue: {
             const json::Value* mode = in.Take("mode");
             if (mode == nullptr) { ok = in.Fail("missing_field", "\"mode\" is required"); break; }
@@ -226,7 +248,7 @@ ParseResult ParseCommand(std::string_view text) {
             else if (mode->AsString() == "normal") c.queueMode = QueueMode::Normal;
             else if (mode->AsString() == "ranked") c.queueMode = QueueMode::Ranked;
             else ok = in.Fail("out_of_range", "\"mode\" must be \"bots\", \"normal\" or \"ranked\"");
-            if (ok && in.Take("ready_check") != nullptr) ok = in.Bool("ready_check", c.readyCheck);
+            if (ok && c.type == CommandType::JoinQueue && in.Take("ready_check") != nullptr) ok = in.Bool("ready_check", c.readyCheck);
             break;
         }
         case CommandType::SetIcon:
@@ -247,8 +269,32 @@ ParseResult ParseCommand(std::string_view text) {
         case CommandType::FriendAccept:
         case CommandType::FriendDecline:
         case CommandType::FriendRemove:
+        case CommandType::PartyInvite:
+        case CommandType::PartyAccept:
+        case CommandType::PartyDecline:
+        case CommandType::PartyKick:
+        case CommandType::PartyPromote:
+        case CommandType::GetChat:
             ok = in.String("username", 1, 32, true, c.username);
             break;
+        case CommandType::Chat:
+            ok = in.String("to", 1, 32, true, c.to) && in.String("text", 1, kMaxChatBytes, true, c.text);
+            break;
+        case CommandType::GetMatch:
+            ok = in.Required("match_id", 1, 9007199254740991LL, v);
+            c.matchId = static_cast<std::uint64_t>(v);
+            break;
+        case CommandType::BuyItem:
+        case CommandType::EquipCosmetic:
+            ok = in.String("item", 1, 40, true, c.storeItem);
+            break;
+        case CommandType::ChangePassword:
+            ok = in.String("password", 1, 128, true, c.password) && in.String("new_password", 1, 128, true, c.newPassword);
+            break;
+        case CommandType::PartyLeave:
+        case CommandType::GetLadder:
+        case CommandType::GetStore:
+        case CommandType::GetMissions:
         case CommandType::Logout:
         case CommandType::GetFriends:
         case CommandType::LeaveQueue:

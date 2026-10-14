@@ -219,7 +219,18 @@ int main(int argc, char** argv) {
         qc.match.bots = 0;
         qc.fillMs = static_cast<long long>(opt.fillSeconds) * 1000;
         std::unique_ptr<AccountStore> accounts;
+        std::unique_ptr<Progression> progression;
         if (!opt.accounts.empty()) {
+            // (demo 2.0) coins, levels, missions and the store: data/progression.json. Optional: without it the client simply has no store.
+            std::ifstream probe(opt.dataDir + "/progression.json");
+            if (probe) {
+                progression = Progression::FromFile(opt.dataDir + "/progression.json", &error);
+                if (!progression) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
+                qc.progression = progression.get();
+                std::printf("Progression: %zu store items, %zu missions\n", progression->store.size(), progression->missions.size());
+            } else {
+                std::fprintf(stderr, "Note: no %s/progression.json (no store, missions or coins)\n", opt.dataDir.c_str());
+            }
             accounts = std::make_unique<AccountStore>(opt.accounts, [] {
                 static std::random_device device;
                 return (static_cast<std::uint64_t>(device()) << 32) ^ device();
