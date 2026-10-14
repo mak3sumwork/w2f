@@ -157,3 +157,35 @@ Sunna heal x0.79, Aphel x0.87 / AD x0.95, Baira x0.93, Oakheart HP x0.96.
   and the Souls' fast hits in 4x overtime stacked his resists faster than sudden death ramps damage (hits of 8 at +900%). Guardians Armor and Soldiers' Soul now
   stack at most **15 times**. Two 300-match runs (seeds 1000 and 5000, ~53,000 fights): 0 reach the safety limit. `make balance` now prints who was standing
   in any fight the safety limit decides ("safety limit, round N: ...").
+
+## Demo 2.1 (FEEDBACK V11 test pass, 2026-10-15)
+The big test of demo 2.0 (`updates/test-report-2.0.md`) found: too many items and emblems, PvE no threat, Hexa almost never seen, a few outliers.
+
+### Items (`data/pve.json`; measured per player per match over 300 bot matches with a scratch counter)
+| | before | after |
+|---|---|---|
+| component-equivalents received (a finished item = 2) | 28.9 | 21.9 |
+| emblems that reached the bag (dropped or crafted) | 2.96 | 0.36 (0.7 for the players still alive at round 35) |
+| finished items straight from PvE | 4.5 | 1.2 |
+| Item Removers | 3.7 | 3.0 (the three of 1-1) |
+The cause was `"type": "Item"` with no list = **every one of the 55 items evenly**, so 29% of those drops were emblems and 80% finished items. Now every item line names
+its items: the creeps pay gold (50) / a champion (40) / a component (10); the 2-7 / 3-7 bosses two components (GDD: "two items") and a win adds gold, a component or a
+rare Omnilium Seed / Orb (10%); from 4-7 one component + one finished item, and a win can add a finished item. Emblems only by crafting. A test now fails if a drop line
+names an emblem, a finished item before stage 4 or a random Item Remover after 1-1 (`TestEncounterDataAndSelection`).
+
+### PvE
+Bots won 98-100% of every monster round. The 1-star Elder Wraith (only at 3-7) has 3000 HP / 85 AD (1500 / 45), 4-7 has two 3-star Boulders, 5-7 one, stage 6+
+two 3-star Wraiths... measured: **3-7 96.0%, 4-7 78.2%, 5-7 80.1%** (stage 6 is rare). A stronger first try (one more star everywhere) gave 53 / 40 / 21%: too much.
+
+### Traits and champions
+* Selini: Enlightenment 3/5/7 = 4% + 1.2% per level / 5% + 1.1% / 10% + 1.9% (was 5+1.5 / 8+1.8 / 12+2.5), XP after combat 1/1/4 (1/2/4); Prosperity 4 / 9 / 20% + 1.8% per
+  gold (6 / 14 / 28 + 2%). Equal-gold duels: (5) 60-63% (60-69%), (7) 80-83% (87-89%). **In bot games Selini did not move** (3: 59.6%, 5: 76.7%): its edge there is not
+  the stat bonus -- a question for the next pass (its champions? the bots' Selini boards?).
+* Marksman (4) 25% attack speed (30), Bruiser (4) holders 40% HP (45), Bastion (4) 50 resists / allies 12 (60 / 15), Assassin (4) 35 crit chance (40).
+* Protector and Yggra were cut and then **put back**: in equal-gold duels Protector (2) wins 48-54% and Yggra 44%. They look strong in bot games because Protector is
+  Les + Lum (two 5-costs) and Yggra a 5-cost tank with Nature's plants, i.e. late, rich boards.
+* Weak 1/2-costs: Astra 560/1008/1814 HP and 30 AD (518 / 25), Null 460/828/1490 HP and Gravity Well 120/180/280 (414 HP, 80/120/200), Grave's Skeleton 520/860/1320 HP
+  (450/750/1150), Xul's bolt 215/320/500 (193/290/450). Fight win rates moved about one point (Astra 45.4%, Null 47.3%, Grave 47.4%, Xul 47.7%).
+* Hexa's unlock: 6 Hexagon star levels at level 7 (7 at 8). Fielded in 111 of 1000 bot matches (19) and wins 65% when it is.
+
+Reports: `balance/demo-2.1.txt` (`make balance ARGS="--matches 1000 --seed 5000"`).

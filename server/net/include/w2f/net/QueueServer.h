@@ -48,6 +48,9 @@ struct QueueServerConfig {
     int offlineChatKept = 30;         // whispers kept for a friend who is offline, delivered when they log in
     // (revision 10) Coins, levels, missions and the store (data/progression.json); nullptr = none of that (the commands answer "no_progression").
     const Progression* progression = nullptr;
+    // (demo 2.1) Password checks (register / login / change_password: PBKDF2, ~10 ms each) allowed per Tick; the rest wait in arrival order for the next
+    // ticks, so a burst of logins (a server restart) cannot freeze the running matches. 0 = no limit (tests); w2f_server uses 2.
+    int passwordChecksPerTick = 0;
 };
 
 class QueueServer : public IServerHandler {

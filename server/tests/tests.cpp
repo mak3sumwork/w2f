@@ -7331,14 +7331,31 @@ static void TestEncounterDataAndSelection() {
     auto prod = w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), champions.get(), items.get(), &err);
     CHECK(champions && items && prod != nullptr);
     if (!prod) { std::printf("  %s\n", err.c_str()); return; }
-    CHECK(prod->Monsters().All().size() == 4 && prod->All().size() == 8 && prod->DefaultDrops().size() == 4);   // gold, champion, any item, Item Remover
+    CHECK(prod->Monsters().All().size() == 4 && prod->All().size() == 8 && prod->DefaultDrops().size() == 3);   // gold, champion, a component (demo 2.1)
     // 1-1 / 1-2 / 1-3 have their own boards; demo 1.7: X-7 has a boss board per stage (2..5) and stage 6+ falls to the any-stage one (id 8).
     CHECK(prod->Select(1, 1, 0)->id == 1 && prod->Select(1, 2, 0)->id == 2 && prod->Select(1, 3, 0)->id == 3);
     CHECK(prod->Select(2, 7, 0)->id == 4 && prod->Select(3, 7, 99)->id == 5 && prod->Select(4, 7, 1)->id == 6 && prod->Select(5, 7, 1)->id == 7);
     CHECK(prod->Select(6, 7, 0)->id == 8 && prod->Select(9, 7, 5)->id == 8);
     CHECK(prod->Select(2, 2, 0) == nullptr && prod->Select(1, 4, 0) == nullptr);
-    // The boss has its own table (items, Item Removers and gold only); the others use the defaults.
-    CHECK(prod->DropsFor(*prod->Find(4)).size() == 3 && &prod->DropsFor(*prod->Find(1)) == &prod->DefaultDrops());
+    // The boss has its own table (gold, a component, a rare Seed / Orb; from stage 4 also a finished item); the others use the defaults.
+    CHECK(prod->DropsFor(*prod->Find(4)).size() == 3 && prod->DropsFor(*prod->Find(6)).size() == 4 && &prod->DropsFor(*prod->Find(1)) == &prod->DefaultDrops());
+    // Demo 2.1 (FEEDBACK V11): every item line names its items (no "any item": that made 29% of the drops emblems) and no line drops an emblem, a finished
+    // item before stage 4, or a random Item Remover after 1-1.
+    for (const EncounterDefinition& e : prod->All()) {
+        std::vector<const PveDropEntry*> lines;
+        for (const PveDropEntry& d : prod->DropsFor(e)) lines.push_back(&d);
+        for (const PveDropEntry& d : e.guaranteed) lines.push_back(&d);
+        for (const PveDropEntry* d : lines) {
+            if (d->type != PveDropType::Item) continue;
+            CHECK(!d->items.empty());
+            for (ItemId id : d->items) {
+                const ItemDefinition* item = items->Find(id);
+                CHECK(item != nullptr && item->grantsTraits.empty());
+                if (item != nullptr && item->IsCombined()) CHECK(e.stage == 0 || e.stage >= 4);
+                if (item != nullptr && item->IsConsumable()) CHECK(e.id == 1);
+            }
+        }
+    }
     // Monsters are outside the champions' database and disjoint from it.
     for (const ChampionDefinition& m : prod->Monsters().All()) CHECK(champions->Find(m.id) == nullptr);
     CHECK(prod->ContentHash() == w2f::LoadEncounterDatabaseFromFile(sample::ProductionPvePath(), champions.get(), items.get())->ContentHash());
@@ -12263,12 +12280,12 @@ static void TestTraitV2SeliniPaths() {
         setup.teams[0].traitGold = gold;
         return v.Run(specs, 30, setup);
     };
-    const FightResult enlightened = fight(0, 8, 0);   // (production, after the balance pass) +5% +1.5% x level 8 = 17%
-    const FightResult prosperous = fight(1, 8, 5);    // +6% +2% x 5 gold = 16%
+    const FightResult enlightened = fight(0, 8, 0);   // (production, demo 2.1) +4% +1.2% x level 8 = 13.6 -> 13%
+    const FightResult prosperous = fight(1, 8, 5);    // +4% +2% x 5 gold = 14%
     for (UnitId u = 1; u <= 3; ++u) {
-        CHECK(StatusOn(enlightened, u, StatusType::AttackDamage).size() == 1 && StatusOn(enlightened, u, StatusType::AttackDamage)[0].amount == 17);
-        CHECK(StatusOn(enlightened, u, StatusType::AbilityPower).size() == 1 && StatusOn(enlightened, u, StatusType::AbilityPower)[0].amount == 17);
-        CHECK(StatusOn(prosperous, u, StatusType::AttackDamage).size() == 1 && StatusOn(prosperous, u, StatusType::AttackDamage)[0].amount == 16);
+        CHECK(StatusOn(enlightened, u, StatusType::AttackDamage).size() == 1 && StatusOn(enlightened, u, StatusType::AttackDamage)[0].amount == 13);
+        CHECK(StatusOn(enlightened, u, StatusType::AbilityPower).size() == 1 && StatusOn(enlightened, u, StatusType::AbilityPower)[0].amount == 13);
+        CHECK(StatusOn(prosperous, u, StatusType::AttackDamage).size() == 1 && StatusOn(prosperous, u, StatusType::AttackDamage)[0].amount == 14);
     }
     // The match picks one path per trait from its seed: stable for a seed, and both happen.
     auto db = w2f::LoadChampionDatabaseFromFile(sample::ProductionDataPath());

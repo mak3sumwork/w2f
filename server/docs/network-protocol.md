@@ -227,7 +227,7 @@ connection per account, a newer login logs the older one out). A finished match 
 never below Iron IV 0. `match_started.player_names` (every server) names every seat: the players' usernames, the AI players' generated usernames.
 Errors: `no_accounts` (a server without `--accounts`), `not_logged_in`, `invalid_name`, `invalid_password`, `name_taken`, `bad_credentials`, `bad_session`,
 `unknown_user`, `self`, `already_friends`, `already_requested`, `no_request`, `not_friends`, `too_many_friends`.
-Passwords: PBKDF2-HMAC-SHA-256 with a random 16-byte salt per account (20 000 rounds); they travel in the clear over `ws://`, so an online server must sit
+Passwords: PBKDF2-HMAC-SHA-256 with a random 16-byte salt per account (20 000 rounds; demo 2.1: `w2f_server` checks at most 2 passwords per tick -- `register`, `login` and `change_password` beyond that are answered a few ticks later, in arrival order); they travel in the clear over `ws://`, so an online server must sit
 behind TLS (`wss://`, docs/deploy.md).
 
 ## Ready check and profile icons (revision 9, demo 1.9)

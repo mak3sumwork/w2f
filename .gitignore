@@ -24,3 +24,6 @@ splash_arts/
 # Mixamo downloads (~2 GB of FBX; Mixamo's licence allows them in a game but not redistributed as raw files in a public repo)
 server/docs/examples/
 server/docs/animations/
+
+# demo 2.1: the CC0 sound packs tools/make_sfx_cc0.py downloads (kenney.nl); only the finished docs/sfx/*.wav are kept
+server/tools/.cc0_sounds/

@@ -53,7 +53,7 @@ The game server ignores the URL path, so the proxy routes by path. One process i
 exits, resuming its match. Put a TLS proxy in front as above.
 
 ## Limits and safety notes
-* At most 64 open sockets per process; a match is 8 players at most; a client that stops reading (16 MiB queued) is dropped; the rate limit is 30 burst / 15 per second per connection.
+* At most 4096 open sockets per process in `--queue` mode (64 in single-lobby mode; `--max-connections N`, demo 2.1: it was a fixed 64, so the 65th player could not connect -- 512 players in 64 matches measured at 0.6 ms median / 25 ms p99 round trip); the server raises its open-files limit to fit. Password checks (PBKDF2, ~10 ms each) run at most 2 per tick: a login storm waits its turn (512 at once: all in within 8.5 s) instead of freezing the matches; a match is 8 players at most; a client that stops reading (16 MiB queued) is dropped; the rate limit is 30 burst / 15 per second per connection.
 * The engine is authoritative and validates every command again; the protocol layer refuses malformed input before it reaches the engine (fuzzed in the test suite). There is no TLS in the server itself.
 * Reconnect tokens are 128 random bits; anyone holding a token holds the seat. Treat them like session cookies; do not log URLs with tokens or codes.
 * The 8-client soak test (`TestEightClientSoak`) plays a whole match over real sockets with three players dropping out and coming back, and checks every message against the published schemas.

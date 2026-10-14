@@ -218,7 +218,7 @@ Every champion now has an **origin** (Helios, Selini, Phaisa, Coregons, Hexagon,
 - **Prismatic tiers need an emblem**: the top breakpoint of a trait with four or more breakpoints only switches on when at least one of its holders has the trait from an emblem.
 - **PvE rounds always drop loot**, win or lose, on top of the usual drop for a win: **1-1 three Item Removers, 1-2 and 1-3 three components each, every X-7 boss two items.**
 - **Najmi** opens at 2 and cashes out at every 100 star dust (section 2B).
-- **Hexa must be unlocked**, like TFT's T-Hex: 7 Hexagon star levels on the board at level 8 (the HEXA entry of the roster).
+- **Hexa must be unlocked**, like TFT's T-Hex: 6 Hexagon star levels on the board at level 7 (demo 2.1: was 7 at level 8; the HEXA entry of the roster).
 - Traits shown in the tracker stay for the whole fight, even as units die.
 
 
@@ -387,7 +387,7 @@ Damage: 58 = 54() + 4() [54 / 82 / 150]
 **UMBRA** (Selini / Bastion) | HP 900/1620/2916 | Armor/MR 50 | AD 50 | AP 60 | AS 0.70 | Range 1 | Mana 0/100
 - *Ability:* Eclipse. Blinds all enemies within 2 hexes for 3s (cannot basic attack) and deals 300/450/1000 Magic Damage.
 **HEXA - "The Walking Equation"** [NEW] (Hexagon / Hexa / Gunslinger) | Mana 60/140 (decided) | Health 1100 / 1980 / 3564
-- *Unlock (demo 1.1, like TFT's T-Hex; decided):* Hexa is **not in your shop until you unlock it**: the star levels of the Hexagon units on your board must add up to **7** while you are **level 8** or higher. Nothing else hands Hexa out (no drop, no gift); once unlocked it can appear in your own shop for the rest of the match.
+- *Unlock (demo 1.1, like TFT's T-Hex; decided):* Hexa is **not in your shop until you unlock it**: the star levels of the Hexagon units on your board must add up to **6** while you are **level 7** or higher (demo 2.1, FEEDBACK V11 test pass: was 7 at level 8, and Hexa showed up in 19 of 1000 bot matches). Nothing else hands Hexa out (no drop, no gift); once unlocked it can appear in your own shop for the rest of the match.
 AD 110 / 165 / 248 , AS 0.9, DPS 99 / 149 / 223 , armor 80, mr 80, attack range 2 hexes.
 Passive: Attacks fire a barrage of 4 bullets.
 Active: Gain 410/598/67022() Shield and begin consuming 30 mana per second. Each second while casting, fire a laser that deals 290/435/2150() physical damage, reduced by 70% per enemy hit up to 90%. Additionally, launch 4() missiles split between 4 nearby enemies that each deal 17/26/129() physical damage.

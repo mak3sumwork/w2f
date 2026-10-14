@@ -15,6 +15,9 @@ T="$(mktemp -d)"
 ACCOUNTS="$T/accounts.json"
 cp "$HERE/tests/data/client_selftest_accounts.json" "$ACCOUNTS"
 NAME=CT$((RANDOM % 9000 + 1000))
+# W2F_CTEST_START=N (demo 2.1): start at step N, logged in straight away (a run that stalled on window focus can go on from where it stopped)
+START_FLAGS=""
+[ -n "${W2F_CTEST_START:-}" ] && START_FLAGS="-w2fcteststart=$W2F_CTEST_START -w2flogin=$NAME:secret12"
 PORT=7777
 
 "$HERE/build/w2f_server" --queue --fast --fill-seconds 5 --port $PORT --accounts "$ACCOUNTS" > "$T/server.log" 2>&1 &
@@ -23,7 +26,7 @@ sleep 1
 rm -rf "$P/Saved/Screenshots/MacEditor" "$P/Saved/W2F/clienttest.txt"
 [ -f "$P/Saved/W2F/account.json" ] && mv "$P/Saved/W2F/account.json" "$T/account.json.bak"   # the developer's own login, put back at the end
 
-"$UE" "$P/work2fightgame.uproject" /Game/W2F/Maps/L_Viewer -game -windowed -ResX=1600 -ResY=900 -w2fquality=1 -w2flive -w2fclienttest=$NAME -abslog="$T/a.log" > /dev/null 2>&1 &
+"$UE" "$P/work2fightgame.uproject" /Game/W2F/Maps/L_Viewer -game -windowed -ResX=1600 -ResY=900 -w2fquality=1 -w2flive -w2fclienttest=$NAME $START_FLAGS -abslog="$T/a.log" > /dev/null 2>&1 &
 A=$!
 waitfor() { for _ in $(seq 900); do grep -q "$1" "$T/a.log" 2>/dev/null && return 0; kill -0 $A 2>/dev/null || return 1; sleep 1; done; return 1; }
 rival() { "$UE" "$P/work2fightgame.uproject" /Game/W2F/Maps/L_Viewer -game -nullrhi -nosound -w2flive -w2flogin=Rival:secret1 -w2ffriend=$NAME -w2fdemo=acceptinvite -abslog="$T/b$1.log" > /dev/null 2>&1 & echo $!; }

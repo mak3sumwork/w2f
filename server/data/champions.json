@@ -227,7 +227,7 @@
       "id": 9008, "name": "Astra", "cost": 1, "role": "Damage",
       "traits": ["Najmi", "Mystic"],
       "stats": {
-        "hp": [518, 931, 1679], "armor": 20, "magicResist": 20, "attackDamage": 25, "abilityDamage": 20,
+        "hp": [560, 1008, 1814], "armor": 20, "magicResist": 20, "attackDamage": 30, "abilityDamage": 20,
         "attackSpeed": 0.65, "range": 3, "maxMana": 60
       },
       // Tethers to the ALLY THAT DEALT THE MOST DAMAGE in the last 5 s ("highest DPS") for 5 s: 30% of the damage that ally
@@ -418,12 +418,12 @@
       "id": 9016, "name": "Null", "cost": 1, "role": "Tank",
       "traits": ["Phaisa", "Bastion"],
       // Range 3 (the design doc says 1, but a pull needs a target that is not already adjacent: the designer chose 3).
-      "stats": { "hp": [414, 745, 1344], "armor": 28, "magicResist": 28, "attackDamage": 30, "abilityDamage": 20, "attackSpeed": 0.55, "range": 3, "maxMana": 70 },
+      "stats": { "hp": [460, 828, 1490], "armor": 28, "magicResist": 28, "attackDamage": 30, "abilityDamage": 20, "attackSpeed": 0.55, "range": 3, "maxMana": 70 },
       // Magic damage and a pull 1 hex toward Null.
       "ability": {
         "id": 23, "name": "Gravity Well", "trigger": "Mana", "castLockTicks": 15,
         "effects": [
-          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [80, 120, 200] },
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [120, 180, 280] },
           { "type": "Displace", "target": "CurrentTarget", "direction": "Toward", "hexes": 1 }
         ]
       }
@@ -517,9 +517,9 @@
       "ability": {
         "id": 29, "name": "Void Bolt", "trigger": "Mana", "castLockTicks": 15,
         "effects": [
-          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [193, 290, 450] },
+          { "type": "Damage", "target": "CurrentTarget", "damageType": "Magic", "amount": [215, 320, 500] },
           { "type": "Damage", "target": { "mode": "AreaAroundTarget", "radius": 1, "includeCenter": false, "count": 1 },
-            "damageType": "Magic", "amount": [193, 290, 450] }
+            "damageType": "Magic", "amount": [215, 320, 500] }
         ]
       }
     },
@@ -531,10 +531,10 @@
       "id": 9022, "name": "Grave", "cost": 2, "role": "Damage",
       "traits": ["Coregons", "Mystic"],
       "stats": { "hp": [495, 890, 1605], "armor": 25, "magicResist": 25, "attackDamage": 30, "abilityDamage": 30, "attackSpeed": 0.60, "range": 3, "maxMana": 80 },
-      // A Skeleton (champion 9101, a summon) with 450/750/1150 HP and 45 AD (balance 1.7: was 300/500/800, 30 AD) on the nearest free hex.
+      // A Skeleton (champion 9101, a summon) with 520/860/1320 HP (demo 2.1: was 450/750/1150) and 45 AD (balance 1.7: was 300/500/800, 30 AD) on the nearest free hex.
       "ability": {
         "id": 30, "name": "Raise Skeleton", "trigger": "Mana", "castLockTicks": 15,
-        "effects": [ { "type": "Summon", "target": "Self", "champion": 9101, "count": 1, "maxHp": [450, 750, 1150], "attackDamage": 45 } ]
+        "effects": [ { "type": "Summon", "target": "Self", "champion": 9101, "count": 1, "maxHp": [520, 860, 1320], "attackDamage": 45 } ]
       }
     },
 
@@ -885,7 +885,7 @@
     // The ally on the hex directly behind Hexa pilots it (see "pilot"); its attacks fire a barrage of 4 bullets (presentation: one hit of its AD).
     {
       "id": 9045, "name": "Hexa", "cost": 5, "role": "Tank",
-      "unlock": { "trait": "Hexagon", "starLevel": 7, "playerLevel": 8 },   // like TFT's T-Hex: not in your shop until your Hexagon units add up to 7 stars at level 8
+      "unlock": { "trait": "Hexagon", "starLevel": 6, "playerLevel": 7 },   // like TFT's T-Hex: not in your shop until your Hexagon units add up to 6 stars at level 7 (demo 2.1: was 7 at level 8; Hexa was seen in 19 of 1000 bot matches)
       "traits": ["Hexagon", "Hexa", "Gunslinger"],
       "stats": { "hp": [880, 1584, 2851], "armor": 62, "magicResist": 62, "attackDamage": [110, 165, 248], "attackSpeed": 0.90, "range": 2,
                  "maxMana": 140, "startMana": 60 },

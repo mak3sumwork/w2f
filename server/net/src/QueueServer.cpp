@@ -191,6 +191,12 @@ public:
 
     void Tick(std::uint64_t nowMs) {
         now_ = nowMs;
+        passwordChecksThisTick_ = 0;
+        while (!passwordWaitList_.empty() && passwordChecksThisTick_ < cfg_.passwordChecksPerTick) {
+            const std::pair<ConnectionId, Command> next = passwordWaitList_.front();
+            passwordWaitList_.pop_front();
+            if (clients_.count(next.first) != 0) AccountCommand(next.first, next.second, true);   // (gone meanwhile: dropped)
+        }
         for (const auto& room : rooms_) {
             if (room->dead) continue;
             room->game->Tick(nowMs);
@@ -513,9 +519,18 @@ private:
 
     // ---- accounts (revision 8) -------------------------------------------------------------------
 
-    void AccountCommand(ConnectionId id, const Command& cmd) {
+    static bool ChecksPassword(CommandType type) { return type == CommandType::Register || type == CommandType::Login || type == CommandType::ChangePassword; }
+
+    void AccountCommand(ConnectionId id, const Command& cmd, bool fromWaitList = false) {
         AccountStore* store = cfg_.accounts;
         if (store == nullptr) return transport_.Send(id, msg::Error("no_accounts", "this server has no accounts (start it with --accounts FILE)", cmd.hasId, cmd.id));
+        if (ChecksPassword(cmd.type) && cfg_.passwordChecksPerTick > 0) {   // (demo 2.1) the password budget: over it, wait for the next tick, in order
+            if (!fromWaitList && (passwordChecksThisTick_ >= cfg_.passwordChecksPerTick || !passwordWaitList_.empty())) {
+                passwordWaitList_.emplace_back(id, cmd);
+                return;
+            }
+            ++passwordChecksThisTick_;
+        }
         Client& c = clients_[id];
         const auto fail = [&](AccountStore::Result r) { transport_.Send(id, msg::Error(AccountStore::Code(r), AccountStore::Describe(r), cmd.hasId, cmd.id)); };
         const auto error = [&](const char* code, const std::string& detail) { transport_.Send(id, msg::Error(code, detail, cmd.hasId, cmd.id)); };
@@ -1075,6 +1090,8 @@ private:
     std::vector<ConnectionId> pendingIdle_;
     std::string catalog_;
     std::uint64_t now_ = 0;
+    std::deque<std::pair<ConnectionId, Command>> passwordWaitList_;   // (demo 2.1) password checks over this tick's budget
+    int passwordChecksThisTick_ = 0;
     std::uint64_t lastStatusMs_ = 0;
     std::uint64_t order_ = 0;
     std::uint64_t roomIds_ = 0;

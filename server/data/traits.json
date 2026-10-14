@@ -141,20 +141,20 @@
       "id": 6, "name": "Selini",
       "paths": [
         { "name": "Enlightenment", "breakpoints": [
-          { "count": 3, "xpAfterCombat": 1, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 150 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 150 } ] } } ] },
-          { "count": 5, "xpAfterCombat": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 8, "terms": [ { "source": "PlayerLevel", "percent": 180 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 8, "terms": [ { "source": "PlayerLevel", "percent": 180 } ] } } ] },
-          { "count": 7, "xpAfterCombat": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 12, "terms": [ { "source": "PlayerLevel", "percent": 250 } ] } } ] }
+          { "count": 3, "xpAfterCombat": 1, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 4, "terms": [ { "source": "PlayerLevel", "percent": 120 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 4, "terms": [ { "source": "PlayerLevel", "percent": 120 } ] } } ] },
+          { "count": 5, "xpAfterCombat": 1, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 110 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 5, "terms": [ { "source": "PlayerLevel", "percent": 110 } ] } } ] },
+          { "count": 7, "xpAfterCombat": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 10, "terms": [ { "source": "PlayerLevel", "percent": 190 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 10, "terms": [ { "source": "PlayerLevel", "percent": 190 } ] } } ] }
         ] },
         { "name": "Prosperity", "breakpoints": [
-          { "count": 3, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 6, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 6, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
-          { "count": 5, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 14, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 14, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
-          { "count": 7, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 28, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
-            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 28, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] }
+          { "count": 3, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 4, "terms": [ { "source": "TraitGold", "percent": 200 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 4, "terms": [ { "source": "TraitGold", "percent": 200 } ] } } ] },
+          { "count": 5, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 9, "terms": [ { "source": "TraitGold", "percent": 180 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 9, "terms": [ { "source": "TraitGold", "percent": 180 } ] } } ] },
+          { "count": 7, "takedownsPerGold": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackDamage", "permanent": true, "percent": { "flat": 20, "terms": [ { "source": "TraitGold", "percent": 180 } ] } },
+            { "scope": "TraitHolders", "type": "Status", "status": "AbilityPower", "permanent": true, "percent": { "flat": 20, "terms": [ { "source": "TraitGold", "percent": 180 } ] } } ] }
         ] }
       ]
     },
@@ -220,7 +220,7 @@
                                    { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 25, "permanent": true } ] },
         { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AbilityCrit", "permanent": true },
                                    { "scope": "TraitHolders", "type": "Status", "status": "CritDamage",  "percent": 50, "permanent": true },
-                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 40, "permanent": true } ] }
+                                   { "scope": "TraitHolders", "type": "Status", "status": "BonusCritChance", "value": 35, "permanent": true } ] }
       ]
     },
 
@@ -304,7 +304,7 @@
       "id": 10, "name": "Bastion",
       "breakpoints": [
         { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 10, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 10, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 40, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 40, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 15, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 15, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 60, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 60, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 12, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 12, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 50, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 50, "permanent": true } ] },
         { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusArmor", "value": 25, "permanent": true }, { "scope": "AllAllies", "type": "Status", "status": "BonusMagicResist", "value": 25, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusArmor", "value": 110, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "BonusMagicResist", "value": 110, "permanent": true } ] }
       ]
     },
@@ -314,7 +314,7 @@
       "id": 11, "name": "Bruiser",
       "breakpoints": [
         { "count": 2, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 100, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 20, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 150, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 45, "permanent": true } ] },
+        { "count": 4, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 150, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 40, "permanent": true } ] },
         { "count": 6, "effects": [ { "scope": "AllAllies", "type": "Status", "status": "BonusMaxHp", "value": 200, "permanent": true }, { "scope": "TraitHolders", "type": "Status", "status": "MaxHp", "percent": 70, "permanent": true } ] }
       ]
     },
@@ -336,7 +336,7 @@
       "breakpoints": [
         { "count": 2, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 20, "permanent": true },
                                    { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 12, "permanent": true } ] },
-        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 30, "permanent": true },
+        { "count": 4, "effects": [ { "scope": "TraitHolders", "type": "Status", "status": "AttackSpeed", "percent": 25, "permanent": true },
                                    { "scope": "TraitHolders", "type": "Status", "status": "DamageAmp", "percent": 20, "permanent": true } ] }
       ]
     },

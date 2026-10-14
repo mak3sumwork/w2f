@@ -1,0 +1,40 @@
+# W2F DEMO 2.1 -- the big test, and everything it found
+
+Answers FEEDBACK V11 (`feedback/FEEDBACK_V11.md`, 2026-10-14) and the test report it asked for (`updates/test-report-2.0.md`): "list alllllll the problems ...
+detailed bug / performance test and a detailed feedback", then "do all". Splash arts are parked (your call). Both repos were committed as DEMO 2.0 before this
+(server 4d724af, UE 4c5ac6a).
+
+| # | Asked / found | Done | How it was checked |
+|---|---|---|---|
+| 1 | "client looking not crisp ... the resolution should be better" | **Retina is on** (`bAllowHighDPIInGameMode`): the game draws at the screen's real pixels; before, it drew at half and macOS stretched it 2x, and Medium drew the 3D at 80% of that again. The interface is always sharp now; only the 3D scene follows the new **3D resolution** slider. A saved window size is scaled once to the new pixel size (a first start opens at 80% of the screen). | log: `Retina on (screen scale 2.0)`; screenshots; FPS log now prints the real pixel size |
+| 2 | "Add detailed graphics options. Like shadows effect quality" | **VIDEO**: preset LOW / MEDIUM / HIGH / ULTRA (or CUSTOM once you change one option), 3D resolution 50-100%, anti-aliasing OFF / FXAA / TAA / TSR, and each of Shadows (ULTRA = virtual shadow maps), Effects, Textures, Post-processing, Lighting (HIGH+ = Lumen), Reflections, View distance. **The anti-aliasing setting now applies** (it was silently overruled by the project setting). | screenshots of the page; self-test: an option by hand -> CUSTOM, MEDIUM resets it |
+| 3 | "make it look like league of legends settings panel. I want to set it correctly" | **League's settings window**: the screen dims, a big framed panel with a sidebar CLIENT (General, Sound, Account) / IN-GAME (Video, Interface, Hotkeys), rows of name + hint + control, RESTORE DEFAULTS (per page) and DONE. Window mode / window size changes ask **"KEEP THESE DISPLAY SETTINGS?"** and go back by themselves after 15 s. Window sizes include your screen's own shape (16:10), not only 16:9. New: **interface scale** (80-130%), the **P** key (bench to board) is now a rebindable hotkey. Controls use a plain sans font (the display font garbled "F" at small sizes). | screenshots; self-test steps (pages, rebinding, RESTORE DEFAULTS, DONE) |
+| 4 | "the pop up tabs ... don't disappear when they should" | Hover panels now follow where the cursor **really** is (Slate's hover flag only updates when the mouse moves, so a card bought / rerolled under a still cursor kept its panel); a panel closes **at once** when its source changes (the card bought, the trait row re-sorted, the player row moved); a click elsewhere and every new phase close them. | code + build; **please tell me if any pop-up still sticks** (which one) |
+| 5 | "the item slot ... not aligned ... not consistent" | The **item bench** is a straight grid of identical sockets on a dark plate at the platform's corner (it follows the camera), empty sockets shown, no bobbing; the hovered one lights, the carried one fades, free ones glow while you carry. **Items past the 10th used to vanish** (the server's bag has no limit): now the bench grows a column per 5 items. Works the same in the space arena (which has no pedestals). | screenshots with 12 and 13 items |
+| 6 | "The sounds are sooooo bad like this not an arcade game" | **All 61 sound effects replaced** by real recordings: Kenney's CC0 packs (public domain) -- wooden / glass UI taps, casino chips for gold, a card fan for the reroll, recorded impacts in fights, pizzicato / steel-drum / bell jingles for the big moments; each trimmed, warmed with a low-pass, given a short soft room and levelled by how often it plays. Brightness (energy above 4 kHz) of the most played ones: reroll 68% -> 2.5%, purchase 65% -> 0.4%, crit 65% -> 0%. `tools/make_sfx_cc0.py` rebuilds them. The client music is unchanged. | measured; **not heard by me -- please listen** |
+| 7 | "do we drop a lot of items or emblems?" | Yes (about twice TFT): **29 component-equivalents and ~3 emblems per player per match**, because "any item" drops picked evenly from all 55 items (29% emblems). Now: creeps pay gold / champions / components, bosses components (a finished item from stage 4), emblems only by crafting a rare Seed / Orb: **22 component-equivalents and 0.4 emblems** (0.7 for those still alive late). A test guards it. | 300 bot matches before / after (docs/balance.md "Demo 2.1") |
+| 8 | Server: only 64 connections | `--max-connections` (default 4096 in queue mode); the server raises its open-files limit. Password checks are budgeted (2 per tick) so a login storm cannot freeze the matches. **512 players in 64 matches: 0.6 ms median, 25 ms p99 round trip** (before: 384 of 512 could not get in; with the fix but no budget, 1% waited over a second). | load test (a scratch WebSocket client), new network test |
+| 9 | Performance | **The first seconds of every match ran at 15 FPS** (the loading screen's 8 cards rebuilt every seat ~8 times a frame, each time re-sorting the whole champion list: 50 ms a frame) -> 71 FPS. The "growing" component count was the effects pool reaching its peak, not a leak. The 130-400 ms hitches were first-time shader compiles in the editor (gone with a warm cache; the app ships compiled shaders). | stat dumphitches before / after; FPS log |
+| 10 | Balance | PvE bosses bite (bots win 3-7 96%, 4-7 78%, 5-7 80%; before 98-100%). Hexa unlock 6 Hexagon stars at level 7 (seen in 111 of 1000 bot matches, was 19). Selini, Marksman 4, Bastion 4, Bruiser 4, Assassin 4 trimmed; Astra, Null, Grave, Xul buffed. | `make balance` 1000 matches, `make ladder` |
+| 11 | Small things | Fight plates no longer pile up (a plate that would cover a nearer one is lifted clear); 8 arena materials flagged for Nanite (they warned "default material will be used"); no more missing-glyph warnings (check marks drawn in a font that has them); `unit_fx.json` notes no longer log a JSON error. | logs of a whole match |
+
+## Running it
+* The app: `~/Desktop/W2F_App/W2F.app` (rebuilt). In the editor: `w2f_server --queue --accounts FILE` + `-w2flive`.
+* Settings: the gear (client or match) or Esc -> SETTINGS. Video starts on MEDIUM (3D at 80%, everything sharp); if a fight feels slow, try LOW or lower the 3D resolution.
+* Sounds: `~/w2f_bpy/venv/bin/python tools/make_sfx_cc0.py` (needs `pip install soundfile` in that venv; downloads the packs once), then `tools/unreal/import_sfx.py`.
+
+## Status when committed (paused by you, 2026-10-15)
+* Server: `make test` green (6931 engine + 2191 network checks, with the new tests). UE editor module builds clean.
+* Client self-test (`scripts/client_selftest.sh`, new `W2F_CTEST_START=N` to start at a step): steps 0-14 pass; 15-44 pass except **3 FAILS** -- "typing a line +
+  Enter sends it" (the chat's text box was never on screen), "the lobby shows the party: two seats, LEAVE PARTY" and "LEAVE PARTY ends it" (never on screen);
+  steps 45-59 (the new settings, the ready check, the match, Esc) all pass. Likely cause to check first: with Retina on, the test window (1600 x 900 pixels) is
+  half its old size on screen, so the chat box / lobby buttons may be clipped -- or a real layout bug at small windows.
+* **Not done yet**: the Mac app is NOT rebuilt for 2.1 (`~/Desktop/W2F_App/W2F.app` is still DEMO 2.0); fight-plate de-overlap not seen in a combat screenshot.
+
+## Honest limits / to test by hand
+* **Listen** to the new sounds (I can only measure them). Levels are a first guess; the Sound page has four sliders.
+* Selini still wins ~60% / ~77% (3 / 5) in **bot** games although its bonus was cut twice; in equal-gold duels it dropped (5: 69% -> 63%). Its edge in bot games
+  is something else (its champions, how the bots build it): next balance pass.
+* Pop-ups: fixed by design; with a real mouse, tell me if any still sticks.
+* The display confirm and the Retina window-size migration were tested in the editor's game mode, not yet by you in the packaged app full screen.
+* Splash arts: parked.

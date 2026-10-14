@@ -1,6 +1,6 @@
 // The W2F game server: a standalone WebSocket server that hosts one lobby and one match at a time.
 //
-//   w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--bots N] [--data DIR] [--seed N] [--autosave FILE] [--fast]
+//   w2f_server [--port 7777] [--bind 0.0.0.0] [--players 8] [--bots N] [--data DIR] [--seed N] [--autosave FILE] [--fast] [--max-connections N]
 //
 // Clients connect with a WebSocket (ws://host:port/), are given a seat, and when the last human seat fills the match starts by itself.
 // `--bots 7` makes 7 of the seats AI players: one person can then play a whole match alone (the last N seats are the bots).
@@ -9,6 +9,7 @@
 // --fill-seconds). See net/include/w2f/net/QueueServer.h.
 // The protocol is documented in docs/network-protocol.md.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <random>
@@ -26,6 +27,10 @@
 #include "w2f/net/QueueServer.h"
 #include "w2f/net/ResumeFile.h"
 #include "w2f/net/TcpServer.h"
+
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 
 #ifndef W2F_DATA_DIR
 #define W2F_DATA_DIR "data"
@@ -54,6 +59,7 @@ struct Options {
     bool queue = false;  // matchmaking: many matches at once, players queue from the client (QueueServer)
     int fillSeconds = 30;   // --queue: a normal queue starts with AI players in the empty seats after this long
     std::string accounts;   // --queue --accounts FILE: player accounts (log in, profile, match history, friends, ranked) kept in FILE
+    int maxConnections = 0;   // open sockets at once; 0 = the default: 4096 for --queue (64 matches x 8 seats and the players on their home screens), 64 for one lobby
 };
 
 bool ParseArgs(int argc, char** argv, Options& o) {
@@ -78,8 +84,9 @@ bool ParseArgs(int argc, char** argv, Options& o) {
         else if (a == "--resume") { if (!(v = value("--resume"))) return false; o.resume = v; }
         else if (a == "--join-code") { if (!(v = value("--join-code"))) return false; o.joinCode = v; }
         else if (a == "--autosave") { if (!(v = value("--autosave"))) return false; o.autosave = v; }
+        else if (a == "--max-connections") { if (!(v = value("--max-connections"))) return false; o.maxConnections = std::atoi(v); }
         else {
-            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items] [--queue [--fill-seconds N] [--accounts FILE]]\n", a.c_str());
+            std::fprintf(stderr, "unknown option %s\nusage: w2f_server [--port N] [--bind ADDR] [--players 2..8] [--bots 0..players-1] [--data DIR] [--seed N] [--autosave FILE] [--resume FILE] [--join-code CODE] [--fast] [--give-items] [--max-connections N] [--queue [--fill-seconds N] [--accounts FILE]]\n", a.c_str());
             return false;
         }
     }
@@ -87,6 +94,8 @@ bool ParseArgs(int argc, char** argv, Options& o) {
     if (o.queue && (o.bots != 0 || !o.resume.empty() || !o.autosave.empty())) { std::fprintf(stderr, "--queue decides the bots itself and has no autosave / resume\n"); return false; }
     if (!o.accounts.empty() && !o.queue) { std::fprintf(stderr, "--accounts needs --queue\n"); return false; }
     if (o.fillSeconds < 0) { std::fprintf(stderr, "--fill-seconds must be 0 or more\n"); return false; }
+    if (o.maxConnections < 0 || o.maxConnections > 60000) { std::fprintf(stderr, "--max-connections must be between 1 and 60000\n"); return false; }
+    if (o.maxConnections == 0) o.maxConnections = o.queue ? 4096 : 64;
     if (o.bots < 0 || o.bots > o.players - 1) { std::fprintf(stderr, "--bots must be between 0 and %d (at least one seat has to be a human)\n", o.players - 1); return false; }
     return true;
 }
@@ -206,6 +215,19 @@ int main(int argc, char** argv) {
     tcfg.joinCode = opt.joinCode;
     tcfg.bindAddress = opt.bind;
     tcfg.port = opt.port;
+    tcfg.maxConnections = static_cast<std::size_t>(opt.maxConnections);
+#ifndef _WIN32
+    // demo 2.1: every socket is a file descriptor; macOS starts a process with a soft limit of 256, so raise it to what --max-connections needs
+    rlimit files{};
+    if (getrlimit(RLIMIT_NOFILE, &files) == 0) {
+        const rlim_t want = static_cast<rlim_t>(opt.maxConnections) + 64;   // + the listening socket, the accounts file, stdio
+        if (files.rlim_cur < want) {
+            files.rlim_cur = files.rlim_max == RLIM_INFINITY ? want : std::min(want, files.rlim_max);
+            setrlimit(RLIMIT_NOFILE, &files);
+            if (getrlimit(RLIMIT_NOFILE, &files) == 0 && files.rlim_cur < want && files.rlim_cur > 64) tcfg.maxConnections = static_cast<std::size_t>(files.rlim_cur - 64);
+        }
+    }
+#endif
     TcpServer tcp(tcfg);
 #ifndef _WIN32
     std::signal(SIGPIPE, SIG_IGN);
@@ -238,14 +260,15 @@ int main(int argc, char** argv) {
             if (!accounts->Load(&error) || !accounts->Save(&error)) { std::fprintf(stderr, "Accounts: %s\n", error.c_str()); return 2; }
             std::printf("Accounts: %d in %s\n", accounts->size(), opt.accounts.c_str());
             qc.accounts = accounts.get();
+            qc.passwordChecksPerTick = 2;   // (demo 2.1) a login storm waits its turn instead of freezing the matches
             qc.wallClockMs = [] { return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()); };
         }
         QueueServer hub(qc, data, tcp);
         QueueLogging logging(hub);
         tcp.SetHandler(&logging);
         if (!tcp.Listen(&error)) { std::fprintf(stderr, "Cannot start: %s\n", error.c_str()); return 2; }
-        std::printf("W2F queue server listening on %s:%u  (%d seats per match, normal queue fills with bots after %d s, %zu champions, %zu items)\n", opt.bind.c_str(),
-                    static_cast<unsigned>(tcp.port()), gsc.seats, opt.fillSeconds, champions->All().size(), items->All().size());
+        std::printf("W2F queue server listening on %s:%u  (%d seats per match, normal queue fills with bots after %d s, %zu champions, %zu items, up to %zu connections)\n", opt.bind.c_str(),
+                    static_cast<unsigned>(tcp.port()), gsc.seats, opt.fillSeconds, champions->All().size(), items->All().size(), tcfg.maxConnections);
         std::fflush(stdout);
         int lastMatches = 0;
         RunServerLoop(tcp, [&](std::uint64_t nowMs) {

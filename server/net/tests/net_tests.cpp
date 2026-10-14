@@ -1476,7 +1476,8 @@ struct QueueRig {
     std::unique_ptr<QueueServer> hub;
     std::uint64_t now = 1000;
     ConnectionId nextConn = 100;
-    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120, AccountStore* accounts = nullptr, const Progression* progression = nullptr)
+    QueueRig(int seats, long long fillMs, int abandonTicks = kTicksPerSecond * 120, AccountStore* accounts = nullptr, const Progression* progression = nullptr,
+             int passwordChecksPerTick = 0)
         : data(seats, [](GameData& d, GameServerConfig& c) {
               d.config.player.startingHealth = 20;
               d.config.damage.baseDamageByStage = {8, 12};
@@ -1488,6 +1489,7 @@ struct QueueRig {
         qc.abandonTicks = abandonTicks;
         qc.accounts = accounts;
         qc.progression = progression;
+        qc.passwordChecksPerTick = passwordChecksPerTick;
         qc.wallClockMs = [this] { return std::uint64_t{1790000000000} + now; };   // (moves with the rig's clock: invites and missions expire)
         hub = std::make_unique<QueueServer>(qc, data.data, net);
     }
@@ -1635,6 +1637,26 @@ static void TestQueueAccounts() {
     const ConnectionId c = plain.Connect();
     plain.Say(c, R"({"action": "login", "username": "Alice", "password": "secret1"})");
     CHECK(Str(plain.Last(c, "error"), "code") == "no_accounts");
+}
+
+// demo 2.1: password checks (PBKDF2) have a per-tick budget; the rest wait their turn in arrival order, and a waiter who leaves is dropped.
+static void TestPasswordBudget() {
+    std::uint64_t counter = 5;
+    AccountStore store("", [&counter] { counter = counter * 6364136223846793005ULL + 1442695040888963407ULL; return counter; }, 2);
+    QueueRig q(4, 2000, kTicksPerSecond * 120, &store, nullptr, 1);
+    const ConnectionId a = q.Connect(), b = q.Connect(), c = q.Connect(), d = q.Connect();
+    q.Say(a, R"({"action": "register", "username": "Ann", "password": "secret1"})");
+    q.Say(b, R"({"action": "register", "username": "Ben", "password": "secret1"})");
+    q.Say(c, R"({"action": "register", "username": "Cat", "password": "secret1"})");
+    q.Say(d, R"({"action": "register", "username": "Dan", "password": "secret1"})");
+    CHECK(q.CountType(a, "auth") == 1 && q.CountType(b, "auth") == 0 && q.CountType(c, "auth") == 0);   // one check this tick
+    q.hub->OnDisconnect(c);   // Cat gives up while waiting
+    q.Tick();
+    CHECK(q.CountType(b, "auth") == 1 && q.CountType(d, "auth") == 0);   // next tick: the next in line
+    q.Tick();
+    CHECK(q.CountType(d, "auth") == 1 && store.Find("cat") == nullptr && store.size() == 3);   // Cat's turn was skipped, Dan's came
+    q.Say(a, R"({"action": "get_profile"})");   // everything else is never held back
+    CHECK(Str(q.Last(a, "profile"), "username") == "Ann");
 }
 
 static void TestQueueServer() {
@@ -3813,6 +3835,7 @@ int main() {
         {"Ready check (accept / decline / timeout) and profile icons (revision 9)", TestReadyCheck},
         {"Accounts: password hashing, the ladder, the store and its file", TestAccounts},
         {"Queue server with accounts: log in, friends and presence, ranked, match history", TestQueueAccounts},
+        {"Password checks have a per-tick budget; the rest wait their turn (demo 2.1)", TestPasswordBudget},
         {"Parties: invite, accept, lead, queue together, ready check, kick, expiry (revision 10)", TestParties},
         {"Chat: whispers, offline delivery, history, party chat (revision 10)", TestChat},
         {"Progression: coins, levels, missions, store, post_game, match_detail, ladder, password (revision 10)", TestProgression},
